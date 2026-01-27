@@ -1,0 +1,40 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.env
+.env*
+.env.example
+
+# Test binary
+*.test
+
+# Output of go coverage tool
+*.out
+
+# Go workspace
+go.work
+go.work.sum
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vendor (optional)
+vendor/
+
+# Temp
+tmp/

@@ -1,0 +1,90 @@
+package handler
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"satvos/internal/domain"
+)
+
+// APIResponse is the standard envelope for all API responses.
+type APIResponse struct {
+	Success bool        `json:"success"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   *APIError   `json:"error,omitempty"`
+	Meta    *PagMeta    `json:"meta,omitempty"`
+}
+
+// APIError holds error details in the response.
+type APIError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// PagMeta holds pagination metadata.
+type PagMeta struct {
+	Total  int `json:"total"`
+	Offset int `json:"offset"`
+	Limit  int `json:"limit"`
+}
+
+// RespondOK sends a 200 success response.
+func RespondOK(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusOK, APIResponse{Success: true, Data: data})
+}
+
+// RespondCreated sends a 201 success response.
+func RespondCreated(c *gin.Context, data interface{}) {
+	c.JSON(http.StatusCreated, APIResponse{Success: true, Data: data})
+}
+
+// RespondPaginated sends a 200 success response with pagination metadata.
+func RespondPaginated(c *gin.Context, data interface{}, meta PagMeta) {
+	c.JSON(http.StatusOK, APIResponse{Success: true, Data: data, Meta: &meta})
+}
+
+// RespondError sends an error response with the given status code.
+func RespondError(c *gin.Context, status int, code, msg string) {
+	c.JSON(status, APIResponse{
+		Success: false,
+		Error:   &APIError{Code: code, Message: msg},
+	})
+}
+
+// MapDomainError translates domain errors to HTTP status codes and error codes.
+func MapDomainError(err error) (int, string, string) {
+	switch {
+	case errors.Is(err, domain.ErrNotFound):
+		return http.StatusNotFound, "NOT_FOUND", "resource not found"
+	case errors.Is(err, domain.ErrUnauthorized):
+		return http.StatusUnauthorized, "UNAUTHORIZED", "unauthorized"
+	case errors.Is(err, domain.ErrForbidden):
+		return http.StatusForbidden, "FORBIDDEN", "forbidden"
+	case errors.Is(err, domain.ErrInvalidCredentials):
+		return http.StatusUnauthorized, "INVALID_CREDENTIALS", "invalid credentials"
+	case errors.Is(err, domain.ErrTenantInactive):
+		return http.StatusForbidden, "TENANT_INACTIVE", "tenant is inactive"
+	case errors.Is(err, domain.ErrUserInactive):
+		return http.StatusForbidden, "USER_INACTIVE", "user is inactive"
+	case errors.Is(err, domain.ErrUnsupportedFileType):
+		return http.StatusBadRequest, "UNSUPPORTED_FILE_TYPE", "unsupported file type; allowed: pdf, jpg, png"
+	case errors.Is(err, domain.ErrFileTooLarge):
+		return http.StatusRequestEntityTooLarge, "FILE_TOO_LARGE", "file exceeds maximum allowed size"
+	case errors.Is(err, domain.ErrDuplicateEmail):
+		return http.StatusConflict, "DUPLICATE_EMAIL", "email already exists for this tenant"
+	case errors.Is(err, domain.ErrDuplicateTenantSlug):
+		return http.StatusConflict, "DUPLICATE_SLUG", "tenant slug already exists"
+	case errors.Is(err, domain.ErrUploadFailed):
+		return http.StatusInternalServerError, "UPLOAD_FAILED", "file upload to storage failed"
+	default:
+		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
+	}
+}
+
+// HandleError maps a domain error and sends the appropriate error response.
+func HandleError(c *gin.Context, err error) {
+	status, code, msg := MapDomainError(err)
+	RespondError(c, status, code, msg)
+}
