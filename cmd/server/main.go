@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"satvos/internal/config"
@@ -12,14 +13,20 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
+		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	db, err := postgres.NewDB(cfg.DB)
+	db, err := postgres.NewDB(&cfg.DB)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 	defer db.Close()
 
@@ -29,14 +36,14 @@ func main() {
 	fileRepo := postgres.NewFileMetaRepo(db)
 
 	// Initialize storage
-	s3Client, err := s3storage.NewS3Client(cfg.S3)
+	s3Client, err := s3storage.NewS3Client(&cfg.S3)
 	if err != nil {
-		log.Fatalf("failed to initialize S3 client: %v", err)
+		return fmt.Errorf("failed to initialize S3 client: %w", err)
 	}
 
 	// Initialize services
 	authSvc := service.NewAuthService(userRepo, tenantRepo, cfg.JWT)
-	fileSvc := service.NewFileService(fileRepo, s3Client, cfg.S3)
+	fileSvc := service.NewFileService(fileRepo, s3Client, &cfg.S3)
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
 
@@ -52,6 +59,8 @@ func main() {
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {
-		log.Fatalf("server failed: %v", err)
+		return fmt.Errorf("server failed: %w", err)
 	}
+
+	return nil
 }

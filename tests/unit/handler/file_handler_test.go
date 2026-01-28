@@ -51,7 +51,7 @@ func TestFileHandler_Upload_Success(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("file", "test.pdf")
-	part.Write([]byte("%PDF-1.4 test content"))
+	_, _ = part.Write([]byte("%PDF-1.4 test content"))
 	writer.Close()
 
 	w := httptest.NewRecorder()
@@ -80,7 +80,7 @@ func TestFileHandler_Upload_NoFile(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/files/upload", http.NoBody)
 	setAuthContext(c, tenantID, userID, "member")
 
 	h.Upload(c)
@@ -94,7 +94,7 @@ func TestFileHandler_Upload_NoAuthContext(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/files/upload", nil)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/files/upload", http.NoBody)
 
 	h.Upload(c)
 
@@ -116,7 +116,7 @@ func TestFileHandler_List_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files?offset=0&limit=20", nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files?offset=0&limit=20", http.NoBody)
 	setAuthContext(c, tenantID, userID, "member")
 
 	h.List(c)
@@ -153,7 +153,7 @@ func TestFileHandler_GetByID_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files/"+fileID.String(), nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files/"+fileID.String(), http.NoBody)
 	c.Params = gin.Params{{Key: "id", Value: fileID.String()}}
 	setAuthContext(c, tenantID, userID, "member")
 
@@ -175,7 +175,7 @@ func TestFileHandler_GetByID_NotFound(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files/"+fileID.String(), nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files/"+fileID.String(), http.NoBody)
 	c.Params = gin.Params{{Key: "id", Value: fileID.String()}}
 	setAuthContext(c, tenantID, userID, "member")
 
@@ -193,7 +193,7 @@ func TestFileHandler_GetByID_InvalidID(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files/not-a-uuid", nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/files/not-a-uuid", http.NoBody)
 	c.Params = gin.Params{{Key: "id", Value: "not-a-uuid"}}
 	setAuthContext(c, tenantID, userID, "member")
 
@@ -214,7 +214,7 @@ func TestFileHandler_Delete_Success(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodDelete, "/api/v1/files/"+fileID.String(), nil)
+	c.Request, _ = http.NewRequest(http.MethodDelete, "/api/v1/files/"+fileID.String(), http.NoBody)
 	c.Params = gin.Params{{Key: "id", Value: fileID.String()}}
 	setAuthContext(c, tenantID, userID, "admin")
 

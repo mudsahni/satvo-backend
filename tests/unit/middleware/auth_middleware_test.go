@@ -50,14 +50,14 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/test", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Bearer valid-token")
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	var resp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &resp)
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	assert.Equal(t, tenantID.String(), resp["tenant_id"])
 	assert.Equal(t, userID.String(), resp["user_id"])
 	assert.Equal(t, "member", resp["role"])
@@ -74,7 +74,7 @@ func TestAuthMiddleware_MissingHeader(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/test", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/test", http.NoBody)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
@@ -90,7 +90,7 @@ func TestAuthMiddleware_MalformedBearer(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/test", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Basic some-token")
 	r.ServeHTTP(w, req)
 
@@ -108,7 +108,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/test", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/test", http.NoBody)
 	req.Header.Set("Authorization", "Bearer expired-token")
 	r.ServeHTTP(w, req)
 
@@ -127,7 +127,7 @@ func TestRequireRole_Allowed(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/admin", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/admin", http.NoBody)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -144,7 +144,7 @@ func TestRequireRole_Forbidden(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/admin", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/admin", http.NoBody)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
@@ -157,7 +157,7 @@ func TestRequireRole_NoRole(t *testing.T) {
 	})
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest(http.MethodGet, "/admin", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/admin", http.NoBody)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)

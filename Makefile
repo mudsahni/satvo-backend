@@ -1,4 +1,4 @@
-.PHONY: build run test test-unit lint migrate-up migrate-down docker-build docker-up docker-down
+.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down
 
 include .env
 export $(shell sed 's/=.*//' .env)
@@ -17,6 +17,9 @@ test-unit:
 
 lint:
 	golangci-lint run ./...
+
+lint-fix:
+	golangci-lint run --fix ./...
 
 migrate-up:
 	go run ./cmd/migrate up

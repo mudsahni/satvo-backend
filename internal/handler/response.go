@@ -54,7 +54,7 @@ func RespondError(c *gin.Context, status int, code, msg string) {
 }
 
 // MapDomainError translates domain errors to HTTP status codes and error codes.
-func MapDomainError(err error) (int, string, string) {
+func MapDomainError(err error) (status int, code, msg string) {
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		return http.StatusNotFound, "NOT_FOUND", "resource not found"

@@ -38,7 +38,7 @@ func createMultipartFile(filename string, content []byte, contentType string) (m
 	h.Set("Content-Type", contentType)
 
 	part, _ := writer.CreatePart(h)
-	part.Write(content)
+	_, _ = part.Write(content)
 	writer.Close()
 
 	reader := multipart.NewReader(body, writer.Boundary())
@@ -59,17 +59,11 @@ func pngContent() []byte {
 	return append(header, bytes.Repeat([]byte{0x00}, 100)...)
 }
 
-// jpegContent returns minimal valid JPEG bytes (magic bytes).
-func jpegContent() []byte {
-	header := []byte{0xFF, 0xD8, 0xFF, 0xE0}
-	return append(header, bytes.Repeat([]byte{0x00}, 100)...)
-}
-
 func TestFileService_Upload_Success_PDF(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -102,7 +96,7 @@ func TestFileService_Upload_Success_PNG(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -130,7 +124,7 @@ func TestFileService_Upload_UnsupportedExtension(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	file, header := createMultipartFile("malware.exe", []byte("MZ fake exe content"), "application/octet-stream")
 	defer file.Close()
@@ -151,7 +145,7 @@ func TestFileService_Upload_FileTooLarge(t *testing.T) {
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
 	cfg.MaxFileSizeMB = 1 // 1MB limit
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	// Create a file header with size exceeding limit
 	file, header := createMultipartFile("large.pdf", pdfContent(), "application/pdf")
@@ -173,7 +167,7 @@ func TestFileService_Upload_StorageFailure(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	file, header := createMultipartFile("document.pdf", pdfContent(), "application/pdf")
@@ -202,7 +196,7 @@ func TestFileService_GetByID_Success(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -224,7 +218,7 @@ func TestFileService_GetByID_NotFound(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -241,7 +235,7 @@ func TestFileService_Delete_Success(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -268,7 +262,7 @@ func TestFileService_List_Success(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	expected := []domain.FileMeta{
@@ -289,7 +283,7 @@ func TestFileService_GetDownloadURL_Success(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	storage := new(mocks.MockObjectStorage)
 	cfg := testS3Config()
-	svc := service.NewFileService(fileRepo, storage, cfg)
+	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()

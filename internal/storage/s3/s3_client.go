@@ -22,7 +22,7 @@ type s3Client struct {
 }
 
 // NewS3Client creates a new S3-backed ObjectStorage implementation.
-func NewS3Client(cfg config.S3Config) (port.ObjectStorage, error) {
+func NewS3Client(cfg *config.S3Config) (port.ObjectStorage, error) {
 	var opts []func(*awsconfig.LoadOptions) error
 	opts = append(opts, awsconfig.WithRegion(cfg.Region))
 
