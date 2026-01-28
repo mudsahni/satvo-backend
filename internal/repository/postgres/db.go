@@ -10,7 +10,7 @@ import (
 )
 
 // NewDB creates a new PostgreSQL connection pool.
-func NewDB(cfg config.DBConfig) (*sqlx.DB, error) {
+func NewDB(cfg *config.DBConfig) (*sqlx.DB, error) {
 	db, err := sqlx.Connect("pgx", cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("connecting to postgres: %w", err)

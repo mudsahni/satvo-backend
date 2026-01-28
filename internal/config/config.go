@@ -38,7 +38,7 @@ type DBConfig struct {
 }
 
 // DSN returns the PostgreSQL connection string.
-func (d DBConfig) DSN() string {
+func (d *DBConfig) DSN() string {
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
 		d.User, d.Password, d.Host, d.Port, d.Name, d.SSLMode,

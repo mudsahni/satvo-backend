@@ -1,0 +1,43 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gosimple
+    - typecheck
+    - gocritic
+    - gosec
+    - misspell
+    - prealloc
+    - unconvert
+    - unparam
+
+linters-settings:
+  govet:
+    shadow: true
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+  gosec:
+    excludes:
+      - G101 # false positives on variable names like "token"
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - unparam
+    - path: mocks/
+      linters:
+        - unused
+        - unparam

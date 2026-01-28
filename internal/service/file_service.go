@@ -36,14 +36,14 @@ type FileService interface {
 type fileService struct {
 	fileRepo port.FileMetaRepository
 	storage  port.ObjectStorage
-	cfg      config.S3Config
+	cfg      *config.S3Config
 }
 
 // NewFileService creates a new FileService implementation.
 func NewFileService(
 	fileRepo port.FileMetaRepository,
 	storage port.ObjectStorage,
-	cfg config.S3Config,
+	cfg *config.S3Config,
 ) FileService {
 	return &fileService{
 		fileRepo: fileRepo,
