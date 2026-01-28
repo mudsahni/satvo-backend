@@ -173,105 +173,210 @@ Error responses:
 }
 ```
 
+---
+
 ### Health
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/healthz` | None | Liveness probe (always 200) |
-| `GET` | `/readyz` | None | Readiness probe (checks DB) |
+#### Liveness probe
+
+```bash
+curl http://localhost:8080/api/v1/healthz
+```
+
+#### Readiness probe (checks DB)
+
+```bash
+curl http://localhost:8080/api/v1/readyz
+```
+
+---
 
 ### Authentication
 
-#### `POST /auth/login`
+#### Login
 
-```json
-{
-  "tenant_slug": "acme",
-  "email": "admin@acme.com",
-  "password": "securepassword"
-}
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenant_slug": "acme",
+    "email": "admin@acme.com",
+    "password": "securepassword"
+  }'
 ```
 
 Response:
 
 ```json
 {
-  "access_token": "eyJ...",
-  "refresh_token": "eyJ...",
-  "expires_at": "2025-01-01T00:15:00Z"
+  "success": true,
+  "data": {
+    "access_token": "eyJ...",
+    "refresh_token": "eyJ...",
+    "expires_at": "2025-01-01T00:15:00Z"
+  }
 }
 ```
 
-#### `POST /auth/refresh`
+#### Refresh token
 
-```json
-{
-  "refresh_token": "eyJ..."
-}
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refresh_token": "eyJ..."
+  }'
 ```
 
-Returns a new token pair.
+Returns a new access/refresh token pair in the same format as login.
+
+---
 
 ### Files
 
 All file endpoints require `Authorization: Bearer {access_token}`.
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/files/upload` | User | Upload a file (multipart/form-data) |
-| `GET` | `/files` | User | List files (paginated: `?offset=0&limit=20`) |
-| `GET` | `/files/:id` | User | Get file metadata + presigned download URL |
-| `DELETE` | `/files/:id` | Admin | Soft-delete a file |
+#### Upload a file
 
-**Upload** (`POST /files/upload`):
-- Content-Type: `multipart/form-data`
-- Form field: `file`
+```bash
+curl -X POST http://localhost:8080/api/v1/files/upload \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@/path/to/document.pdf"
+```
+
 - Allowed types: PDF, JPG/JPEG, PNG
 - Max size: 50 MB (configurable)
 - Validates both file extension and magic bytes
+- S3 key format: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
 
-**S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
+#### List files (paginated)
+
+```bash
+curl http://localhost:8080/api/v1/files?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Get file details + presigned download URL
+
+```bash
+curl http://localhost:8080/api/v1/files/<file_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Delete a file (admin only)
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/files/<file_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
 
 ### Users
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/users` | Admin | Create a user |
-| `GET` | `/users` | Admin | List users (paginated) |
-| `GET` | `/users/:id` | Self/Admin | Get user details |
-| `PUT` | `/users/:id` | Self/Admin | Update user |
-| `DELETE` | `/users/:id` | Admin | Delete user |
+#### Create a user (admin only)
 
-**Create user** (`POST /users`):
-
-```json
-{
-  "email": "user@acme.com",
-  "password": "min8chars",
-  "full_name": "Jane Doe",
-  "role": "member"
-}
+```bash
+curl -X POST http://localhost:8080/api/v1/users \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "jane@acme.com",
+    "password": "min8chars",
+    "full_name": "Jane Doe",
+    "role": "member"
+  }'
 ```
 
 Roles: `admin`, `member`. Email is unique per tenant.
 
+#### List users (admin only, paginated)
+
+```bash
+curl http://localhost:8080/api/v1/users?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Get user details (self or admin)
+
+```bash
+curl http://localhost:8080/api/v1/users/<user_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Update a user (self or admin)
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/users/<user_id> \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "full_name": "Jane Smith",
+    "role": "admin",
+    "is_active": true
+  }'
+```
+
+All fields are optional. Admins can change `role` and `is_active`; users can update their own `email` and `full_name`.
+
+#### Delete a user (admin only)
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/users/<user_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
 ### Tenants
 
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/admin/tenants` | Admin | Create tenant |
-| `GET` | `/admin/tenants` | Admin | List tenants (paginated) |
-| `GET` | `/admin/tenants/:id` | Admin | Get tenant |
-| `PUT` | `/admin/tenants/:id` | Admin | Update tenant |
-| `DELETE` | `/admin/tenants/:id` | Admin | Delete tenant |
+All tenant endpoints require admin role.
 
-**Create tenant** (`POST /admin/tenants`):
+#### Create a tenant
 
-```json
-{
-  "name": "Acme Corp",
-  "slug": "acme"
-}
+```bash
+curl -X POST http://localhost:8080/api/v1/admin/tenants \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Corp",
+    "slug": "acme"
+  }'
+```
+
+#### List tenants (paginated)
+
+```bash
+curl http://localhost:8080/api/v1/admin/tenants?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Get tenant details
+
+```bash
+curl http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Update a tenant
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Industries",
+    "is_active": false
+  }'
+```
+
+All fields (`name`, `slug`, `is_active`) are optional.
+
+#### Delete a tenant
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
+  -H "Authorization: Bearer <access_token>"
 ```
 
 ## Authentication & Authorization
@@ -305,4 +410,4 @@ Roles: `admin`, `member`. Email is unique per tenant.
 docker build -t satvos:latest .
 ```
 
-Multi-stage build: `golang:1.23-alpine` (build) -> `alpine:3.20` (runtime). Produces a minimal image with the compiled binary and migration files.
+Multi-stage build: `golang:1.24-alpine` (build) -> `alpine:3.20` (runtime). Produces a minimal image with the server binary, migrate binary, migration files, and a startup script that runs migrations before starting the server.
