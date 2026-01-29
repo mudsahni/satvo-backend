@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
+
+	"github.com/gin-gonic/gin"
 
 	"satvos/internal/config"
 	"satvos/internal/handler"
@@ -19,9 +22,15 @@ func main() {
 }
 
 func run() error {
+	log.SetOutput(os.Stdout)
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	if cfg.Server.Environment == "production" {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	db, err := postgres.NewDB(&cfg.DB)
