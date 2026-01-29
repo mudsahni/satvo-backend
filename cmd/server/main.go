@@ -43,6 +43,9 @@ func run() error {
 	tenantRepo := postgres.NewTenantRepo(db)
 	userRepo := postgres.NewUserRepo(db)
 	fileRepo := postgres.NewFileMetaRepo(db)
+	collectionRepo := postgres.NewCollectionRepo(db)
+	collectionPermRepo := postgres.NewCollectionPermissionRepo(db)
+	collectionFileRepo := postgres.NewCollectionFileRepo(db)
 
 	// Initialize storage
 	s3Client, err := s3storage.NewS3Client(&cfg.S3)
@@ -55,16 +58,18 @@ func run() error {
 	fileSvc := service.NewFileService(fileRepo, s3Client, &cfg.S3)
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
+	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
 
 	// Initialize handlers
 	authH := handler.NewAuthHandler(authSvc)
-	fileH := handler.NewFileHandler(fileSvc)
+	fileH := handler.NewFileHandler(fileSvc, collectionSvc)
 	tenantH := handler.NewTenantHandler(tenantSvc)
 	userH := handler.NewUserHandler(userSvc)
 	healthH := handler.NewHealthHandler(db)
+	collectionH := handler.NewCollectionHandler(collectionSvc)
 
 	// Setup router
-	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH)
+	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH)
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {

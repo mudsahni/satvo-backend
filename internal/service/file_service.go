@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
@@ -104,8 +105,12 @@ func (s *fileService) Upload(ctx context.Context, input FileUploadInput) (*domai
 		Status:       domain.FileStatusPending,
 	}
 
+	log.Printf("fileService.Upload: uploading file %s (%s, %d bytes) for tenant %s by user %s",
+		input.Header.Filename, contentType, input.Header.Size, input.TenantID, input.UploadedBy)
+
 	// Persist metadata with pending status
 	if err := s.fileRepo.Create(ctx, meta); err != nil {
+		log.Printf("fileService.Upload: failed to create file metadata: %v", err)
 		return nil, fmt.Errorf("creating file metadata: %w", err)
 	}
 
@@ -118,6 +123,7 @@ func (s *fileService) Upload(ctx context.Context, input FileUploadInput) (*domai
 		Size:        input.Header.Size,
 	})
 	if err != nil {
+		log.Printf("fileService.Upload: S3 upload failed for file %s: %v", meta.ID, err)
 		// Mark as failed
 		_ = s.fileRepo.UpdateStatus(ctx, meta.TenantID, meta.ID, domain.FileStatusFailed)
 		return nil, domain.ErrUploadFailed
@@ -149,12 +155,15 @@ func (s *fileService) GetDownloadURL(ctx context.Context, tenantID, fileID uuid.
 }
 
 func (s *fileService) Delete(ctx context.Context, tenantID, fileID uuid.UUID) error {
+	log.Printf("fileService.Delete: deleting file %s for tenant %s", fileID, tenantID)
+
 	meta, err := s.fileRepo.GetByID(ctx, tenantID, fileID)
 	if err != nil {
 		return err
 	}
 
 	if err := s.storage.Delete(ctx, meta.S3Bucket, meta.S3Key); err != nil {
+		log.Printf("fileService.Delete: failed to delete from S3: %v", err)
 		return fmt.Errorf("deleting from storage: %w", err)
 	}
 

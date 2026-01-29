@@ -28,7 +28,7 @@ func setAuthContext(c *gin.Context, tenantID, userID uuid.UUID, role string) {
 
 func TestFileHandler_Upload_Success(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -73,7 +73,7 @@ func TestFileHandler_Upload_Success(t *testing.T) {
 
 func TestFileHandler_Upload_NoFile(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -90,7 +90,7 @@ func TestFileHandler_Upload_NoFile(t *testing.T) {
 
 func TestFileHandler_Upload_NoAuthContext(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -103,7 +103,7 @@ func TestFileHandler_Upload_NoAuthContext(t *testing.T) {
 
 func TestFileHandler_List_Success(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -133,7 +133,7 @@ func TestFileHandler_List_Success(t *testing.T) {
 
 func TestFileHandler_GetByID_Success(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -165,7 +165,7 @@ func TestFileHandler_GetByID_Success(t *testing.T) {
 
 func TestFileHandler_GetByID_NotFound(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -186,7 +186,7 @@ func TestFileHandler_GetByID_NotFound(t *testing.T) {
 
 func TestFileHandler_GetByID_InvalidID(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -204,7 +204,7 @@ func TestFileHandler_GetByID_InvalidID(t *testing.T) {
 
 func TestFileHandler_Delete_Success(t *testing.T) {
 	mockFileSvc := new(mocks.MockFileService)
-	h := handler.NewFileHandler(mockFileSvc)
+	h := handler.NewFileHandler(mockFileSvc, nil)
 
 	tenantID := uuid.New()
 	userID := uuid.New()

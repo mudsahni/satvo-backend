@@ -39,6 +39,37 @@ const (
 	RoleMember UserRole = "member"
 )
 
+// CollectionPermission defines the access level for a collection.
+type CollectionPermission string
+
+const (
+	CollectionPermOwner  CollectionPermission = "owner"
+	CollectionPermEditor CollectionPermission = "editor"
+	CollectionPermViewer CollectionPermission = "viewer"
+)
+
+// ValidCollectionPermissions maps valid permission strings.
+var ValidCollectionPermissions = map[CollectionPermission]bool{
+	CollectionPermOwner:  true,
+	CollectionPermEditor: true,
+	CollectionPermViewer: true,
+}
+
+// CollectionPermLevel returns the numeric level for permission comparison.
+// Higher value = more access.
+func CollectionPermLevel(p CollectionPermission) int {
+	switch p {
+	case CollectionPermOwner:
+		return 3
+	case CollectionPermEditor:
+		return 2
+	case CollectionPermViewer:
+		return 1
+	default:
+		return 0
+	}
+}
+
 // FileStatus represents the lifecycle of an uploaded file.
 type FileStatus string
 

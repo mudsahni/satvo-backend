@@ -29,6 +29,37 @@ type User struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Collection represents a grouping of files within a tenant.
+type Collection struct {
+	ID          uuid.UUID `db:"id" json:"id"`
+	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name        string    `db:"name" json:"name"`
+	Description string    `db:"description" json:"description"`
+	CreatedBy   uuid.UUID `db:"created_by" json:"created_by"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// CollectionPermissionEntry represents a user's permission on a collection.
+type CollectionPermissionEntry struct {
+	ID           uuid.UUID            `db:"id" json:"id"`
+	CollectionID uuid.UUID            `db:"collection_id" json:"collection_id"`
+	TenantID     uuid.UUID            `db:"tenant_id" json:"tenant_id"`
+	UserID       uuid.UUID            `db:"user_id" json:"user_id"`
+	Permission   CollectionPermission `db:"permission" json:"permission"`
+	GrantedBy    uuid.UUID            `db:"granted_by" json:"granted_by"`
+	CreatedAt    time.Time            `db:"created_at" json:"created_at"`
+}
+
+// CollectionFile represents the association between a collection and a file.
+type CollectionFile struct {
+	CollectionID uuid.UUID `db:"collection_id" json:"collection_id"`
+	FileID       uuid.UUID `db:"file_id" json:"file_id"`
+	TenantID     uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	AddedBy      uuid.UUID `db:"added_by" json:"added_by"`
+	AddedAt      time.Time `db:"added_at" json:"added_at"`
+}
+
 // FileMeta stores metadata about an uploaded file.
 type FileMeta struct {
 	ID           uuid.UUID  `db:"id" json:"id"`
