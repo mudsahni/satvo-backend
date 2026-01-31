@@ -39,7 +39,7 @@ func (m *MockCollectionService) List(ctx context.Context, tenantID, userID uuid.
 	return args.Get(0).([]domain.Collection), args.Int(1), args.Error(2)
 }
 
-func (m *MockCollectionService) Update(ctx context.Context, input service.UpdateCollectionInput) (*domain.Collection, error) {
+func (m *MockCollectionService) Update(ctx context.Context, input *service.UpdateCollectionInput) (*domain.Collection, error) {
 	args := m.Called(ctx, input)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -78,7 +78,7 @@ func (m *MockCollectionService) AddFileToCollection(ctx context.Context, tenantI
 	return args.Error(0)
 }
 
-func (m *MockCollectionService) SetPermission(ctx context.Context, input service.SetPermissionInput) error {
+func (m *MockCollectionService) SetPermission(ctx context.Context, input *service.SetPermissionInput) error {
 	args := m.Called(ctx, input)
 	return args.Error(0)
 }

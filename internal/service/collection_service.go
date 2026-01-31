@@ -57,13 +57,13 @@ type CollectionService interface {
 	Create(ctx context.Context, input CreateCollectionInput) (*domain.Collection, error)
 	GetByID(ctx context.Context, tenantID, collectionID, userID uuid.UUID) (*domain.Collection, error)
 	List(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Collection, int, error)
-	Update(ctx context.Context, input UpdateCollectionInput) (*domain.Collection, error)
+	Update(ctx context.Context, input *UpdateCollectionInput) (*domain.Collection, error)
 	Delete(ctx context.Context, tenantID, collectionID, userID uuid.UUID) error
 	ListFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error)
 	BatchUploadFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, files []BatchUploadFileInput) ([]BatchUploadResult, error)
 	RemoveFile(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID) error
 	AddFileToCollection(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID) error
-	SetPermission(ctx context.Context, input SetPermissionInput) error
+	SetPermission(ctx context.Context, input *SetPermissionInput) error
 	ListPermissions(ctx context.Context, tenantID, collectionID, userID uuid.UUID, offset, limit int) ([]domain.CollectionPermissionEntry, int, error)
 	RemovePermission(ctx context.Context, tenantID, collectionID, targetUserID, userID uuid.UUID) error
 }
@@ -147,7 +147,7 @@ func (s *collectionService) List(ctx context.Context, tenantID, userID uuid.UUID
 	return s.collectionRepo.ListByUser(ctx, tenantID, userID, offset, limit)
 }
 
-func (s *collectionService) Update(ctx context.Context, input UpdateCollectionInput) (*domain.Collection, error) {
+func (s *collectionService) Update(ctx context.Context, input *UpdateCollectionInput) (*domain.Collection, error) {
 	if err := s.requirePermission(ctx, input.CollectionID, input.UserID, domain.CollectionPermOwner); err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (s *collectionService) AddFileToCollection(ctx context.Context, tenantID, c
 	return s.fileRepo.Add(ctx, cf)
 }
 
-func (s *collectionService) SetPermission(ctx context.Context, input SetPermissionInput) error {
+func (s *collectionService) SetPermission(ctx context.Context, input *SetPermissionInput) error {
 	if !domain.ValidCollectionPermissions[input.Permission] {
 		return domain.ErrInvalidPermission
 	}

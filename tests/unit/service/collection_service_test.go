@@ -193,7 +193,7 @@ func TestCollectionService_Update_Success(t *testing.T) {
 	collRepo.On("GetByID", mock.Anything, tenantID, collectionID).Return(existing, nil)
 	collRepo.On("Update", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
 
-	result, err := svc.Update(context.Background(), service.UpdateCollectionInput{
+	result, err := svc.Update(context.Background(), &service.UpdateCollectionInput{
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		UserID:       userID,
@@ -215,7 +215,7 @@ func TestCollectionService_Update_NotOwner(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(editorPerm(collectionID, userID), nil)
 
-	result, err := svc.Update(context.Background(), service.UpdateCollectionInput{
+	result, err := svc.Update(context.Background(), &service.UpdateCollectionInput{
 		TenantID:     uuid.New(),
 		CollectionID: collectionID,
 		UserID:       userID,
@@ -381,7 +381,7 @@ func TestCollectionService_SetPermission_Success(t *testing.T) {
 		Return(ownerPerm(collectionID, ownerID), nil)
 	permRepo.On("Upsert", mock.Anything, mock.AnythingOfType("*domain.CollectionPermissionEntry")).Return(nil)
 
-	err := svc.SetPermission(context.Background(), service.SetPermissionInput{
+	err := svc.SetPermission(context.Background(), &service.SetPermissionInput{
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		GrantedBy:    ownerID,
@@ -396,7 +396,7 @@ func TestCollectionService_SetPermission_Success(t *testing.T) {
 func TestCollectionService_SetPermission_InvalidPermission(t *testing.T) {
 	svc, _, _, _, _ := setupCollectionService()
 
-	err := svc.SetPermission(context.Background(), service.SetPermissionInput{
+	err := svc.SetPermission(context.Background(), &service.SetPermissionInput{
 		TenantID:     uuid.New(),
 		CollectionID: uuid.New(),
 		GrantedBy:    uuid.New(),
@@ -416,7 +416,7 @@ func TestCollectionService_SetPermission_NotOwner(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, editorID).
 		Return(editorPerm(collectionID, editorID), nil)
 
-	err := svc.SetPermission(context.Background(), service.SetPermissionInput{
+	err := svc.SetPermission(context.Background(), &service.SetPermissionInput{
 		TenantID:     uuid.New(),
 		CollectionID: collectionID,
 		GrantedBy:    editorID,

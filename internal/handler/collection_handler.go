@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"mime/multipart"
 	"net/http"
 	"strconv"
 
@@ -150,7 +151,7 @@ func (h *CollectionHandler) Update(c *gin.Context) {
 		return
 	}
 
-	collection, err := h.collectionService.Update(c.Request.Context(), service.UpdateCollectionInput{
+	collection, err := h.collectionService.Update(c.Request.Context(), &service.UpdateCollectionInput{
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		UserID:       userID,
@@ -223,14 +224,20 @@ func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 		return
 	}
 
-	var inputs []service.BatchUploadFileInput
+	inputs := make([]service.BatchUploadFileInput, 0, len(fileHeaders))
+	openFiles := make([]multipart.File, 0, len(fileHeaders))
+	defer func() {
+		for _, f := range openFiles {
+			f.Close()
+		}
+	}()
 	for _, fh := range fileHeaders {
 		f, err := fh.Open()
 		if err != nil {
 			RespondError(c, http.StatusBadRequest, "FILE_READ_ERROR", "failed to read uploaded file")
 			return
 		}
-		defer f.Close()
+		openFiles = append(openFiles, f)
 		inputs = append(inputs, service.BatchUploadFileInput{
 			File:   f,
 			Header: fh,
@@ -313,7 +320,7 @@ func (h *CollectionHandler) SetPermission(c *gin.Context) {
 	}
 
 	var req struct {
-		UserID     uuid.UUID                    `json:"user_id" binding:"required"`
+		UserID     uuid.UUID                   `json:"user_id" binding:"required"`
 		Permission domain.CollectionPermission `json:"permission" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -321,7 +328,7 @@ func (h *CollectionHandler) SetPermission(c *gin.Context) {
 		return
 	}
 
-	if err := h.collectionService.SetPermission(c.Request.Context(), service.SetPermissionInput{
+	if err := h.collectionService.SetPermission(c.Request.Context(), &service.SetPermissionInput{
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		GrantedBy:    userID,
@@ -399,9 +406,9 @@ func (h *CollectionHandler) RemovePermission(c *gin.Context) {
 }
 
 // parsePagination extracts offset and limit from query params with defaults.
-func parsePagination(c *gin.Context) (int, int) {
-	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+func parsePagination(c *gin.Context) (offset, limit int) {
+	offset, _ = strconv.Atoi(c.DefaultQuery("offset", "0"))
+	limit, _ = strconv.Atoi(c.DefaultQuery("limit", "20"))
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}

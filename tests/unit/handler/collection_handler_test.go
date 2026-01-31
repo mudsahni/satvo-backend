@@ -229,7 +229,7 @@ func TestCollectionHandler_Update_Success(t *testing.T) {
 
 	updated := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Updated"}
 
-	mockSvc.On("Update", mock.Anything, mock.AnythingOfType("service.UpdateCollectionInput")).
+	mockSvc.On("Update", mock.Anything, mock.AnythingOfType("*service.UpdateCollectionInput")).
 		Return(updated, nil)
 
 	body, _ := json.Marshal(map[string]string{
@@ -375,7 +375,7 @@ func TestCollectionHandler_SetPermission_Success(t *testing.T) {
 	collectionID := uuid.New()
 	targetUserID := uuid.New()
 
-	mockSvc.On("SetPermission", mock.Anything, mock.AnythingOfType("service.SetPermissionInput")).Return(nil)
+	mockSvc.On("SetPermission", mock.Anything, mock.AnythingOfType("*service.SetPermissionInput")).Return(nil)
 
 	body, _ := json.Marshal(map[string]string{
 		"user_id":    targetUserID.String(),
