@@ -1,6 +1,6 @@
 # SATVOS
 
-A multi-tenant, secure file upload service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, and AWS S3 storage.
+A multi-tenant, secure file upload service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, AWS S3 storage, and document collections with permission-based access control.
 
 ## Architecture
 
@@ -146,7 +146,7 @@ go run ./cmd/migrate steps N     # Apply N migrations
 go run ./cmd/migrate version     # Show current version
 ```
 
-Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade).
+Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade).
 
 ## API Reference
 
@@ -244,10 +244,20 @@ curl -X POST http://localhost:8080/api/v1/files/upload \
   -F "file=@/path/to/document.pdf"
 ```
 
+Optionally add the file to a collection during upload:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/files/upload \
+  -H "Authorization: Bearer <access_token>" \
+  -F "file=@/path/to/document.pdf" \
+  -F "collection_id=<collection_id>"
+```
+
 - Allowed types: PDF, JPG/JPEG, PNG
 - Max size: 50 MB (configurable)
 - Validates both file extension and magic bytes
 - S3 key format: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
+- If `collection_id` is provided but association fails, the file is still uploaded and a warning is returned
 
 #### List files (paginated)
 
@@ -267,6 +277,119 @@ curl http://localhost:8080/api/v1/files/<file_id> \
 
 ```bash
 curl -X DELETE http://localhost:8080/api/v1/files/<file_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+---
+
+### Collections
+
+Collections group files together with permission-based access control. A file can belong to multiple collections or none. Deleting a collection preserves the underlying files.
+
+**Permissions**: `owner` (full control), `editor` (add/remove files), `viewer` (read-only). The creator is automatically assigned `owner`.
+
+All collection endpoints require `Authorization: Bearer {access_token}`.
+
+#### Create a collection
+
+```bash
+curl -X POST http://localhost:8080/api/v1/collections \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Q4 Reports",
+    "description": "Quarterly financial reports"
+  }'
+```
+
+#### List collections (paginated)
+
+Returns only collections the authenticated user has access to.
+
+```bash
+curl http://localhost:8080/api/v1/collections?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Get collection details (viewer+)
+
+Returns the collection along with a paginated list of its files.
+
+```bash
+curl http://localhost:8080/api/v1/collections/<collection_id>?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Update a collection (owner only)
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/collections/<collection_id> \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Q4 Reports 2025",
+    "description": "Updated description"
+  }'
+```
+
+#### Delete a collection (owner only)
+
+Deletes the collection and its permission/file associations. Files themselves are preserved.
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/collections/<collection_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Batch upload files to a collection (editor+)
+
+Upload multiple files at once via multipart form. Each file is processed independently. Returns 201 if all succeed, 207 Multi-Status on partial success.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/collections/<collection_id>/files \
+  -H "Authorization: Bearer <access_token>" \
+  -F "files=@/path/to/doc1.pdf" \
+  -F "files=@/path/to/doc2.jpg"
+```
+
+#### Remove a file from a collection (editor+)
+
+Removes the association only; the file itself is not deleted.
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/collections/<collection_id>/files/<file_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Set a user's permission on a collection (owner only)
+
+Upserts the permission (creates or updates).
+
+```bash
+curl -X POST http://localhost:8080/api/v1/collections/<collection_id>/permissions \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "<user_id>",
+    "permission": "editor"
+  }'
+```
+
+Valid permissions: `owner`, `editor`, `viewer`.
+
+#### List permissions on a collection (owner only)
+
+```bash
+curl http://localhost:8080/api/v1/collections/<collection_id>/permissions?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Remove a user's permission (owner only)
+
+Cannot remove your own permission.
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/collections/<collection_id>/permissions/<user_id> \
   -H "Authorization: Bearer <access_token>"
 ```
 
@@ -401,6 +524,11 @@ curl -X DELETE http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
 | `DUPLICATE_EMAIL` | 409 | Email already exists for tenant |
 | `DUPLICATE_SLUG` | 409 | Tenant slug already taken |
 | `UPLOAD_FAILED` | 500 | S3 upload failed |
+| `COLLECTION_NOT_FOUND` | 404 | Collection not found |
+| `COLLECTION_PERMISSION_DENIED` | 403 | Insufficient collection permission |
+| `DUPLICATE_COLLECTION_FILE` | 409 | File already in collection |
+| `SELF_PERMISSION_REMOVAL` | 400 | Cannot remove own permission |
+| `INVALID_PERMISSION` | 400 | Invalid permission value |
 
 ## Docker
 

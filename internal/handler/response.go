@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -78,6 +79,16 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusConflict, "DUPLICATE_SLUG", "tenant slug already exists"
 	case errors.Is(err, domain.ErrUploadFailed):
 		return http.StatusInternalServerError, "UPLOAD_FAILED", "file upload to storage failed"
+	case errors.Is(err, domain.ErrCollectionNotFound):
+		return http.StatusNotFound, "COLLECTION_NOT_FOUND", "collection not found"
+	case errors.Is(err, domain.ErrCollectionPermDenied):
+		return http.StatusForbidden, "COLLECTION_PERMISSION_DENIED", "insufficient collection permission"
+	case errors.Is(err, domain.ErrDuplicateCollectionFile):
+		return http.StatusConflict, "DUPLICATE_COLLECTION_FILE", "file already exists in collection"
+	case errors.Is(err, domain.ErrSelfPermissionRemoval):
+		return http.StatusBadRequest, "SELF_PERMISSION_REMOVAL", "cannot remove your own permission"
+	case errors.Is(err, domain.ErrInvalidPermission):
+		return http.StatusBadRequest, "INVALID_PERMISSION", "invalid collection permission; allowed: owner, editor, viewer"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}
@@ -86,5 +97,9 @@ func MapDomainError(err error) (status int, code, msg string) {
 // HandleError maps a domain error and sends the appropriate error response.
 func HandleError(c *gin.Context, err error) {
 	status, code, msg := MapDomainError(err)
+	if status >= 500 {
+		requestID, _ := c.Get("request_id")
+		log.Printf("[%s] internal error: %v", requestID, err)
+	}
 	RespondError(c, status, code, msg)
 }

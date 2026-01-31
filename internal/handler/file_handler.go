@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -13,12 +14,13 @@ import (
 
 // FileHandler handles file upload and management endpoints.
 type FileHandler struct {
-	fileService service.FileService
+	fileService       service.FileService
+	collectionService service.CollectionService
 }
 
 // NewFileHandler creates a new FileHandler.
-func NewFileHandler(fileService service.FileService) *FileHandler {
-	return &FileHandler{fileService: fileService}
+func NewFileHandler(fileService service.FileService, collectionService service.CollectionService) *FileHandler {
+	return &FileHandler{fileService: fileService, collectionService: collectionService}
 }
 
 // Upload handles POST /api/v1/files/upload
@@ -51,6 +53,33 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	meta, err := h.fileService.Upload(c.Request.Context(), input)
 	if err != nil {
 		HandleError(c, err)
+		return
+	}
+
+	// Optional: add file to a collection if collection_id is provided
+	var warning string
+	if collectionIDStr := c.PostForm("collection_id"); collectionIDStr != "" {
+		collectionID, parseErr := uuid.Parse(collectionIDStr)
+		if parseErr != nil {
+			warning = "invalid collection_id format; file uploaded but not added to collection"
+		} else {
+			addErr := h.collectionService.AddFileToCollection(c.Request.Context(), tenantID, collectionID, meta.ID, userID)
+			if addErr != nil {
+				log.Printf("fileHandler.Upload: failed to add file %s to collection %s: %v",
+					meta.ID, collectionID, addErr)
+				warning = "file uploaded but failed to add to collection: " + addErr.Error()
+			}
+		}
+	}
+
+	if warning != "" {
+		c.JSON(http.StatusCreated, APIResponse{
+			Success: true,
+			Data: gin.H{
+				"file":    meta,
+				"warning": warning,
+			},
+		})
 		return
 	}
 

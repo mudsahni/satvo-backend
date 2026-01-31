@@ -17,6 +17,7 @@ func Setup(
 	tenantH *handler.TenantHandler,
 	userH *handler.UserHandler,
 	healthH *handler.HealthHandler,
+	collectionH *handler.CollectionHandler,
 ) *gin.Engine {
 	r := gin.New()
 
@@ -46,6 +47,19 @@ func Setup(
 	files.GET("", fileH.List)
 	files.GET("/:id", fileH.GetByID)
 	files.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), fileH.Delete)
+
+	// Collection routes
+	collections := protected.Group("/collections")
+	collections.POST("", collectionH.Create)
+	collections.GET("", collectionH.List)
+	collections.GET("/:id", collectionH.GetByID)
+	collections.PUT("/:id", collectionH.Update)
+	collections.DELETE("/:id", collectionH.Delete)
+	collections.POST("/:id/files", collectionH.BatchUploadFiles)
+	collections.DELETE("/:id/files/:fileId", collectionH.RemoveFile)
+	collections.POST("/:id/permissions", collectionH.SetPermission)
+	collections.GET("/:id/permissions", collectionH.ListPermissions)
+	collections.DELETE("/:id/permissions/:userId", collectionH.RemovePermission)
 
 	// User management (tenant-scoped)
 	users := protected.Group("/users")
