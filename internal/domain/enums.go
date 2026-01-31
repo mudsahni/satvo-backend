@@ -70,6 +70,44 @@ func CollectionPermLevel(p CollectionPermission) int {
 	}
 }
 
+// ParsingStatus represents the lifecycle of document parsing.
+type ParsingStatus string
+
+const (
+	ParsingStatusPending    ParsingStatus = "pending"
+	ParsingStatusProcessing ParsingStatus = "processing"
+	ParsingStatusCompleted  ParsingStatus = "completed"
+	ParsingStatusFailed     ParsingStatus = "failed"
+)
+
+// ReviewStatus represents the human review state of a document.
+type ReviewStatus string
+
+const (
+	ReviewStatusPending  ReviewStatus = "pending"
+	ReviewStatusApproved ReviewStatus = "approved"
+	ReviewStatusRejected ReviewStatus = "rejected"
+)
+
+// ValidationRuleType defines the kind of validation to perform.
+type ValidationRuleType string
+
+const (
+	ValidationRuleRequired   ValidationRuleType = "required_field"
+	ValidationRuleRegex      ValidationRuleType = "regex"
+	ValidationRuleSumCheck   ValidationRuleType = "sum_check"
+	ValidationRuleCrossField ValidationRuleType = "cross_field"
+	ValidationRuleCustom     ValidationRuleType = "custom"
+)
+
+// ValidationSeverity defines how critical a validation failure is.
+type ValidationSeverity string
+
+const (
+	ValidationSeverityError   ValidationSeverity = "error"
+	ValidationSeverityWarning ValidationSeverity = "warning"
+)
+
 // FileStatus represents the lifecycle of an uploaded file.
 type FileStatus string
 

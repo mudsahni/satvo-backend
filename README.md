@@ -16,7 +16,9 @@ internal/
   handler/      HTTP request handlers (gin)
   middleware/   Auth, tenant guard, request logging
   service/      Business logic layer
-  port/         Interface definitions (repository, storage)
+  port/         Interface definitions (repository, storage, parser)
+  parser/       LLM parser implementations
+    claude/     Anthropic Claude parser (Messages API)
   repository/   PostgreSQL implementations (sqlx + pgx)
   storage/      S3 client implementation
   router/       Route definitions and middleware wiring
@@ -135,6 +137,13 @@ SATVOS_S3_PRESIGN_EXPIRY=3600            # seconds
 # Logging
 SATVOS_LOG_LEVEL=debug
 SATVOS_LOG_FORMAT=console
+
+# Document Parser (LLM)
+SATVOS_PARSER_PROVIDER=claude              # "claude" (future: "gemini", "openai")
+SATVOS_PARSER_API_KEY=sk-ant-...           # Anthropic API key
+SATVOS_PARSER_DEFAULT_MODEL=claude-sonnet-4-20250514
+SATVOS_PARSER_MAX_RETRIES=2
+SATVOS_PARSER_TIMEOUT_SECS=120
 ```
 
 ## Database Migrations
@@ -146,7 +155,7 @@ go run ./cmd/migrate steps N     # Apply N migrations
 go run ./cmd/migrate version     # Show current version
 ```
 
-Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade).
+Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules`, `document_validation_results` (per-tenant, cascade).
 
 ## API Reference
 
@@ -502,6 +511,159 @@ curl -X DELETE http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
   -H "Authorization: Bearer <access_token>"
 ```
 
+### Documents (AI-Powered Parsing)
+
+Documents represent parsed versions of uploaded files. When you create a document, SATVOS sends the file to an LLM (currently Claude) in a background goroutine which extracts structured invoice data including seller/buyer info, line items, tax breakdowns, and payment details.
+
+**Workflow**: Upload a file -> Create a document (triggers parsing) -> Poll until `parsing_status=completed` -> Review the extracted data -> Approve or reject.
+
+All document endpoints require `Authorization: Bearer {access_token}`.
+
+#### Create a document (triggers parsing)
+
+Links an uploaded file to a collection and begins LLM parsing in the background. The response returns immediately with `parsing_status: "pending"`.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/documents \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "file_id": "<file_id>",
+    "collection_id": "<collection_id>",
+    "document_type": "invoice"
+  }'
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "file_id": "uuid",
+    "collection_id": "uuid",
+    "document_type": "invoice",
+    "parsing_status": "pending",
+    "review_status": "pending",
+    "structured_data": {},
+    "confidence_scores": {}
+  }
+}
+```
+
+#### Get document by ID (poll for results)
+
+```bash
+curl http://localhost:8080/api/v1/documents/<document_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+When parsing completes, `structured_data` contains the extracted invoice JSON (seller, buyer, line items, totals, payment info) and `confidence_scores` mirrors the structure with 0.0-1.0 confidence values per field.
+
+#### List documents (paginated)
+
+Filter by collection or list all for the tenant:
+
+```bash
+# All documents for the tenant
+curl http://localhost:8080/api/v1/documents?offset=0&limit=20 \
+  -H "Authorization: Bearer <access_token>"
+
+# Documents in a specific collection
+curl "http://localhost:8080/api/v1/documents?collection_id=<collection_id>&offset=0&limit=20" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Retry parsing (for failed documents)
+
+Re-triggers LLM parsing for a document that previously failed.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/documents/<document_id>/retry \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Review a document (approve/reject)
+
+Set the human review status after inspecting parsed data. Only works on documents with `parsing_status=completed`.
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/documents/<document_id>/review \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "approved",
+    "notes": "Data verified against source document"
+  }'
+```
+
+Valid statuses: `approved`, `rejected`.
+
+#### Delete a document (admin only)
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/documents/<document_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Parsed Invoice Schema
+
+When parsing completes, `structured_data` contains:
+
+```json
+{
+  "invoice": {
+    "invoice_number": "INV-2024-001",
+    "invoice_date": "2024-01-15",
+    "due_date": "2024-02-15",
+    "invoice_type": "tax_invoice",
+    "currency": "INR",
+    "place_of_supply": "Delhi",
+    "reverse_charge": false
+  },
+  "seller": {
+    "name": "...", "address": "...",
+    "gstin": "07AAACR5055K1Z5", "pan": "AAACR5055K",
+    "state": "Delhi", "state_code": "07"
+  },
+  "buyer": {
+    "name": "...", "address": "...",
+    "gstin": "29BBBCB1234A1Z1", "pan": "BBBCB1234A",
+    "state": "Karnataka", "state_code": "29"
+  },
+  "line_items": [
+    {
+      "description": "Consulting Services",
+      "hsn_sac_code": "998311",
+      "quantity": 1, "unit": "hrs",
+      "unit_price": 5000.00, "discount": 0,
+      "taxable_amount": 5000.00,
+      "cgst_rate": 9, "cgst_amount": 450.00,
+      "sgst_rate": 9, "sgst_amount": 450.00,
+      "igst_rate": 0, "igst_amount": 0,
+      "total": 5900.00
+    }
+  ],
+  "totals": {
+    "subtotal": 5000.00, "total_discount": 0,
+    "taxable_amount": 5000.00,
+    "cgst": 450.00, "sgst": 450.00, "igst": 0, "cess": 0,
+    "round_off": 0, "total": 5900.00,
+    "amount_in_words": "Five Thousand Nine Hundred Rupees Only"
+  },
+  "payment": {
+    "bank_name": "HDFC Bank",
+    "account_number": "...",
+    "ifsc_code": "HDFC0001234",
+    "payment_terms": "Net 30"
+  },
+  "notes": "Thank you for your business"
+}
+```
+
+---
+
 ## Authentication & Authorization
 
 - **JWT** with HS256 signing. Access tokens expire in 15 minutes, refresh tokens in 7 days.
@@ -529,6 +691,9 @@ curl -X DELETE http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
 | `DUPLICATE_COLLECTION_FILE` | 409 | File already in collection |
 | `SELF_PERMISSION_REMOVAL` | 400 | Cannot remove own permission |
 | `INVALID_PERMISSION` | 400 | Invalid permission value |
+| `DOCUMENT_NOT_FOUND` | 404 | Document not found |
+| `DOCUMENT_ALREADY_EXISTS` | 409 | Document already exists for this file |
+| `DOCUMENT_NOT_PARSED` | 400 | Document hasn't been parsed yet (e.g., reviewing before parse completes) |
 
 ## Docker
 

@@ -3,6 +3,7 @@ package s3
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -73,6 +74,23 @@ func (c *s3Client) Upload(ctx context.Context, input port.UploadInput) (*port.Up
 		Location: result.Location,
 		ETag:     etag,
 	}, nil
+}
+
+func (c *s3Client) Download(ctx context.Context, bucket, key string) ([]byte, error) {
+	result, err := c.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("s3 download: %w", err)
+	}
+	defer result.Body.Close()
+
+	data, err := io.ReadAll(result.Body)
+	if err != nil {
+		return nil, fmt.Errorf("s3 download read: %w", err)
+	}
+	return data, nil
 }
 
 func (c *s3Client) Delete(ctx context.Context, bucket, key string) error {

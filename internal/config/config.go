@@ -15,6 +15,16 @@ type Config struct {
 	JWT    JWTConfig
 	S3     S3Config
 	Log    LogConfig
+	Parser ParserConfig
+}
+
+// ParserConfig holds LLM document parser settings.
+type ParserConfig struct {
+	Provider     string `mapstructure:"provider"`
+	APIKey       string `mapstructure:"api_key"`
+	DefaultModel string `mapstructure:"default_model"`
+	MaxRetries   int    `mapstructure:"max_retries"`
+	TimeoutSecs  int    `mapstructure:"timeout_secs"`
 }
 
 // ServerConfig holds HTTP server settings.
@@ -110,6 +120,13 @@ func Load() (*Config, error) {
 	v.SetDefault("log.level", "debug")
 	v.SetDefault("log.format", "console")
 
+	// Parser defaults
+	v.SetDefault("parser.provider", "claude")
+	v.SetDefault("parser.api_key", "")
+	v.SetDefault("parser.default_model", "claude-sonnet-4-20250514")
+	v.SetDefault("parser.max_retries", 2)
+	v.SetDefault("parser.timeout_secs", 120)
+
 	// Bind environment variables explicitly for nested keys
 	envBindings := map[string]string{
 		"server.port":          "SATVOS_SERVER_PORT",
@@ -137,6 +154,11 @@ func Load() (*Config, error) {
 		"s3.presign_expiry":    "SATVOS_S3_PRESIGN_EXPIRY",
 		"log.level":            "SATVOS_LOG_LEVEL",
 		"log.format":           "SATVOS_LOG_FORMAT",
+		"parser.provider":      "SATVOS_PARSER_PROVIDER",
+		"parser.api_key":       "SATVOS_PARSER_API_KEY",
+		"parser.default_model": "SATVOS_PARSER_DEFAULT_MODEL",
+		"parser.max_retries":   "SATVOS_PARSER_MAX_RETRIES",
+		"parser.timeout_secs":  "SATVOS_PARSER_TIMEOUT_SECS",
 	}
 	for key, env := range envBindings {
 		_ = v.BindEnv(key, env)
@@ -177,6 +199,13 @@ func Load() (*Config, error) {
 	cfg.Log = LogConfig{
 		Level:  v.GetString("log.level"),
 		Format: v.GetString("log.format"),
+	}
+	cfg.Parser = ParserConfig{
+		Provider:     v.GetString("parser.provider"),
+		APIKey:       v.GetString("parser.api_key"),
+		DefaultModel: v.GetString("parser.default_model"),
+		MaxRetries:   v.GetInt("parser.max_retries"),
+		TimeoutSecs:  v.GetInt("parser.timeout_secs"),
 	}
 
 	return cfg, nil

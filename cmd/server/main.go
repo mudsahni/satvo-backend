@@ -9,6 +9,7 @@ import (
 
 	"satvos/internal/config"
 	"satvos/internal/handler"
+	claudeparser "satvos/internal/parser/claude"
 	"satvos/internal/repository/postgres"
 	"satvos/internal/router"
 	"satvos/internal/service"
@@ -53,12 +54,19 @@ func run() error {
 		return fmt.Errorf("failed to initialize S3 client: %w", err)
 	}
 
+	// Initialize document repository
+	docRepo := postgres.NewDocumentRepo(db)
+
+	// Initialize parser
+	documentParser := claudeparser.NewParser(&cfg.Parser)
+
 	// Initialize services
 	authSvc := service.NewAuthService(userRepo, tenantRepo, cfg.JWT)
 	fileSvc := service.NewFileService(fileRepo, s3Client, &cfg.S3)
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
+	documentSvc := service.NewDocumentService(docRepo, fileRepo, documentParser, s3Client)
 
 	// Initialize handlers
 	authH := handler.NewAuthHandler(authSvc)
@@ -67,9 +75,10 @@ func run() error {
 	userH := handler.NewUserHandler(userSvc)
 	healthH := handler.NewHealthHandler(db)
 	collectionH := handler.NewCollectionHandler(collectionSvc)
+	documentH := handler.NewDocumentHandler(documentSvc)
 
 	// Setup router
-	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH)
+	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH)
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {

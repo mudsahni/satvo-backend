@@ -18,6 +18,7 @@ func Setup(
 	userH *handler.UserHandler,
 	healthH *handler.HealthHandler,
 	collectionH *handler.CollectionHandler,
+	documentH *handler.DocumentHandler,
 ) *gin.Engine {
 	r := gin.New()
 
@@ -60,6 +61,15 @@ func Setup(
 	collections.POST("/:id/permissions", collectionH.SetPermission)
 	collections.GET("/:id/permissions", collectionH.ListPermissions)
 	collections.DELETE("/:id/permissions/:userId", collectionH.RemovePermission)
+
+	// Document routes
+	documents := protected.Group("/documents")
+	documents.POST("", documentH.Create)
+	documents.GET("", documentH.List)
+	documents.GET("/:id", documentH.GetByID)
+	documents.POST("/:id/retry", documentH.Retry)
+	documents.PUT("/:id/review", documentH.UpdateReview)
+	documents.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), documentH.Delete)
 
 	// User management (tenant-scoped)
 	users := protected.Group("/users")
