@@ -21,6 +21,14 @@ func (m *MockObjectStorage) Upload(ctx context.Context, input port.UploadInput) 
 	return args.Get(0).(*port.UploadOutput), args.Error(1)
 }
 
+func (m *MockObjectStorage) Download(ctx context.Context, bucket, key string) ([]byte, error) {
+	args := m.Called(ctx, bucket, key)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
+}
+
 func (m *MockObjectStorage) Delete(ctx context.Context, bucket, key string) error {
 	args := m.Called(ctx, bucket, key)
 	return args.Error(0)

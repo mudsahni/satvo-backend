@@ -23,6 +23,7 @@ type UploadOutput struct {
 // ObjectStorage abstracts cloud object storage operations.
 type ObjectStorage interface {
 	Upload(ctx context.Context, input UploadInput) (*UploadOutput, error)
+	Download(ctx context.Context, bucket, key string) ([]byte, error)
 	Delete(ctx context.Context, bucket, key string) error
 	GetPresignedURL(ctx context.Context, bucket, key string, expirySeconds int64) (string, error)
 }
