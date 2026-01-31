@@ -79,6 +79,7 @@ type Document struct {
 	ReviewedBy       *uuid.UUID         `db:"reviewed_by" json:"reviewed_by"`
 	ReviewedAt       *time.Time         `db:"reviewed_at" json:"reviewed_at"`
 	ReviewerNotes    string             `db:"reviewer_notes" json:"reviewer_notes"`
+	ValidationStatus ValidationStatus   `db:"validation_status" json:"validation_status"`
 	CreatedBy        uuid.UUID          `db:"created_by" json:"created_by"`
 	CreatedAt        time.Time          `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time          `db:"updated_at" json:"updated_at"`
@@ -96,18 +97,20 @@ type DocumentTag struct {
 
 // DocumentValidationRule represents a configurable validation rule for documents.
 type DocumentValidationRule struct {
-	ID           uuid.UUID          `db:"id" json:"id"`
-	TenantID     uuid.UUID          `db:"tenant_id" json:"tenant_id"`
-	CollectionID *uuid.UUID         `db:"collection_id" json:"collection_id"`
-	DocumentType string             `db:"document_type" json:"document_type"`
-	RuleName     string             `db:"rule_name" json:"rule_name"`
-	RuleType     ValidationRuleType `db:"rule_type" json:"rule_type"`
-	RuleConfig   json.RawMessage    `db:"rule_config" json:"rule_config"`
-	Severity     ValidationSeverity `db:"severity" json:"severity"`
-	IsActive     bool               `db:"is_active" json:"is_active"`
-	CreatedBy    uuid.UUID          `db:"created_by" json:"created_by"`
-	CreatedAt    time.Time          `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time          `db:"updated_at" json:"updated_at"`
+	ID             uuid.UUID          `db:"id" json:"id"`
+	TenantID       uuid.UUID          `db:"tenant_id" json:"tenant_id"`
+	CollectionID   *uuid.UUID         `db:"collection_id" json:"collection_id"`
+	DocumentType   string             `db:"document_type" json:"document_type"`
+	RuleName       string             `db:"rule_name" json:"rule_name"`
+	RuleType       ValidationRuleType `db:"rule_type" json:"rule_type"`
+	RuleConfig     json.RawMessage    `db:"rule_config" json:"rule_config"`
+	Severity       ValidationSeverity `db:"severity" json:"severity"`
+	IsActive       bool               `db:"is_active" json:"is_active"`
+	IsBuiltin      bool               `db:"is_builtin" json:"is_builtin"`
+	BuiltinRuleKey *string            `db:"builtin_rule_key" json:"builtin_rule_key"`
+	CreatedBy      uuid.UUID          `db:"created_by" json:"created_by"`
+	CreatedAt      time.Time          `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time          `db:"updated_at" json:"updated_at"`
 }
 
 // DocumentValidationResult stores the result of running a validation rule against a document.

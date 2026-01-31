@@ -34,13 +34,15 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		parser_model, parser_prompt, structured_data, confidence_scores,
 		parsing_status, parsing_error, parsed_at,
 		review_status, reviewed_by, reviewed_at, reviewer_notes,
+		validation_status,
 		created_by, created_at, updated_at
 	) VALUES (
 		$1, $2, $3, $4, $5,
 		$6, $7, $8, $9,
 		$10, $11, $12,
 		$13, $14, $15, $16,
-		$17, $18, $19
+		$17,
+		$18, $19, $20
 	)`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -48,6 +50,7 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		doc.ParserModel, doc.ParserPrompt, doc.StructuredData, doc.ConfidenceScores,
 		doc.ParsingStatus, doc.ParsingError, doc.ParsedAt,
 		doc.ReviewStatus, doc.ReviewedBy, doc.ReviewedAt, doc.ReviewerNotes,
+		doc.ValidationStatus,
 		doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") && strings.Contains(err.Error(), "file_id") {
@@ -157,6 +160,22 @@ func (r *documentRepo) UpdateReviewStatus(ctx context.Context, doc *domain.Docum
 		doc.ID, doc.TenantID)
 	if err != nil {
 		return fmt.Errorf("documentRepo.UpdateReviewStatus: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrDocumentNotFound
+	}
+	return nil
+}
+
+func (r *documentRepo) UpdateValidationStatus(ctx context.Context, doc *domain.Document) error {
+	doc.UpdatedAt = time.Now().UTC()
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE documents SET validation_status = $1, updated_at = $2
+		 WHERE id = $3 AND tenant_id = $4`,
+		doc.ValidationStatus, doc.UpdatedAt, doc.ID, doc.TenantID)
+	if err != nil {
+		return fmt.Errorf("documentRepo.UpdateValidationStatus: %w", err)
 	}
 	rows, _ := result.RowsAffected()
 	if rows == 0 {

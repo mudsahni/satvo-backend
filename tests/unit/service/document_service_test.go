@@ -28,7 +28,7 @@ func setupDocumentService() (
 	fileRepo := new(mocks.MockFileMetaRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage)
+	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
 	return svc, docRepo, fileRepo, parser, storage
 }
 
@@ -617,7 +617,7 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage)
+	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -685,7 +685,7 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage)
+	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -738,7 +738,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	fileRepo := new(mocks.MockFileMetaRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage)
+	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()

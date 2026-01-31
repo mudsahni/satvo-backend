@@ -8,6 +8,7 @@ import (
 
 	"satvos/internal/domain"
 	"satvos/internal/service"
+	"satvos/internal/validator"
 )
 
 // MockDocumentService is a mock implementation of service.DocumentService.
@@ -69,6 +70,19 @@ func (m *MockDocumentService) RetryParse(ctx context.Context, tenantID, docID uu
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.Document), args.Error(1)
+}
+
+func (m *MockDocumentService) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error {
+	args := m.Called(ctx, tenantID, docID)
+	return args.Error(0)
+}
+
+func (m *MockDocumentService) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error) {
+	args := m.Called(ctx, tenantID, docID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*validator.ValidationResponse), args.Error(1)
 }
 
 func (m *MockDocumentService) Delete(ctx context.Context, tenantID, docID uuid.UUID) error {

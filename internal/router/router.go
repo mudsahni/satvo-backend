@@ -69,6 +69,8 @@ func Setup(
 	documents.GET("/:id", documentH.GetByID)
 	documents.POST("/:id/retry", documentH.Retry)
 	documents.PUT("/:id/review", documentH.UpdateReview)
+	documents.POST("/:id/validate", documentH.Validate)
+	documents.GET("/:id/validation", documentH.GetValidation)
 	documents.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), documentH.Delete)
 
 	// User management (tenant-scoped)

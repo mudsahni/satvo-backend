@@ -61,6 +61,11 @@ func (m *MockDocumentRepo) UpdateReviewStatus(ctx context.Context, doc *domain.D
 	return args.Error(0)
 }
 
+func (m *MockDocumentRepo) UpdateValidationStatus(ctx context.Context, doc *domain.Document) error {
+	args := m.Called(ctx, doc)
+	return args.Error(0)
+}
+
 func (m *MockDocumentRepo) Delete(ctx context.Context, tenantID, docID uuid.UUID) error {
 	args := m.Called(ctx, tenantID, docID)
 	return args.Error(0)

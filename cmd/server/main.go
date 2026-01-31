@@ -14,6 +14,8 @@ import (
 	"satvos/internal/router"
 	"satvos/internal/service"
 	s3storage "satvos/internal/storage/s3"
+	"satvos/internal/validator"
+	"satvos/internal/validator/invoice"
 )
 
 func main() {
@@ -54,11 +56,20 @@ func run() error {
 		return fmt.Errorf("failed to initialize S3 client: %w", err)
 	}
 
-	// Initialize document repository
+	// Initialize document repositories
 	docRepo := postgres.NewDocumentRepo(db)
+	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
+	validationResultRepo := postgres.NewDocumentValidationResultRepo(db)
 
 	// Initialize parser
 	documentParser := claudeparser.NewParser(&cfg.Parser)
+
+	// Initialize validation engine
+	registry := validator.NewRegistry()
+	for _, v := range invoice.AllBuiltinValidators() {
+		registry.Register(v)
+	}
+	validationEngine := validator.NewEngine(registry, validationRuleRepo, validationResultRepo, docRepo)
 
 	// Initialize services
 	authSvc := service.NewAuthService(userRepo, tenantRepo, cfg.JWT)
@@ -66,7 +77,7 @@ func run() error {
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
-	documentSvc := service.NewDocumentService(docRepo, fileRepo, documentParser, s3Client)
+	documentSvc := service.NewDocumentService(docRepo, fileRepo, documentParser, s3Client, validationEngine)
 
 	// Initialize handlers
 	authH := handler.NewAuthHandler(authSvc)

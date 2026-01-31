@@ -188,6 +188,51 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 	RespondOK(c, doc)
 }
 
+// Validate handles POST /api/v1/documents/:id/validate
+func (h *DocumentHandler) Validate(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	if err := h.documentService.ValidateDocument(c.Request.Context(), tenantID, docID); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, gin.H{"message": "validation completed"})
+}
+
+// GetValidation handles GET /api/v1/documents/:id/validation
+func (h *DocumentHandler) GetValidation(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	result, err := h.documentService.GetValidation(c.Request.Context(), tenantID, docID)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, result)
+}
+
 // Delete handles DELETE /api/v1/documents/:id
 func (h *DocumentHandler) Delete(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)

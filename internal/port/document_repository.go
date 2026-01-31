@@ -17,6 +17,7 @@ type DocumentRepository interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	UpdateStructuredData(ctx context.Context, doc *domain.Document) error
 	UpdateReviewStatus(ctx context.Context, doc *domain.Document) error
+	UpdateValidationStatus(ctx context.Context, doc *domain.Document) error
 	Delete(ctx context.Context, tenantID, docID uuid.UUID) error
 }
 
@@ -33,6 +34,7 @@ type DocumentValidationRuleRepository interface {
 	Create(ctx context.Context, rule *domain.DocumentValidationRule) error
 	GetByID(ctx context.Context, tenantID, ruleID uuid.UUID) (*domain.DocumentValidationRule, error)
 	ListByDocumentType(ctx context.Context, tenantID uuid.UUID, docType string, collectionID *uuid.UUID) ([]domain.DocumentValidationRule, error)
+	ListBuiltinKeys(ctx context.Context, tenantID uuid.UUID, docType string) ([]string, error)
 	Update(ctx context.Context, rule *domain.DocumentValidationRule) error
 	Delete(ctx context.Context, tenantID, ruleID uuid.UUID) error
 }

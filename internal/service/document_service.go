@@ -11,6 +11,7 @@ import (
 
 	"satvos/internal/domain"
 	"satvos/internal/port"
+	"satvos/internal/validator"
 )
 
 // CreateDocumentInput is the DTO for creating a document and triggering parsing.
@@ -40,14 +41,17 @@ type DocumentService interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	UpdateReview(ctx context.Context, input UpdateReviewInput) (*domain.Document, error)
 	RetryParse(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error)
+	ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error
+	GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error)
 	Delete(ctx context.Context, tenantID, docID uuid.UUID) error
 }
 
 type documentService struct {
-	docRepo  port.DocumentRepository
-	fileRepo port.FileMetaRepository
-	parser   port.DocumentParser
-	storage  port.ObjectStorage
+	docRepo   port.DocumentRepository
+	fileRepo  port.FileMetaRepository
+	parser    port.DocumentParser
+	storage   port.ObjectStorage
+	validator *validator.Engine
 }
 
 // NewDocumentService creates a new DocumentService implementation.
@@ -56,12 +60,14 @@ func NewDocumentService(
 	fileRepo port.FileMetaRepository,
 	parser port.DocumentParser,
 	storage port.ObjectStorage,
+	validationEngine *validator.Engine,
 ) DocumentService {
 	return &documentService{
-		docRepo:  docRepo,
-		fileRepo: fileRepo,
-		parser:   parser,
-		storage:  storage,
+		docRepo:   docRepo,
+		fileRepo:  fileRepo,
+		parser:    parser,
+		storage:   storage,
+		validator: validationEngine,
 	}
 }
 
@@ -73,16 +79,17 @@ func (s *documentService) CreateAndParse(ctx context.Context, input CreateDocume
 	}
 
 	doc := &domain.Document{
-		ID:             uuid.New(),
-		TenantID:       input.TenantID,
-		CollectionID:   input.CollectionID,
-		FileID:         input.FileID,
-		DocumentType:   input.DocumentType,
-		ParsingStatus:  domain.ParsingStatusPending,
-		ReviewStatus:   domain.ReviewStatusPending,
-		StructuredData: json.RawMessage("{}"),
+		ID:               uuid.New(),
+		TenantID:         input.TenantID,
+		CollectionID:     input.CollectionID,
+		FileID:           input.FileID,
+		DocumentType:     input.DocumentType,
+		ParsingStatus:    domain.ParsingStatusPending,
+		ReviewStatus:     domain.ReviewStatusPending,
+		ValidationStatus: domain.ValidationStatusPending,
+		StructuredData:   json.RawMessage("{}"),
 		ConfidenceScores: json.RawMessage("{}"),
-		CreatedBy:      input.CreatedBy,
+		CreatedBy:        input.CreatedBy,
 	}
 
 	log.Printf("documentService.CreateAndParse: creating document %s for file %s (tenant %s)",
@@ -150,6 +157,13 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	}
 
 	log.Printf("documentService.parseInBackground: document %s parsed successfully", docID)
+
+	// Run validation after successful parsing
+	if s.validator != nil {
+		if err := s.validator.ValidateDocument(ctx, tenantID, docID); err != nil {
+			log.Printf("documentService.parseInBackground: validation failed for %s: %v", docID, err)
+		}
+	}
 }
 
 func (s *documentService) failParsing(ctx context.Context, doc *domain.Document, errMsg string) {
@@ -226,6 +240,27 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID uuid.U
 	go s.parseInBackground(doc.ID, doc.TenantID, file.S3Bucket, file.S3Key, file.ContentType, doc.DocumentType)
 
 	return doc, nil
+}
+
+func (s *documentService) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error {
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		return err
+	}
+	if doc.ParsingStatus != domain.ParsingStatusCompleted {
+		return domain.ErrDocumentNotParsed
+	}
+	if s.validator == nil {
+		return fmt.Errorf("validation engine not configured")
+	}
+	return s.validator.ValidateDocument(ctx, tenantID, docID)
+}
+
+func (s *documentService) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error) {
+	if s.validator == nil {
+		return nil, fmt.Errorf("validation engine not configured")
+	}
+	return s.validator.GetValidation(ctx, tenantID, docID)
 }
 
 func (s *documentService) Delete(ctx context.Context, tenantID, docID uuid.UUID) error {

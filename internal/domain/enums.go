@@ -108,6 +108,25 @@ const (
 	ValidationSeverityWarning ValidationSeverity = "warning"
 )
 
+// ValidationStatus represents the overall validation state of a document.
+type ValidationStatus string
+
+const (
+	ValidationStatusPending ValidationStatus = "pending"
+	ValidationStatusValid   ValidationStatus = "valid"
+	ValidationStatusInvalid ValidationStatus = "invalid"
+	ValidationStatusWarning ValidationStatus = "warning"
+)
+
+// FieldValidationStatus represents the computed validation state of a single field.
+type FieldValidationStatus string
+
+const (
+	FieldStatusValid   FieldValidationStatus = "valid"
+	FieldStatusInvalid FieldValidationStatus = "invalid"
+	FieldStatusUnsure  FieldValidationStatus = "unsure"
+)
+
 // FileStatus represents the lifecycle of an uploaded file.
 type FileStatus string
 

@@ -30,14 +30,16 @@ func (r *documentValidationRuleRepo) Create(ctx context.Context, rule *domain.Do
 
 	query := `INSERT INTO document_validation_rules (
 		id, tenant_id, collection_id, document_type, rule_name,
-		rule_type, rule_config, severity, is_active, created_by,
-		created_at, updated_at
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+		rule_type, rule_config, severity, is_active,
+		is_builtin, builtin_rule_key,
+		created_by, created_at, updated_at
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		rule.ID, rule.TenantID, rule.CollectionID, rule.DocumentType, rule.RuleName,
-		rule.RuleType, rule.RuleConfig, rule.Severity, rule.IsActive, rule.CreatedBy,
-		rule.CreatedAt, rule.UpdatedAt)
+		rule.RuleType, rule.RuleConfig, rule.Severity, rule.IsActive,
+		rule.IsBuiltin, rule.BuiltinRuleKey,
+		rule.CreatedBy, rule.CreatedAt, rule.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("documentValidationRuleRepo.Create: %w", err)
 	}
@@ -81,6 +83,18 @@ func (r *documentValidationRuleRepo) ListByDocumentType(ctx context.Context, ten
 		return nil, fmt.Errorf("documentValidationRuleRepo.ListByDocumentType: %w", err)
 	}
 	return rules, nil
+}
+
+func (r *documentValidationRuleRepo) ListBuiltinKeys(ctx context.Context, tenantID uuid.UUID, docType string) ([]string, error) {
+	var keys []string
+	err := r.db.SelectContext(ctx, &keys,
+		`SELECT builtin_rule_key FROM document_validation_rules
+		 WHERE tenant_id = $1 AND document_type = $2 AND is_builtin = TRUE AND builtin_rule_key IS NOT NULL`,
+		tenantID, docType)
+	if err != nil {
+		return nil, fmt.Errorf("documentValidationRuleRepo.ListBuiltinKeys: %w", err)
+	}
+	return keys, nil
 }
 
 func (r *documentValidationRuleRepo) Update(ctx context.Context, rule *domain.DocumentValidationRule) error {
