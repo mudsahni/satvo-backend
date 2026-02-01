@@ -34,6 +34,7 @@ All SATVOS API responses use a standard envelope. Error responses include a `cod
 | `UNAUTHORIZED` | 401 | unauthorized | Missing, expired, or malformed JWT token |
 | `INVALID_CREDENTIALS` | 401 | invalid credentials | Wrong email or password during login |
 | `FORBIDDEN` | 403 | forbidden | Authenticated user lacks the required role (e.g., member trying an admin-only endpoint) |
+| `INSUFFICIENT_ROLE` | 403 | insufficient role for this action | Tenant role is too low for the action (e.g., viewer trying to upload files or create collections) |
 
 ---
 
@@ -80,13 +81,17 @@ All SATVOS API responses use a standard envelope. Error responses include a `cod
 
 ### Collection Permission Requirements
 
-| Action | Minimum Permission |
-|--------|--------------------|
-| View collection / list files | `viewer` |
-| Add / remove files | `editor` |
-| Update collection metadata | `owner` |
-| Delete collection | `owner` |
-| Manage permissions | `owner` |
+Effective permission = `max(implicit_from_tenant_role, explicit_collection_permission)`. Viewer-role users are capped at viewer-level regardless of explicit grants.
+
+| Action | Minimum Effective Permission | Notes |
+|--------|------------------------------|-------|
+| View collection / list files | `viewer` | admin/manager/member have implicit access |
+| Add / remove files | `editor` | admin/manager have implicit access; member needs explicit grant |
+| Update collection metadata | `editor` | admin/manager have implicit access |
+| Delete collection | `owner` | admin has implicit access; others need explicit owner grant |
+| Manage permissions | `owner` | admin has implicit access; others need explicit owner grant |
+| Create collection | tenant role `member`+ | viewer role cannot create collections |
+| Upload files | tenant role `member`+ | viewer role cannot upload files |
 
 ---
 
@@ -135,10 +140,11 @@ Errors flow through the system as follows:
 ```
 Domain Layer                Handler Layer              HTTP Response
 ─────────────              ─────────────              ─────────────
-domain.ErrNotFound     ──>  MapDomainError()      ──>  404 NOT_FOUND
-domain.ErrForbidden    ──>  MapDomainError()      ──>  403 FORBIDDEN
-domain.ErrDocumentXxx  ──>  MapDomainError()      ──>  4xx DOCUMENT_XXX
-(unknown error)        ──>  MapDomainError()      ──>  500 INTERNAL_ERROR
+domain.ErrNotFound           ──>  MapDomainError()  ──>  404 NOT_FOUND
+domain.ErrForbidden          ──>  MapDomainError()  ──>  403 FORBIDDEN
+domain.ErrInsufficientRole   ──>  MapDomainError()  ──>  403 INSUFFICIENT_ROLE
+domain.ErrDocumentXxx        ──>  MapDomainError()  ──>  4xx DOCUMENT_XXX
+(unknown error)              ──>  MapDomainError()  ──>  500 INTERNAL_ERROR
 ```
 
 - **Domain errors** are defined as sentinel values in `internal/domain/errors.go`

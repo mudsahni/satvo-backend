@@ -10,6 +10,8 @@ linters:
     - staticcheck
     - unused
     - ineffassign
+    - gosimple
+    - typecheck
     - gocritic
     - gosec
     - misspell
@@ -17,7 +19,7 @@ linters:
     - unconvert
     - unparam
 
-  settings:
+  linters-settings:
     gocritic:
       enabled-tags:
         - diagnostic

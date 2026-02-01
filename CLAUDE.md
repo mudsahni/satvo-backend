@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/member), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images, and an automated validation engine with 50+ built-in GST invoice rules. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images, and an automated validation engine with 50+ built-in GST invoice rules. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -29,7 +29,7 @@ internal/
   domain/
     models.go                Tenant, User, FileMeta, Collection, CollectionPermissionEntry,
                              CollectionFile, Document, DocumentTag, DocumentValidationRule structs
-    enums.go                 FileType (pdf/jpg/png), UserRole (admin/member), FileStatus,
+    enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer), FileStatus,
                              CollectionPermission (owner/editor/viewer),
                              ParsingStatus (pending/processing/completed/failed),
                              ReviewStatus (pending/approved/rejected),
@@ -37,7 +37,7 @@ internal/
                              ValidationSeverity (error/warning),
                              ValidationRuleType (required_field/regex/sum_check/cross_field/custom),
                              FieldValidationStatus (valid/invalid/unsure)
-    errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrCollectionNotFound,
+    errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrInsufficientRole, ErrCollectionNotFound,
                              ErrDocumentNotFound, ErrDocumentNotParsed, ErrValidationRuleNotFound, etc.)
   handler/
     auth_handler.go          POST /auth/login, POST /auth/refresh
@@ -60,7 +60,8 @@ internal/
     file_service.go          Upload (validate + S3 + DB), download URL, delete
     collection_service.go    Collection CRUD, batch upload, permission checking, file association
     document_service.go      Document CRUD, background LLM parsing, retry, review status,
-                             validation orchestration (ValidateDocument, GetValidation)
+                             validation orchestration (ValidateDocument, GetValidation),
+                             collection permission checks via collectionPermRepo
     user_service.go          User CRUD with tenant scoping
     tenant_service.go        Tenant CRUD
   port/
@@ -75,7 +76,7 @@ internal/
     tenant_repo.go           Tenant SQL queries
     user_repo.go             User SQL queries (tenant-scoped)
     file_meta_repo.go        File metadata SQL queries
-    collection_repo.go       Collection SQL queries (ListByUser joins permissions)
+    collection_repo.go       Collection SQL queries (ListByUser joins permissions, ListByTenant for admin/manager/member)
     collection_permission_repo.go  Collection permission queries (upsert via ON CONFLICT)
     collection_file_repo.go  Collection-file association queries (joins file_metadata)
     document_repo.go         Document CRUD queries (incl. UpdateValidationResults)
@@ -242,7 +243,8 @@ Results are stored as JSONB directly on the `documents` table (`validation_resul
 - **Error handling**: Domain errors in `domain/errors.go` are mapped to HTTP status codes in `handler/response.go`.
 - **File validation**: Extension whitelist (pdf/jpg/jpeg/png) + magic bytes content-type detection.
 - **S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
-- **Collections**: Permission-based access (owner/editor/viewer). Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Files can belong to multiple collections or none. Deleting a collection preserves files.
+- **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
+- **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
 - **Document parsing**: Background goroutine downloads file from S3, sends to LLM (Claude via direct HTTP to Messages API), saves structured JSON + confidence scores. Status progresses: pending -> processing -> completed/failed. **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
 - **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. Claude implementation in `parser/claude/`. Swappable to Gemini/OpenAI by implementing the interface.

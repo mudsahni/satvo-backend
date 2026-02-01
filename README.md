@@ -324,7 +324,9 @@ curl -X DELETE http://localhost:8080/api/v1/files/<file_id> \
 
 Collections group files together with permission-based access control. A file can belong to multiple collections or none. Deleting a collection preserves the underlying files.
 
-**Permissions**: `owner` (full control), `editor` (add/remove files), `viewer` (read-only). The creator is automatically assigned `owner`.
+**Collection permissions**: `owner` (full control), `editor` (add/remove files), `viewer` (read-only). The creator is automatically assigned `owner`.
+
+**Tenant role interaction**: Tenant roles provide implicit collection access (see [Authentication & Authorization](#authentication--authorization)). A user's effective permission on a collection is `max(implicit_from_role, explicit_collection_permission)`.
 
 All collection endpoints require `Authorization: Bearer {access_token}`.
 
@@ -358,7 +360,7 @@ curl http://localhost:8080/api/v1/collections/<collection_id>?offset=0&limit=20 
   -H "Authorization: Bearer <access_token>"
 ```
 
-#### Update a collection (owner only)
+#### Update a collection (editor+)
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/collections/<collection_id> \
@@ -370,7 +372,7 @@ curl -X PUT http://localhost:8080/api/v1/collections/<collection_id> \
   }'
 ```
 
-#### Delete a collection (owner only)
+#### Delete a collection (owner or admin)
 
 Deletes the collection and its permission/file associations. Files themselves are preserved.
 
@@ -449,7 +451,7 @@ curl -X POST http://localhost:8080/api/v1/users \
   }'
 ```
 
-Roles: `admin`, `member`. Email is unique per tenant.
+Roles: `admin`, `manager`, `member`, `viewer`. Email is unique per tenant.
 
 #### List users (admin only, paginated)
 
@@ -785,8 +787,25 @@ When parsing completes, `structured_data` contains:
 
 - **JWT** with HS256 signing. Access tokens expire in 15 minutes, refresh tokens in 7 days.
 - **Passwords** hashed with bcrypt (cost 12).
-- **Roles**: `admin` (full access) and `member` (file upload/view).
 - **Tenant isolation**: enforced at JWT claims level and database query level. Users log in with their tenant slug.
+
+### Tenant Role Hierarchy
+
+Users are assigned one of four tenant-level roles. Each role provides implicit collection access that combines with explicit per-collection permissions.
+
+| Tenant Role | Implicit Collection Access | Can Upload Files | Can Create Collections | Can Delete Collections | Can Manage Users |
+|-------------|---------------------------|-----------------|----------------------|----------------------|-----------------|
+| `admin` | owner (full access everywhere) | Yes | Yes | Yes | Yes |
+| `manager` | editor (view + edit everywhere) | Yes | Yes | No | No |
+| `member` | viewer (view everywhere, edit only where explicitly granted) | Yes | Yes | No | No |
+| `viewer` | none (only explicit collection permissions, capped at viewer) | No | No | No | No |
+
+**Effective permission** = `max(implicit_from_role, explicit_collection_permission)`
+
+- **admin** bypasses all collection permission checks (implicit owner on every collection)
+- **manager** can view and edit any collection without explicit permission, but cannot delete collections or manage permissions
+- **member** can view any collection, but needs explicit editor/owner permission to modify content
+- **viewer** has zero implicit access; needs explicit per-collection permissions for everything, and effective permission is capped at viewer level (read-only regardless of what's granted)
 
 ## Error Codes
 
@@ -796,6 +815,7 @@ All errors are returned in the standard response envelope with a `code` and `mes
 |------|-------------|-------------|
 | `UNAUTHORIZED` | 401 | Missing or invalid token |
 | `FORBIDDEN` | 403 | Insufficient permissions |
+| `INSUFFICIENT_ROLE` | 403 | Tenant role too low for this action |
 | `NOT_FOUND` | 404 | Resource not found |
 | `INVALID_REQUEST` | 400 | Malformed request body or params |
 | `INTERNAL_ERROR` | 500 | Unhandled server error |
