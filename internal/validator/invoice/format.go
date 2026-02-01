@@ -122,6 +122,7 @@ func parseDate(s string) (time.Time, error) {
 		"2 Jan 2006",
 		"Jan 02, 2006",
 		"January 02, 2006",
+		"02-01-2006 15:04:05",
 		"2006-01-02T15:04:05Z07:00",
 	}
 	for _, f := range formats {
