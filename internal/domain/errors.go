@@ -19,4 +19,8 @@ var (
 	ErrDuplicateCollectionFile = errors.New("file already exists in collection")
 	ErrSelfPermissionRemoval   = errors.New("cannot remove own permission")
 	ErrInvalidPermission       = errors.New("invalid collection permission")
+	ErrDocumentNotFound        = errors.New("document not found")
+	ErrDocumentAlreadyExists   = errors.New("document already exists for this file")
+	ErrDocumentNotParsed       = errors.New("document has not been parsed yet")
+	ErrValidationRuleNotFound  = errors.New("validation rule not found")
 )

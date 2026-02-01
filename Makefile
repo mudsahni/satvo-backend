@@ -12,6 +12,9 @@ run:
 test:
 	go test ./... -v -count=1
 
+test-race:
+	go test -race ./... -v -count=1
+
 test-unit:
 	go test ./tests/unit/... -v -count=1
 

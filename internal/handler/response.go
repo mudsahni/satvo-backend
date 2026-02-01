@@ -89,6 +89,12 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusBadRequest, "SELF_PERMISSION_REMOVAL", "cannot remove your own permission"
 	case errors.Is(err, domain.ErrInvalidPermission):
 		return http.StatusBadRequest, "INVALID_PERMISSION", "invalid collection permission; allowed: owner, editor, viewer"
+	case errors.Is(err, domain.ErrDocumentNotFound):
+		return http.StatusNotFound, "DOCUMENT_NOT_FOUND", "document not found"
+	case errors.Is(err, domain.ErrDocumentAlreadyExists):
+		return http.StatusConflict, "DOCUMENT_ALREADY_EXISTS", "document already exists for this file"
+	case errors.Is(err, domain.ErrDocumentNotParsed):
+		return http.StatusBadRequest, "DOCUMENT_NOT_PARSED", "document has not been parsed yet"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}

@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,6 +59,59 @@ type CollectionFile struct {
 	TenantID     uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	AddedBy      uuid.UUID `db:"added_by" json:"added_by"`
 	AddedAt      time.Time `db:"added_at" json:"added_at"`
+}
+
+// Document represents a parsed document linked to an uploaded file.
+type Document struct {
+	ID               uuid.UUID          `db:"id" json:"id"`
+	TenantID         uuid.UUID          `db:"tenant_id" json:"tenant_id"`
+	CollectionID     uuid.UUID          `db:"collection_id" json:"collection_id"`
+	FileID           uuid.UUID          `db:"file_id" json:"file_id"`
+	DocumentType     string             `db:"document_type" json:"document_type"`
+	ParserModel      string             `db:"parser_model" json:"parser_model"`
+	ParserPrompt     string             `db:"parser_prompt" json:"parser_prompt"`
+	StructuredData   json.RawMessage    `db:"structured_data" json:"structured_data"`
+	ConfidenceScores json.RawMessage    `db:"confidence_scores" json:"confidence_scores"`
+	ParsingStatus    ParsingStatus      `db:"parsing_status" json:"parsing_status"`
+	ParsingError     string             `db:"parsing_error" json:"parsing_error"`
+	ParsedAt         *time.Time         `db:"parsed_at" json:"parsed_at"`
+	ReviewStatus     ReviewStatus       `db:"review_status" json:"review_status"`
+	ReviewedBy       *uuid.UUID         `db:"reviewed_by" json:"reviewed_by"`
+	ReviewedAt       *time.Time         `db:"reviewed_at" json:"reviewed_at"`
+	ReviewerNotes    string             `db:"reviewer_notes" json:"reviewer_notes"`
+	ValidationStatus  ValidationStatus   `db:"validation_status" json:"validation_status"`
+	ValidationResults json.RawMessage    `db:"validation_results" json:"validation_results"`
+	CreatedBy         uuid.UUID          `db:"created_by" json:"created_by"`
+	CreatedAt        time.Time          `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time          `db:"updated_at" json:"updated_at"`
+}
+
+// DocumentTag represents a searchable tag on a document.
+type DocumentTag struct {
+	ID         uuid.UUID `db:"id" json:"id"`
+	DocumentID uuid.UUID `db:"document_id" json:"document_id"`
+	TenantID   uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Key        string    `db:"key" json:"key"`
+	Value      string    `db:"value" json:"value"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+}
+
+// DocumentValidationRule represents a configurable validation rule for documents.
+type DocumentValidationRule struct {
+	ID             uuid.UUID          `db:"id" json:"id"`
+	TenantID       uuid.UUID          `db:"tenant_id" json:"tenant_id"`
+	CollectionID   *uuid.UUID         `db:"collection_id" json:"collection_id"`
+	DocumentType   string             `db:"document_type" json:"document_type"`
+	RuleName       string             `db:"rule_name" json:"rule_name"`
+	RuleType       ValidationRuleType `db:"rule_type" json:"rule_type"`
+	RuleConfig     json.RawMessage    `db:"rule_config" json:"rule_config"`
+	Severity       ValidationSeverity `db:"severity" json:"severity"`
+	IsActive       bool               `db:"is_active" json:"is_active"`
+	IsBuiltin      bool               `db:"is_builtin" json:"is_builtin"`
+	BuiltinRuleKey *string            `db:"builtin_rule_key" json:"builtin_rule_key"`
+	CreatedBy      uuid.UUID          `db:"created_by" json:"created_by"`
+	CreatedAt      time.Time          `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time          `db:"updated_at" json:"updated_at"`
 }
 
 // FileMeta stores metadata about an uploaded file.
