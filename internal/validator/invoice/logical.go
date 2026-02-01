@@ -21,8 +21,8 @@ type logicalValidator struct {
 	validate func(*GSTInvoice) []ValidationResult
 }
 
-func (v *logicalValidator) RuleKey() string                    { return v.ruleKey }
-func (v *logicalValidator) RuleName() string                   { return v.ruleName }
+func (v *logicalValidator) RuleKey() string                     { return v.ruleKey }
+func (v *logicalValidator) RuleName() string                    { return v.ruleName }
 func (v *logicalValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleCustom }
 func (v *logicalValidator) Severity() domain.ValidationSeverity { return v.severity }
 
@@ -38,7 +38,8 @@ func LogicalValidators() []*logicalValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					amounts := map[string]float64{
 						"quantity":       item.Quantity,
 						"unit_price":     item.UnitPrice,
@@ -69,7 +70,8 @@ func LogicalValidators() []*logicalValidator {
 			severity: domain.ValidationSeverityWarning,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					rates := map[string]float64{
 						"cgst_rate": item.CGSTRate,
 						"sgst_rate": item.SGSTRate,
@@ -97,8 +99,9 @@ func LogicalValidators() []*logicalValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
 					fp := fmt.Sprintf("line_items[%d]", i)
+					item := &d.LineItems[i]
 					passed := item.CGSTRate == item.SGSTRate
 					msg := fmt.Sprintf("Logical: CGST Equals SGST Rate: %s CGST and SGST rates match", fp)
 					if !passed {
@@ -119,7 +122,8 @@ func LogicalValidators() []*logicalValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d]", i)
 					hasCgstSgst := item.CGSTRate > 0 || item.SGSTRate > 0 || item.CGSTAmount > 0 || item.SGSTAmount > 0
 					hasIgst := item.IGSTRate > 0 || item.IGSTAmount > 0

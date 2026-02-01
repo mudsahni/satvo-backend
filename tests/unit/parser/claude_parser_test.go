@@ -64,7 +64,10 @@ func TestClaudeParser_Parse_PDF_Success(t *testing.T) {
 		assert.Equal(t, "text", textBlock["type"])
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(responseBody)
+		err = json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -107,7 +110,10 @@ func TestClaudeParser_Parse_Image_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var reqBody map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&reqBody)
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		if err != nil {
+			return
+		}
 
 		messages := reqBody["messages"].([]interface{})
 		msg := messages[0].(map[string]interface{})
@@ -120,7 +126,10 @@ func TestClaudeParser_Parse_Image_Success(t *testing.T) {
 		assert.Equal(t, "image/jpeg", source["media_type"])
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(responseBody)
+		err = json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -148,7 +157,10 @@ func TestClaudeParser_Parse_PNG_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var reqBody map[string]interface{}
-		json.NewDecoder(r.Body).Decode(&reqBody)
+		err := json.NewDecoder(r.Body).Decode(&reqBody)
+		if err != nil {
+			return
+		}
 
 		messages := reqBody["messages"].([]interface{})
 		msg := messages[0].(map[string]interface{})
@@ -160,7 +172,10 @@ func TestClaudeParser_Parse_PNG_Success(t *testing.T) {
 		assert.Equal(t, "image/png", source["media_type"])
 
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(responseBody)
+		err = json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -179,7 +194,10 @@ func TestClaudeParser_Parse_PNG_Success(t *testing.T) {
 func TestClaudeParser_Parse_APIError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
-		w.Write([]byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`))
+		_, err := w.Write([]byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`))
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -199,7 +217,10 @@ func TestClaudeParser_Parse_APIError(t *testing.T) {
 func TestClaudeParser_Parse_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(`{"error":{"type":"server_error","message":"internal error"}}`))
+		_, err := w.Write([]byte(`{"error":{"type":"server_error","message":"internal error"}}`))
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -223,7 +244,10 @@ func TestClaudeParser_Parse_EmptyResponse(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(responseBody)
+		err := json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 
@@ -252,7 +276,10 @@ func TestClaudeParser_Parse_InvalidJSONResponse(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(responseBody)
+		err := json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
 	}))
 	defer server.Close()
 

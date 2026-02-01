@@ -18,8 +18,8 @@ type mathValidator struct {
 	validate func(*GSTInvoice) []ValidationResult
 }
 
-func (v *mathValidator) RuleKey() string                    { return v.ruleKey }
-func (v *mathValidator) RuleName() string                   { return v.ruleName }
+func (v *mathValidator) RuleKey() string                     { return v.ruleKey }
+func (v *mathValidator) RuleName() string                    { return v.ruleName }
 func (v *mathValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleSumCheck }
 func (v *mathValidator) Severity() domain.ValidationSeverity { return v.severity }
 
@@ -27,8 +27,8 @@ func (v *mathValidator) Validate(_ context.Context, data *GSTInvoice) []Validati
 	return v.validate(data)
 }
 
-func approxEqual(a, b, tolerance float64) bool {
-	return math.Abs(a-b) <= tolerance
+func approxEqual(a, b float64) bool {
+	return math.Abs(a-b) <= mathTolerance
 }
 
 func mathResult(passed bool, fieldPath, expected, actual, ruleName string) ValidationResult {
@@ -54,10 +54,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].taxable_amount", i)
 					expected := (item.Quantity * item.UnitPrice) - item.Discount
-					passed := approxEqual(item.TaxableAmount, expected, mathTolerance)
+					passed := approxEqual(item.TaxableAmount, expected)
 					results = append(results, mathResult(passed, fp, fmtf(expected), fmtf(item.TaxableAmount), "Math: Line Item Taxable Amount"))
 				}
 				return results
@@ -68,10 +69,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].cgst_amount", i)
 					expected := item.TaxableAmount * item.CGSTRate / 100
-					passed := approxEqual(item.CGSTAmount, expected, mathTolerance)
+					passed := approxEqual(item.CGSTAmount, expected)
 					results = append(results, mathResult(passed, fp, fmtf(expected), fmtf(item.CGSTAmount), "Math: Line Item CGST Amount"))
 				}
 				return results
@@ -82,10 +84,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].sgst_amount", i)
 					expected := item.TaxableAmount * item.SGSTRate / 100
-					passed := approxEqual(item.SGSTAmount, expected, mathTolerance)
+					passed := approxEqual(item.SGSTAmount, expected)
 					results = append(results, mathResult(passed, fp, fmtf(expected), fmtf(item.SGSTAmount), "Math: Line Item SGST Amount"))
 				}
 				return results
@@ -96,10 +99,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].igst_amount", i)
 					expected := item.TaxableAmount * item.IGSTRate / 100
-					passed := approxEqual(item.IGSTAmount, expected, mathTolerance)
+					passed := approxEqual(item.IGSTAmount, expected)
 					results = append(results, mathResult(passed, fp, fmtf(expected), fmtf(item.IGSTAmount), "Math: Line Item IGST Amount"))
 				}
 				return results
@@ -110,10 +114,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].total", i)
 					expected := item.TaxableAmount + item.CGSTAmount + item.SGSTAmount + item.IGSTAmount
-					passed := approxEqual(item.Total, expected, mathTolerance)
+					passed := approxEqual(item.Total, expected)
 					results = append(results, mathResult(passed, fp, fmtf(expected), fmtf(item.Total), "Math: Line Item Total"))
 				}
 				return results
@@ -124,10 +129,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
-				for _, item := range d.LineItems {
+				for idx := range d.LineItems {
+					item := &d.LineItems[idx]
 					sum += item.TaxableAmount
 				}
-				passed := approxEqual(d.Totals.Subtotal, sum, mathTolerance)
+				passed := approxEqual(d.Totals.Subtotal, sum)
 				return []ValidationResult{mathResult(passed, "totals.subtotal", fmtf(sum), fmtf(d.Totals.Subtotal), "Math: Subtotal")}
 			},
 		},
@@ -136,7 +142,7 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				expected := d.Totals.Subtotal - d.Totals.TotalDiscount
-				passed := approxEqual(d.Totals.TaxableAmount, expected, mathTolerance)
+				passed := approxEqual(d.Totals.TaxableAmount, expected)
 				return []ValidationResult{mathResult(passed, "totals.taxable_amount", fmtf(expected), fmtf(d.Totals.TaxableAmount), "Math: Taxable Amount")}
 			},
 		},
@@ -145,10 +151,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
-				for _, item := range d.LineItems {
+				for idx := range d.LineItems {
+					item := &d.LineItems[idx]
 					sum += item.CGSTAmount
 				}
-				passed := approxEqual(d.Totals.CGST, sum, mathTolerance)
+				passed := approxEqual(d.Totals.CGST, sum)
 				return []ValidationResult{mathResult(passed, "totals.cgst", fmtf(sum), fmtf(d.Totals.CGST), "Math: Total CGST")}
 			},
 		},
@@ -157,10 +164,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
-				for _, item := range d.LineItems {
+				for idx := range d.LineItems {
+					item := &d.LineItems[idx]
 					sum += item.SGSTAmount
 				}
-				passed := approxEqual(d.Totals.SGST, sum, mathTolerance)
+				passed := approxEqual(d.Totals.SGST, sum)
 				return []ValidationResult{mathResult(passed, "totals.sgst", fmtf(sum), fmtf(d.Totals.SGST), "Math: Total SGST")}
 			},
 		},
@@ -169,10 +177,11 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
-				for _, item := range d.LineItems {
+				for idx := range d.LineItems {
+					item := &d.LineItems[idx]
 					sum += item.IGSTAmount
 				}
-				passed := approxEqual(d.Totals.IGST, sum, mathTolerance)
+				passed := approxEqual(d.Totals.IGST, sum)
 				return []ValidationResult{mathResult(passed, "totals.igst", fmtf(sum), fmtf(d.Totals.IGST), "Math: Total IGST")}
 			},
 		},
@@ -181,7 +190,7 @@ func MathValidators() []*mathValidator {
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				expected := d.Totals.TaxableAmount + d.Totals.CGST + d.Totals.SGST + d.Totals.IGST + d.Totals.Cess + d.Totals.RoundOff
-				passed := approxEqual(d.Totals.Total, expected, mathTolerance)
+				passed := approxEqual(d.Totals.Total, expected)
 				return []ValidationResult{mathResult(passed, "totals.total", fmtf(expected), fmtf(d.Totals.Total), "Math: Grand Total")}
 			},
 		},

@@ -16,7 +16,7 @@ type MockDocumentService struct {
 	mock.Mock
 }
 
-func (m *MockDocumentService) CreateAndParse(ctx context.Context, input service.CreateDocumentInput) (*domain.Document, error) {
+func (m *MockDocumentService) CreateAndParse(ctx context.Context, input *service.CreateDocumentInput) (*domain.Document, error) {
 	args := m.Called(ctx, input)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -56,7 +56,7 @@ func (m *MockDocumentService) ListByTenant(ctx context.Context, tenantID uuid.UU
 	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
-func (m *MockDocumentService) UpdateReview(ctx context.Context, input service.UpdateReviewInput) (*domain.Document, error) {
+func (m *MockDocumentService) UpdateReview(ctx context.Context, input *service.UpdateReviewInput) (*domain.Document, error) {
 	args := m.Called(ctx, input)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

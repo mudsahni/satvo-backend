@@ -44,7 +44,7 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		return
 	}
 
-	doc, err := h.documentService.CreateAndParse(c.Request.Context(), service.CreateDocumentInput{
+	doc, err := h.documentService.CreateAndParse(c.Request.Context(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: req.CollectionID,
 		FileID:       req.FileID,
@@ -173,7 +173,7 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 		return
 	}
 
-	doc, err := h.documentService.UpdateReview(c.Request.Context(), service.UpdateReviewInput{
+	doc, err := h.documentService.UpdateReview(c.Request.Context(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: userID,

@@ -15,9 +15,11 @@ type crossFieldValidator struct {
 	validate func(*GSTInvoice) []ValidationResult
 }
 
-func (v *crossFieldValidator) RuleKey() string                    { return v.ruleKey }
-func (v *crossFieldValidator) RuleName() string                   { return v.ruleName }
-func (v *crossFieldValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleCrossField }
+func (v *crossFieldValidator) RuleKey() string  { return v.ruleKey }
+func (v *crossFieldValidator) RuleName() string { return v.ruleName }
+func (v *crossFieldValidator) RuleType() domain.ValidationRuleType {
+	return domain.ValidationRuleCrossField
+}
 func (v *crossFieldValidator) Severity() domain.ValidationSeverity { return v.severity }
 
 func (v *crossFieldValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
@@ -69,7 +71,8 @@ func CrossFieldValidators() []*crossFieldValidator {
 					return nil // not intrastate, skip
 				}
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					// Intrastate: CGST+SGST should be used, IGST should be 0
 					cgstSgstUsed := item.CGSTRate > 0 || item.SGSTRate > 0
 					igstZero := item.IGSTRate == 0 && item.IGSTAmount == 0
@@ -103,7 +106,8 @@ func CrossFieldValidators() []*crossFieldValidator {
 					return nil // not interstate, skip
 				}
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
+					item := &d.LineItems[i]
 					igstUsed := item.IGSTRate > 0
 					cgstSgstZero := item.CGSTRate == 0 && item.CGSTAmount == 0 && item.SGSTRate == 0 && item.SGSTAmount == 0
 					passed := igstUsed && cgstSgstZero

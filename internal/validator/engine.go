@@ -79,7 +79,8 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 	hasError := false
 	hasWarning := false
 
-	for _, rule := range rules {
+	for idx := range rules {
+		rule := &rules[idx]
 		if rule.IsBuiltin && rule.BuiltinRuleKey != nil {
 			v := e.registry.Get(*rule.BuiltinRuleKey)
 			if v == nil {

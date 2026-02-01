@@ -45,7 +45,7 @@ func TestDocumentHandler_Create_Success(t *testing.T) {
 		ReviewStatus:  domain.ReviewStatusPending,
 	}
 
-	mockSvc.On("CreateAndParse", mock.Anything, mock.MatchedBy(func(input service.CreateDocumentInput) bool {
+	mockSvc.On("CreateAndParse", mock.Anything, mock.MatchedBy(func(input *service.CreateDocumentInput) bool {
 		return input.TenantID == tenantID &&
 			input.FileID == fileID &&
 			input.CollectionID == collectionID &&
@@ -117,7 +117,7 @@ func TestDocumentHandler_Create_DuplicateDocument(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()
 
-	mockSvc.On("CreateAndParse", mock.Anything, mock.AnythingOfType("service.CreateDocumentInput")).
+	mockSvc.On("CreateAndParse", mock.Anything, mock.AnythingOfType("*service.CreateDocumentInput")).
 		Return(nil, domain.ErrDocumentAlreadyExists)
 
 	body, _ := json.Marshal(map[string]string{
@@ -143,7 +143,7 @@ func TestDocumentHandler_Create_FileNotFound(t *testing.T) {
 	tenantID := uuid.New()
 	userID := uuid.New()
 
-	mockSvc.On("CreateAndParse", mock.Anything, mock.AnythingOfType("service.CreateDocumentInput")).
+	mockSvc.On("CreateAndParse", mock.Anything, mock.AnythingOfType("*service.CreateDocumentInput")).
 		Return(nil, domain.ErrNotFound)
 
 	body, _ := json.Marshal(map[string]string{
@@ -408,7 +408,7 @@ func TestDocumentHandler_UpdateReview_Approved(t *testing.T) {
 		ReviewerNotes: "Verified",
 	}
 
-	mockSvc.On("UpdateReview", mock.Anything, mock.MatchedBy(func(input service.UpdateReviewInput) bool {
+	mockSvc.On("UpdateReview", mock.Anything, mock.MatchedBy(func(input *service.UpdateReviewInput) bool {
 		return input.TenantID == tenantID &&
 			input.DocumentID == docID &&
 			input.ReviewerID == userID &&
@@ -446,7 +446,7 @@ func TestDocumentHandler_UpdateReview_Rejected(t *testing.T) {
 		ReviewStatus: domain.ReviewStatusRejected,
 	}
 
-	mockSvc.On("UpdateReview", mock.Anything, mock.AnythingOfType("service.UpdateReviewInput")).
+	mockSvc.On("UpdateReview", mock.Anything, mock.AnythingOfType("*service.UpdateReviewInput")).
 		Return(expected, nil)
 
 	body, _ := json.Marshal(map[string]string{
@@ -519,7 +519,7 @@ func TestDocumentHandler_UpdateReview_NotParsed(t *testing.T) {
 	userID := uuid.New()
 	docID := uuid.New()
 
-	mockSvc.On("UpdateReview", mock.Anything, mock.AnythingOfType("service.UpdateReviewInput")).
+	mockSvc.On("UpdateReview", mock.Anything, mock.AnythingOfType("*service.UpdateReviewInput")).
 		Return(nil, domain.ErrDocumentNotParsed)
 
 	body, _ := json.Marshal(map[string]string{

@@ -1,6 +1,6 @@
 # SATVOS
 
-A multi-tenant, secure file upload service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, AWS S3 storage, and document collections with permission-based access control.
+A multi-tenant document processing service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, AWS S3 storage, document collections with permission-based access control, LLM-powered document parsing, and automated GST invoice validation with 50+ built-in rules.
 
 ## Architecture
 
@@ -8,23 +8,25 @@ Hexagonal architecture (ports & adapters) with clear separation of concerns:
 
 ```
 cmd/
-  server/       Application entry point
-  migrate/      Database migration CLI
+  server/         Application entry point
+  migrate/        Database migration CLI
 internal/
-  config/       Environment-based configuration (viper)
-  domain/       Models, enums, custom errors
-  handler/      HTTP request handlers (gin)
-  middleware/   Auth, tenant guard, request logging
-  service/      Business logic layer
-  port/         Interface definitions (repository, storage, parser)
-  parser/       LLM parser implementations
-    claude/     Anthropic Claude parser (Messages API)
-  repository/   PostgreSQL implementations (sqlx + pgx)
-  storage/      S3 client implementation
-  router/       Route definitions and middleware wiring
-  mocks/        Generated mocks (uber/mock)
-tests/unit/     Unit tests
-db/migrations/  SQL migration files
+  config/         Environment-based configuration (viper)
+  domain/         Models, enums, custom errors
+  handler/        HTTP request handlers (gin)
+  middleware/     Auth, tenant guard, request logging
+  service/        Business logic layer
+  port/           Interface definitions (repository, storage, parser)
+  parser/         LLM parser implementations
+    claude/       Anthropic Claude parser (Messages API)
+  validator/      Document validation engine
+    invoice/      GST invoice validators (required, format, math, crossfield, logical)
+  repository/     PostgreSQL implementations (sqlx + pgx)
+  storage/        S3 client implementation
+  router/         Route definitions and middleware wiring
+  mocks/          Generated mocks (uber/mock)
+tests/unit/       Unit tests (handlers, services, middleware, validators)
+db/migrations/    SQL migration files (7 migrations)
 ```
 
 ## Tech Stack
@@ -36,6 +38,8 @@ db/migrations/  SQL migration files
 | Database | PostgreSQL 16 |
 | Object Storage | AWS S3 (LocalStack for dev) |
 | Auth | JWT (HS256) + bcrypt |
+| Document Parsing | Anthropic Claude API (Messages API) |
+| Validation | Pluggable rule engine (50+ built-in GST rules) |
 | Config | Viper (env vars) |
 | Migrations | golang-migrate |
 
@@ -155,7 +159,7 @@ go run ./cmd/migrate steps N     # Apply N migrations
 go run ./cmd/migrate version     # Show current version
 ```
 
-Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules`, `document_validation_results` (per-tenant, cascade).
+Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules` (per-tenant, cascade). Validation results are stored as JSONB on the `documents` table.
 
 ## API Reference
 
@@ -511,11 +515,21 @@ curl -X DELETE http://localhost:8080/api/v1/admin/tenants/<tenant_id> \
   -H "Authorization: Bearer <access_token>"
 ```
 
-### Documents (AI-Powered Parsing)
+### Documents (AI-Powered Parsing + Validation)
 
-Documents represent parsed versions of uploaded files. When you create a document, SATVOS sends the file to an LLM (currently Claude) in a background goroutine which extracts structured invoice data including seller/buyer info, line items, tax breakdowns, and payment details.
+Documents represent parsed and validated versions of uploaded files. When you create a document, SATVOS sends the file to an LLM (currently Claude) in a background goroutine which extracts structured invoice data including seller/buyer info, line items, tax breakdowns, and payment details. After parsing completes, the validation engine automatically runs 50+ built-in GST rules against the extracted data.
 
-**Workflow**: Upload a file -> Create a document (triggers parsing) -> Poll until `parsing_status=completed` -> Review the extracted data -> Approve or reject.
+**Document Lifecycle**:
+
+```
+Upload File ──> Create Document ──> Background LLM Parsing ──> Auto-Validation ──> Human Review
+                                          |                         |
+                                    parsing_status:           validation_status:
+                                    pending -> processing     pending -> valid
+                                    -> completed/failed       -> warning/invalid
+```
+
+**Full workflow**: Upload a file -> Create a document (triggers parsing) -> Poll until `parsing_status=completed` -> Validation runs automatically -> Check validation results -> Approve or reject.
 
 All document endpoints require `Authorization: Bearer {access_token}`.
 
@@ -607,6 +621,82 @@ curl -X DELETE http://localhost:8080/api/v1/documents/<document_id> \
   -H "Authorization: Bearer <access_token>"
 ```
 
+#### Validate a document (re-run validation)
+
+Triggers the validation engine on a parsed document. Validation also runs automatically after parsing completes, so this is only needed to re-validate after rule changes.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/documents/<document_id>/validate \
+  -H "Authorization: Bearer <access_token>"
+```
+
+#### Get validation results
+
+Returns detailed validation results including per-rule outcomes, a summary, and per-field statuses.
+
+```bash
+curl http://localhost:8080/api/v1/documents/<document_id>/validation \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "document_id": "uuid",
+    "validation_status": "warning",
+    "summary": {
+      "total": 50,
+      "passed": 47,
+      "errors": 0,
+      "warnings": 3
+    },
+    "results": [
+      {
+        "rule_name": "Required: Invoice Number",
+        "rule_type": "required_field",
+        "severity": "error",
+        "passed": true,
+        "field_path": "invoice.invoice_number",
+        "expected_value": "non-empty value",
+        "actual_value": "INV-001",
+        "message": "Required: Invoice Number: invoice.invoice_number is present"
+      }
+    ],
+    "field_statuses": {
+      "invoice.invoice_number": {
+        "status": "valid",
+        "messages": []
+      },
+      "seller.gstin": {
+        "status": "unsure",
+        "messages": ["Format: Seller GSTIN: invalid format"]
+      }
+    }
+  }
+}
+```
+
+**Validation status values**: `pending` (not yet validated), `valid` (all rules passed), `warning` (only warning-severity failures), `invalid` (error-severity failures).
+
+**Field status values**: `valid`, `invalid` (error-severity rule failed), `unsure` (warning-severity rule failed or low confidence score).
+
+#### Built-in Validation Rules (50 rules)
+
+The validation engine includes 50 built-in rules across 5 categories, automatically seeded per tenant on first use:
+
+| Category | Count | Type | Examples |
+|----------|-------|------|----------|
+| Required Fields | 12 | `required_field` | Invoice number, seller/buyer GSTIN, state codes |
+| Format | 13 | `regex` | GSTIN (15-char pattern), PAN (10-char), IFSC, HSN/SAC, date formats, ISO currency codes, state codes (01-38) |
+| Mathematical | 11 | `sum_check` | Line item taxable = qty x price - discount, CGST/SGST/IGST amounts, totals reconciliation, round-off <= 0.50 |
+| Cross-field | 7 | `cross_field` | GSTIN-state match, GSTIN-PAN match, intrastate uses CGST+SGST, interstate uses IGST, due date after invoice date |
+| Logical | 7 | `custom` | Non-negative amounts, valid GST rates (0/0.25/3/5/12/18/28%), CGST=SGST rate, exclusive tax type, at least one line item |
+
+Rules have severity levels: `error` (blocks approval) or `warning` (informational).
+
 #### Parsed Invoice Schema
 
 When parsing completes, `structured_data` contains:
@@ -693,7 +783,8 @@ When parsing completes, `structured_data` contains:
 | `INVALID_PERMISSION` | 400 | Invalid permission value |
 | `DOCUMENT_NOT_FOUND` | 404 | Document not found |
 | `DOCUMENT_ALREADY_EXISTS` | 409 | Document already exists for this file |
-| `DOCUMENT_NOT_PARSED` | 400 | Document hasn't been parsed yet (e.g., reviewing before parse completes) |
+| `DOCUMENT_NOT_PARSED` | 400 | Document hasn't been parsed yet (e.g., reviewing or validating before parse completes) |
+| `VALIDATION_RULE_NOT_FOUND` | 404 | Validation rule not found |
 
 ## Docker
 

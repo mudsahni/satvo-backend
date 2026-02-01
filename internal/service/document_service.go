@@ -34,12 +34,12 @@ type UpdateReviewInput struct {
 
 // DocumentService defines the document management contract.
 type DocumentService interface {
-	CreateAndParse(ctx context.Context, input CreateDocumentInput) (*domain.Document, error)
+	CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error)
 	GetByID(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error)
 	GetByFileID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.Document, error)
 	ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
-	UpdateReview(ctx context.Context, input UpdateReviewInput) (*domain.Document, error)
+	UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error)
 	RetryParse(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error)
 	ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error
 	GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error)
@@ -71,7 +71,7 @@ func NewDocumentService(
 	}
 }
 
-func (s *documentService) CreateAndParse(ctx context.Context, input CreateDocumentInput) (*domain.Document, error) {
+func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error) {
 	// Verify the file exists
 	file, err := s.fileRepo.GetByID(ctx, input.TenantID, input.FileID)
 	if err != nil {
@@ -79,18 +79,18 @@ func (s *documentService) CreateAndParse(ctx context.Context, input CreateDocume
 	}
 
 	doc := &domain.Document{
-		ID:               uuid.New(),
-		TenantID:         input.TenantID,
-		CollectionID:     input.CollectionID,
-		FileID:           input.FileID,
-		DocumentType:     input.DocumentType,
-		ParsingStatus:    domain.ParsingStatusPending,
-		ReviewStatus:     domain.ReviewStatusPending,
+		ID:                uuid.New(),
+		TenantID:          input.TenantID,
+		CollectionID:      input.CollectionID,
+		FileID:            input.FileID,
+		DocumentType:      input.DocumentType,
+		ParsingStatus:     domain.ParsingStatusPending,
+		ReviewStatus:      domain.ReviewStatusPending,
 		ValidationStatus:  domain.ValidationStatusPending,
 		ValidationResults: json.RawMessage("[]"),
 		StructuredData:    json.RawMessage("{}"),
 		ConfidenceScores:  json.RawMessage("{}"),
-		CreatedBy:        input.CreatedBy,
+		CreatedBy:         input.CreatedBy,
 	}
 
 	log.Printf("documentService.CreateAndParse: creating document %s for file %s (tenant %s)",
@@ -195,7 +195,7 @@ func (s *documentService) ListByTenant(ctx context.Context, tenantID uuid.UUID, 
 	return s.docRepo.ListByTenant(ctx, tenantID, offset, limit)
 }
 
-func (s *documentService) UpdateReview(ctx context.Context, input UpdateReviewInput) (*domain.Document, error) {
+func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error) {
 	doc, err := s.docRepo.GetByID(ctx, input.TenantID, input.DocumentID)
 	if err != nil {
 		return nil, err

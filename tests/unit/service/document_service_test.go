@@ -71,7 +71,7 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 		PromptUsed:       "test prompt",
 	}, nil).Maybe()
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		FileID:       fileID,
@@ -103,7 +103,7 @@ func TestDocumentService_CreateAndParse_FileNotFound(t *testing.T) {
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(nil, domain.ErrNotFound)
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: uuid.New(),
 		FileID:       fileID,
@@ -133,7 +133,7 @@ func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Return(domain.ErrDocumentAlreadyExists)
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: uuid.New(),
 		FileID:       fileID,
@@ -163,7 +163,7 @@ func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Return(errors.New("db connection error"))
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: uuid.New(),
 		FileID:       fileID,
@@ -326,7 +326,7 @@ func TestDocumentService_UpdateReview_Approved(t *testing.T) {
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: reviewerID,
@@ -358,7 +358,7 @@ func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: reviewerID,
@@ -385,7 +385,7 @@ func TestDocumentService_UpdateReview_NotParsedYet(t *testing.T) {
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
@@ -410,7 +410,7 @@ func TestDocumentService_UpdateReview_PendingStatus(t *testing.T) {
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
@@ -435,7 +435,7 @@ func TestDocumentService_UpdateReview_FailedStatus(t *testing.T) {
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
@@ -454,7 +454,7 @@ func TestDocumentService_UpdateReview_DocNotFound(t *testing.T) {
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
@@ -481,7 +481,7 @@ func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
 	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Return(errors.New("db error"))
 
-	result, err := svc.UpdateReview(context.Background(), service.UpdateReviewInput{
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
@@ -662,7 +662,7 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		FileID:       fileID,
@@ -716,7 +716,7 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 	storage.On("Download", mock.Anything, "test-bucket", "test-key").
 		Return(nil, errors.New("s3 connection refused"))
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: uuid.New(),
 		FileID:       fileID,
@@ -771,7 +771,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	parser.On("Parse", mock.Anything, mock.Anything).
 		Return(nil, errors.New("API rate limit exceeded"))
 
-	result, err := svc.CreateAndParse(context.Background(), service.CreateDocumentInput{
+	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
 		TenantID:     tenantID,
 		CollectionID: uuid.New(),
 		FileID:       fileID,

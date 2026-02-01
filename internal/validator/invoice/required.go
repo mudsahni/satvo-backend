@@ -9,18 +9,20 @@ import (
 
 // requiredFieldValidator checks that a required field is not empty.
 type requiredFieldValidator struct {
-	ruleKey   string
-	ruleName  string
-	fieldPath string
-	severity  domain.ValidationSeverity
-	extract   func(*GSTInvoice) string
-	perItem   bool // true for line-item level checks
+	ruleKey     string
+	ruleName    string
+	fieldPath   string
+	severity    domain.ValidationSeverity
+	extract     func(*GSTInvoice) string
+	perItem     bool // true for line-item level checks
 	extractItem func(*LineItem) string
 }
 
-func (v *requiredFieldValidator) RuleKey() string                    { return v.ruleKey }
-func (v *requiredFieldValidator) RuleName() string                   { return v.ruleName }
-func (v *requiredFieldValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleRequired }
+func (v *requiredFieldValidator) RuleKey() string  { return v.ruleKey }
+func (v *requiredFieldValidator) RuleName() string { return v.ruleName }
+func (v *requiredFieldValidator) RuleType() domain.ValidationRuleType {
+	return domain.ValidationRuleRequired
+}
 func (v *requiredFieldValidator) Severity() domain.ValidationSeverity { return v.severity }
 
 // ValidationResult is a local alias to avoid import cycles.
@@ -35,8 +37,9 @@ type ValidationResult struct {
 func (v *requiredFieldValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
 	if v.perItem {
 		var results []ValidationResult
-		for i, item := range data.LineItems {
-			val := v.extractItem(&item)
+		for i := range data.LineItems {
+			item := &data.LineItems[i]
+			val := v.extractItem(item)
 			fieldPath := fmt.Sprintf("line_items[%d].%s", i, stripPrefix(v.fieldPath))
 			results = append(results, ValidationResult{
 				Passed:        val != "",

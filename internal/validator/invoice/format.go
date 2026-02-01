@@ -12,11 +12,11 @@ import (
 )
 
 var (
-	gstinPattern = regexp.MustCompile(`^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$`)
-	panPattern   = regexp.MustCompile(`^[A-Z]{5}[0-9]{4}[A-Z]{1}$`)
+	gstinPattern = regexp.MustCompile(`^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$`)
+	panPattern   = regexp.MustCompile(`^[A-Z]{5}\d{4}[A-Z]$`)
 	ifscPattern  = regexp.MustCompile(`^[A-Z]{4}0[A-Z0-9]{6}$`)
-	hsnPattern   = regexp.MustCompile(`^[0-9]{4,8}$`)
-	acctPattern  = regexp.MustCompile(`^[0-9]{9,18}$`)
+	hsnPattern   = regexp.MustCompile(`^\d{4,8}$`)
+	acctPattern  = regexp.MustCompile(`^\d{9,18}$`)
 )
 
 // Known ISO 4217 currency codes (common subset).
@@ -36,8 +36,8 @@ type formatValidator struct {
 	validate  func(*GSTInvoice) []ValidationResult
 }
 
-func (v *formatValidator) RuleKey() string                    { return v.ruleKey }
-func (v *formatValidator) RuleName() string                   { return v.ruleName }
+func (v *formatValidator) RuleKey() string                     { return v.ruleKey }
+func (v *formatValidator) RuleName() string                    { return v.ruleName }
 func (v *formatValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleRegex }
 func (v *formatValidator) Severity() domain.ValidationSeverity { return v.severity }
 
@@ -233,9 +233,9 @@ func FormatValidators() []*formatValidator {
 			fieldPath: "line_items[i].hsn_sac_code", severity: domain.ValidationSeverityWarning,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var results []ValidationResult
-				for i, item := range d.LineItems {
+				for i := range d.LineItems {
 					fp := fmt.Sprintf("line_items[%d].hsn_sac_code", i)
-					results = append(results, regexCheck(fp, item.HSNSACCode, "4-8 digit HSN/SAC code", "Format: HSN/SAC Code", hsnPattern))
+					results = append(results, regexCheck(fp, d.LineItems[i].HSNSACCode, "4-8 digit HSN/SAC code", "Format: HSN/SAC Code", hsnPattern))
 				}
 				return results
 			},
