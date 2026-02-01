@@ -2,6 +2,31 @@
 
 A multi-tenant document processing service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, AWS S3 storage, document collections with permission-based access control, LLM-powered document parsing, and automated GST invoice validation with 50+ built-in rules.
 
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Local Development (Docker Compose)](#local-development-docker-compose)
+  - [Manual Setup](#manual-setup)
+  - [Makefile Targets](#makefile-targets)
+- [Configuration](#configuration)
+- [Database Migrations](#database-migrations)
+- [API Reference](#api-reference)
+  - [Health](#health)
+  - [Authentication](#authentication)
+  - [Files](#files)
+  - [Collections](#collections)
+  - [Users](#users)
+  - [Tenants](#tenants)
+  - [Documents (AI-Powered Parsing + Validation)](#documents-ai-powered-parsing--validation)
+    - [Built-in Validation Rules](#built-in-validation-rules)
+    - [Parsed Invoice Schema](#parsed-invoice-schema)
+- [Authentication & Authorization](#authentication--authorization)
+- [Error Codes](#error-codes)
+- [Docker](#docker)
+
 ## Architecture
 
 Hexagonal architecture (ports & adapters) with clear separation of concerns:
@@ -683,7 +708,7 @@ Response:
 
 **Field status values**: `valid`, `invalid` (error-severity rule failed), `unsure` (warning-severity rule failed or low confidence score).
 
-#### Built-in Validation Rules (50 rules)
+#### Built-in Validation Rules
 
 The validation engine includes 50 built-in rules across 5 categories, automatically seeded per tenant on first use:
 
@@ -691,11 +716,13 @@ The validation engine includes 50 built-in rules across 5 categories, automatica
 |----------|-------|------|----------|
 | Required Fields | 12 | `required_field` | Invoice number, seller/buyer GSTIN, state codes |
 | Format | 13 | `regex` | GSTIN (15-char pattern), PAN (10-char), IFSC, HSN/SAC, date formats, ISO currency codes, state codes (01-38) |
-| Mathematical | 11 | `sum_check` | Line item taxable = qty x price - discount, CGST/SGST/IGST amounts, totals reconciliation, round-off <= 0.50 |
-| Cross-field | 7 | `cross_field` | GSTIN-state match, GSTIN-PAN match, intrastate uses CGST+SGST, interstate uses IGST, due date after invoice date |
+| Mathematical | 12 | `sum_check` | Line item taxable = qty x price - discount, CGST/SGST/IGST amounts, totals reconciliation, round-off <= 0.50 |
+| Cross-field | 8 | `cross_field` | GSTIN-state match, GSTIN-PAN match, intrastate uses CGST+SGST, interstate uses IGST, due date after invoice date |
 | Logical | 7 | `custom` | Non-negative amounts, valid GST rates (0/0.25/3/5/12/18/28%), CGST=SGST rate, exclusive tax type, at least one line item |
 
 Rules have severity levels: `error` (blocks approval) or `warning` (informational).
+
+For the complete list of every rule key, field path, formula, and validation logic, see **[VALIDATION.md](VALIDATION.md)**.
 
 #### Parsed Invoice Schema
 
@@ -763,28 +790,17 @@ When parsing completes, `structured_data` contains:
 
 ## Error Codes
 
+All errors are returned in the standard response envelope with a `code` and `message`. Common codes at a glance:
+
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
-| `NOT_FOUND` | 404 | Resource not found |
 | `UNAUTHORIZED` | 401 | Missing or invalid token |
 | `FORBIDDEN` | 403 | Insufficient permissions |
-| `INVALID_CREDENTIALS` | 401 | Wrong email/password |
-| `TENANT_INACTIVE` | 403 | Tenant is deactivated |
-| `USER_INACTIVE` | 403 | User is deactivated |
-| `UNSUPPORTED_FILE_TYPE` | 400 | File type not in whitelist |
-| `FILE_TOO_LARGE` | 413 | Exceeds max file size |
-| `DUPLICATE_EMAIL` | 409 | Email already exists for tenant |
-| `DUPLICATE_SLUG` | 409 | Tenant slug already taken |
-| `UPLOAD_FAILED` | 500 | S3 upload failed |
-| `COLLECTION_NOT_FOUND` | 404 | Collection not found |
-| `COLLECTION_PERMISSION_DENIED` | 403 | Insufficient collection permission |
-| `DUPLICATE_COLLECTION_FILE` | 409 | File already in collection |
-| `SELF_PERMISSION_REMOVAL` | 400 | Cannot remove own permission |
-| `INVALID_PERMISSION` | 400 | Invalid permission value |
-| `DOCUMENT_NOT_FOUND` | 404 | Document not found |
-| `DOCUMENT_ALREADY_EXISTS` | 409 | Document already exists for this file |
-| `DOCUMENT_NOT_PARSED` | 400 | Document hasn't been parsed yet (e.g., reviewing or validating before parse completes) |
-| `VALIDATION_RULE_NOT_FOUND` | 404 | Validation rule not found |
+| `NOT_FOUND` | 404 | Resource not found |
+| `INVALID_REQUEST` | 400 | Malformed request body or params |
+| `INTERNAL_ERROR` | 500 | Unhandled server error |
+
+For the complete list organized by domain (auth, files, collections, documents, validation), see **[ERROR_CODES.md](ERROR_CODES.md)**.
 
 ## Docker
 
