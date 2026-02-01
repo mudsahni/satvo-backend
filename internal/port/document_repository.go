@@ -15,6 +15,7 @@ type DocumentRepository interface {
 	GetByFileID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.Document, error)
 	ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	UpdateStructuredData(ctx context.Context, doc *domain.Document) error
 	UpdateReviewStatus(ctx context.Context, doc *domain.Document) error
 	UpdateValidationResults(ctx context.Context, doc *domain.Document) error

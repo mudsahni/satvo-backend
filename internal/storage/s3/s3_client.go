@@ -84,7 +84,7 @@ func (c *s3Client) Download(ctx context.Context, bucket, key string) ([]byte, er
 	if err != nil {
 		return nil, fmt.Errorf("s3 download: %w", err)
 	}
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 
 	data, err := io.ReadAll(result.Body)
 	if err != nil {

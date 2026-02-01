@@ -33,6 +33,7 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	var req struct {
 		FileID       uuid.UUID `json:"file_id" binding:"required"`
@@ -50,6 +51,7 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		FileID:       req.FileID,
 		DocumentType: req.DocumentType,
 		CreatedBy:    userID,
+		Role:         role,
 	})
 	if err != nil {
 		HandleError(c, err)
@@ -66,6 +68,12 @@ func (h *DocumentHandler) GetByID(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
 		return
 	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -73,7 +81,7 @@ func (h *DocumentHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	doc, err := h.documentService.GetByID(c.Request.Context(), tenantID, docID)
+	doc, err := h.documentService.GetByID(c.Request.Context(), tenantID, docID, userID, role)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -89,6 +97,12 @@ func (h *DocumentHandler) List(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
 		return
 	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	offset, limit := parsePagination(c)
 
@@ -99,7 +113,7 @@ func (h *DocumentHandler) List(c *gin.Context) {
 			RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid collection_id")
 			return
 		}
-		docs, total, err := h.documentService.ListByCollection(c.Request.Context(), tenantID, collectionID, offset, limit)
+		docs, total, err := h.documentService.ListByCollection(c.Request.Context(), tenantID, collectionID, userID, role, offset, limit)
 		if err != nil {
 			HandleError(c, err)
 			return
@@ -108,7 +122,7 @@ func (h *DocumentHandler) List(c *gin.Context) {
 		return
 	}
 
-	docs, total, err := h.documentService.ListByTenant(c.Request.Context(), tenantID, offset, limit)
+	docs, total, err := h.documentService.ListByTenant(c.Request.Context(), tenantID, userID, role, offset, limit)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -124,6 +138,12 @@ func (h *DocumentHandler) Retry(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
 		return
 	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -131,7 +151,7 @@ func (h *DocumentHandler) Retry(c *gin.Context) {
 		return
 	}
 
-	doc, err := h.documentService.RetryParse(c.Request.Context(), tenantID, docID)
+	doc, err := h.documentService.RetryParse(c.Request.Context(), tenantID, docID, userID, role)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -152,6 +172,7 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -177,6 +198,7 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: userID,
+		Role:       role,
 		Status:     req.Status,
 		Notes:      req.Notes,
 	})
@@ -240,6 +262,12 @@ func (h *DocumentHandler) Delete(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
 		return
 	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -247,7 +275,7 @@ func (h *DocumentHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.documentService.Delete(c.Request.Context(), tenantID, docID); err != nil {
+	if err := h.documentService.Delete(c.Request.Context(), tenantID, docID, userID, role); err != nil {
 		HandleError(c, err)
 		return
 	}

@@ -19,14 +19,13 @@ func setupCollectionService() (
 	*mocks.MockCollectionRepo,
 	*mocks.MockCollectionPermissionRepo,
 	*mocks.MockCollectionFileRepo,
-	*mocks.MockFileService,
 ) {
 	collRepo := new(mocks.MockCollectionRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
 	fileRepo := new(mocks.MockCollectionFileRepo)
 	fileSvc := new(mocks.MockFileService)
 	svc := service.NewCollectionService(collRepo, permRepo, fileRepo, fileSvc)
-	return svc, collRepo, permRepo, fileRepo, fileSvc
+	return svc, collRepo, permRepo, fileRepo
 }
 
 func ownerPerm(collectionID, userID uuid.UUID) *domain.CollectionPermissionEntry {
@@ -59,7 +58,7 @@ func viewerPerm(collectionID, userID uuid.UUID) *domain.CollectionPermissionEntr
 // --- Create ---
 
 func TestCollectionService_Create_Success(t *testing.T) {
-	svc, collRepo, permRepo, _, _ := setupCollectionService()
+	svc, collRepo, permRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -67,9 +66,10 @@ func TestCollectionService_Create_Success(t *testing.T) {
 	collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
 	permRepo.On("Upsert", mock.Anything, mock.AnythingOfType("*domain.CollectionPermissionEntry")).Return(nil)
 
-	result, err := svc.Create(context.Background(), service.CreateCollectionInput{
+	result, err := svc.Create(context.Background(), &service.CreateCollectionInput{
 		TenantID:    tenantID,
 		CreatedBy:   userID,
+		Role:        domain.RoleMember,
 		Name:        "Test Collection",
 		Description: "A test collection",
 	})
@@ -85,14 +85,15 @@ func TestCollectionService_Create_Success(t *testing.T) {
 }
 
 func TestCollectionService_Create_RepoError(t *testing.T) {
-	svc, collRepo, _, _, _ := setupCollectionService()
+	svc, collRepo, _, _ := setupCollectionService()
 
 	collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).
 		Return(errors.New("db error"))
 
-	result, err := svc.Create(context.Background(), service.CreateCollectionInput{
+	result, err := svc.Create(context.Background(), &service.CreateCollectionInput{
 		TenantID:  uuid.New(),
 		CreatedBy: uuid.New(),
+		Role:      domain.RoleMember,
 		Name:      "Test",
 	})
 
@@ -102,15 +103,16 @@ func TestCollectionService_Create_RepoError(t *testing.T) {
 }
 
 func TestCollectionService_Create_PermissionUpsertError(t *testing.T) {
-	svc, collRepo, permRepo, _, _ := setupCollectionService()
+	svc, collRepo, permRepo, _ := setupCollectionService()
 
 	collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
 	permRepo.On("Upsert", mock.Anything, mock.AnythingOfType("*domain.CollectionPermissionEntry")).
 		Return(errors.New("db error"))
 
-	result, err := svc.Create(context.Background(), service.CreateCollectionInput{
+	result, err := svc.Create(context.Background(), &service.CreateCollectionInput{
 		TenantID:  uuid.New(),
 		CreatedBy: uuid.New(),
+		Role:      domain.RoleMember,
 		Name:      "Test",
 	})
 
@@ -119,10 +121,24 @@ func TestCollectionService_Create_PermissionUpsertError(t *testing.T) {
 	assert.Contains(t, err.Error(), "assigning owner permission")
 }
 
+func TestCollectionService_Create_ViewerDenied(t *testing.T) {
+	svc, _, _, _ := setupCollectionService()
+
+	result, err := svc.Create(context.Background(), &service.CreateCollectionInput{
+		TenantID:  uuid.New(),
+		CreatedBy: uuid.New(),
+		Role:      domain.RoleViewer,
+		Name:      "Test",
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrInsufficientRole)
+}
+
 // --- GetByID ---
 
 func TestCollectionService_GetByID_Success(t *testing.T) {
-	svc, collRepo, permRepo, _, _ := setupCollectionService()
+	svc, collRepo, permRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -134,14 +150,14 @@ func TestCollectionService_GetByID_Success(t *testing.T) {
 		Return(viewerPerm(collectionID, userID), nil)
 	collRepo.On("GetByID", mock.Anything, tenantID, collectionID).Return(expected, nil)
 
-	result, err := svc.GetByID(context.Background(), tenantID, collectionID, userID)
+	result, err := svc.GetByID(context.Background(), tenantID, collectionID, userID, domain.RoleMember)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, result)
 }
 
 func TestCollectionService_GetByID_NoPermission(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -149,7 +165,44 @@ func TestCollectionService_GetByID_NoPermission(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(nil, domain.ErrCollectionPermDenied)
 
-	result, err := svc.GetByID(context.Background(), uuid.New(), collectionID, userID)
+	result, err := svc.GetByID(context.Background(), uuid.New(), collectionID, userID, domain.RoleViewer)
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
+}
+
+func TestCollectionService_GetByID_AdminBypassesPermission(t *testing.T) {
+	svc, collRepo, permRepo, _ := setupCollectionService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	collectionID := uuid.New()
+
+	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Admin Access"}
+
+	// Admin has no explicit permission, but GetByCollectionAndUser is still called
+	// internally by effectivePermission; it returns an error (no explicit perm).
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+	collRepo.On("GetByID", mock.Anything, tenantID, collectionID).Return(expected, nil)
+
+	result, err := svc.GetByID(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin)
+
+	assert.NoError(t, err)
+	assert.Equal(t, expected, result)
+}
+
+func TestCollectionService_GetByID_ViewerNeedsExplicitPerm(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	// Viewer with no explicit permission
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+
+	result, err := svc.GetByID(context.Background(), uuid.New(), collectionID, userID, domain.RoleViewer)
 
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
@@ -158,7 +211,7 @@ func TestCollectionService_GetByID_NoPermission(t *testing.T) {
 // --- List ---
 
 func TestCollectionService_List_Success(t *testing.T) {
-	svc, collRepo, _, _, _ := setupCollectionService()
+	svc, collRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -168,19 +221,61 @@ func TestCollectionService_List_Success(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 2"},
 	}
 
-	collRepo.On("ListByUser", mock.Anything, tenantID, userID, 0, 20).Return(expected, 2, nil)
+	collRepo.On("ListByTenant", mock.Anything, tenantID, 0, 20).Return(expected, 2, nil)
 
-	collections, total, err := svc.List(context.Background(), tenantID, userID, 0, 20)
+	collections, total, err := svc.List(context.Background(), tenantID, userID, domain.RoleMember, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, collections, 2)
 	assert.Equal(t, 2, total)
 }
 
+func TestCollectionService_List_AdminSeesAll(t *testing.T) {
+	svc, collRepo, _, _ := setupCollectionService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	expected := []domain.Collection{
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1"},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 2"},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 3"},
+	}
+
+	collRepo.On("ListByTenant", mock.Anything, tenantID, 0, 20).Return(expected, 3, nil)
+
+	collections, total, err := svc.List(context.Background(), tenantID, userID, domain.RoleAdmin, 0, 20)
+
+	assert.NoError(t, err)
+	assert.Len(t, collections, 3)
+	assert.Equal(t, 3, total)
+	collRepo.AssertExpectations(t)
+}
+
+func TestCollectionService_List_ViewerSeesOnlyPermitted(t *testing.T) {
+	svc, collRepo, _, _ := setupCollectionService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	expected := []domain.Collection{
+		{ID: uuid.New(), TenantID: tenantID, Name: "Permitted Collection"},
+	}
+
+	collRepo.On("ListByUser", mock.Anything, tenantID, userID, 0, 20).Return(expected, 1, nil)
+
+	collections, total, err := svc.List(context.Background(), tenantID, userID, domain.RoleViewer, 0, 20)
+
+	assert.NoError(t, err)
+	assert.Len(t, collections, 1)
+	assert.Equal(t, 1, total)
+	collRepo.AssertExpectations(t)
+}
+
 // --- Update ---
 
 func TestCollectionService_Update_Success(t *testing.T) {
-	svc, collRepo, permRepo, _, _ := setupCollectionService()
+	svc, collRepo, permRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -197,6 +292,7 @@ func TestCollectionService_Update_Success(t *testing.T) {
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		UserID:       userID,
+		Role:         domain.RoleMember,
 		Name:         "New Name",
 		Description:  "New Desc",
 	})
@@ -207,19 +303,72 @@ func TestCollectionService_Update_Success(t *testing.T) {
 }
 
 func TestCollectionService_Update_NotOwner(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
 
+	// Viewer role with no explicit perm -> effective = "" < editor -> denied
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
-		Return(editorPerm(collectionID, userID), nil)
+		Return(nil, domain.ErrCollectionPermDenied)
 
 	result, err := svc.Update(context.Background(), &service.UpdateCollectionInput{
 		TenantID:     uuid.New(),
 		CollectionID: collectionID,
 		UserID:       userID,
+		Role:         domain.RoleViewer,
 		Name:         "New Name",
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
+}
+
+func TestCollectionService_Update_ManagerCanEdit(t *testing.T) {
+	svc, collRepo, permRepo, _ := setupCollectionService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	collectionID := uuid.New()
+
+	existing := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Old Name"}
+
+	// Manager has no explicit perm, but implicit editor >= editor required
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+	collRepo.On("GetByID", mock.Anything, tenantID, collectionID).Return(existing, nil)
+	collRepo.On("Update", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
+
+	result, err := svc.Update(context.Background(), &service.UpdateCollectionInput{
+		TenantID:     tenantID,
+		CollectionID: collectionID,
+		UserID:       userID,
+		Role:         domain.RoleManager,
+		Name:         "Manager Updated",
+		Description:  "Updated by manager",
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "Manager Updated", result.Name)
+	assert.Equal(t, "Updated by manager", result.Description)
+}
+
+func TestCollectionService_Update_MemberWithoutPermDenied(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	// Member has implicit viewer, no explicit perm -> effective = viewer < editor -> denied
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+
+	result, err := svc.Update(context.Background(), &service.UpdateCollectionInput{
+		TenantID:     uuid.New(),
+		CollectionID: collectionID,
+		UserID:       userID,
+		Role:         domain.RoleMember,
+		Name:         "Should Fail",
 	})
 
 	assert.Nil(t, result)
@@ -229,7 +378,7 @@ func TestCollectionService_Update_NotOwner(t *testing.T) {
 // --- Delete ---
 
 func TestCollectionService_Delete_Success(t *testing.T) {
-	svc, collRepo, permRepo, _, _ := setupCollectionService()
+	svc, collRepo, permRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -239,14 +388,14 @@ func TestCollectionService_Delete_Success(t *testing.T) {
 		Return(ownerPerm(collectionID, userID), nil)
 	collRepo.On("Delete", mock.Anything, tenantID, collectionID).Return(nil)
 
-	err := svc.Delete(context.Background(), tenantID, collectionID, userID)
+	err := svc.Delete(context.Background(), tenantID, collectionID, userID, domain.RoleMember)
 
 	assert.NoError(t, err)
 	collRepo.AssertExpectations(t)
 }
 
 func TestCollectionService_Delete_NotOwner(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -254,7 +403,40 @@ func TestCollectionService_Delete_NotOwner(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(viewerPerm(collectionID, userID), nil)
 
-	err := svc.Delete(context.Background(), uuid.New(), collectionID, userID)
+	err := svc.Delete(context.Background(), uuid.New(), collectionID, userID, domain.RoleMember)
+
+	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
+}
+
+func TestCollectionService_Delete_AdminCanDeleteAny(t *testing.T) {
+	svc, collRepo, permRepo, _ := setupCollectionService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	collectionID := uuid.New()
+
+	// Admin has no explicit perm, but implicit owner >= owner required
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+	collRepo.On("Delete", mock.Anything, tenantID, collectionID).Return(nil)
+
+	err := svc.Delete(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin)
+
+	assert.NoError(t, err)
+	collRepo.AssertExpectations(t)
+}
+
+func TestCollectionService_Delete_ManagerCannotDelete(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	// Manager has implicit editor, no explicit perm -> effective = editor < owner -> denied
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+
+	err := svc.Delete(context.Background(), uuid.New(), collectionID, userID, domain.RoleManager)
 
 	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
 }
@@ -262,7 +444,7 @@ func TestCollectionService_Delete_NotOwner(t *testing.T) {
 // --- ListFiles ---
 
 func TestCollectionService_ListFiles_Success(t *testing.T) {
-	svc, _, permRepo, fileRepo, _ := setupCollectionService()
+	svc, _, permRepo, fileRepo := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -277,7 +459,7 @@ func TestCollectionService_ListFiles_Success(t *testing.T) {
 	fileRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, 0, 20).
 		Return(expected, 1, nil)
 
-	files, total, err := svc.ListFiles(context.Background(), tenantID, collectionID, userID, 0, 20)
+	files, total, err := svc.ListFiles(context.Background(), tenantID, collectionID, userID, domain.RoleMember, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, files, 1)
@@ -285,7 +467,7 @@ func TestCollectionService_ListFiles_Success(t *testing.T) {
 }
 
 func TestCollectionService_ListFiles_NoPermission(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -293,7 +475,7 @@ func TestCollectionService_ListFiles_NoPermission(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(nil, domain.ErrCollectionPermDenied)
 
-	files, total, err := svc.ListFiles(context.Background(), uuid.New(), collectionID, userID, 0, 20)
+	files, total, err := svc.ListFiles(context.Background(), uuid.New(), collectionID, userID, domain.RoleViewer, 0, 20)
 
 	assert.Nil(t, files)
 	assert.Equal(t, 0, total)
@@ -303,7 +485,7 @@ func TestCollectionService_ListFiles_NoPermission(t *testing.T) {
 // --- RemoveFile ---
 
 func TestCollectionService_RemoveFile_Success(t *testing.T) {
-	svc, _, permRepo, fileRepo, _ := setupCollectionService()
+	svc, _, permRepo, fileRepo := setupCollectionService()
 
 	collectionID := uuid.New()
 	fileID := uuid.New()
@@ -313,13 +495,13 @@ func TestCollectionService_RemoveFile_Success(t *testing.T) {
 		Return(editorPerm(collectionID, userID), nil)
 	fileRepo.On("Remove", mock.Anything, collectionID, fileID).Return(nil)
 
-	err := svc.RemoveFile(context.Background(), uuid.New(), collectionID, fileID, userID)
+	err := svc.RemoveFile(context.Background(), uuid.New(), collectionID, fileID, userID, domain.RoleMember)
 
 	assert.NoError(t, err)
 }
 
 func TestCollectionService_RemoveFile_ViewerDenied(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -327,7 +509,7 @@ func TestCollectionService_RemoveFile_ViewerDenied(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(viewerPerm(collectionID, userID), nil)
 
-	err := svc.RemoveFile(context.Background(), uuid.New(), collectionID, uuid.New(), userID)
+	err := svc.RemoveFile(context.Background(), uuid.New(), collectionID, uuid.New(), userID, domain.RoleMember)
 
 	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
 }
@@ -335,7 +517,7 @@ func TestCollectionService_RemoveFile_ViewerDenied(t *testing.T) {
 // --- AddFileToCollection ---
 
 func TestCollectionService_AddFileToCollection_Success(t *testing.T) {
-	svc, _, permRepo, fileRepo, _ := setupCollectionService()
+	svc, _, permRepo, fileRepo := setupCollectionService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
@@ -346,13 +528,13 @@ func TestCollectionService_AddFileToCollection_Success(t *testing.T) {
 		Return(editorPerm(collectionID, userID), nil)
 	fileRepo.On("Add", mock.Anything, mock.AnythingOfType("*domain.CollectionFile")).Return(nil)
 
-	err := svc.AddFileToCollection(context.Background(), tenantID, collectionID, fileID, userID)
+	err := svc.AddFileToCollection(context.Background(), tenantID, collectionID, fileID, userID, domain.RoleMember)
 
 	assert.NoError(t, err)
 }
 
 func TestCollectionService_AddFileToCollection_Duplicate(t *testing.T) {
-	svc, _, permRepo, fileRepo, _ := setupCollectionService()
+	svc, _, permRepo, fileRepo := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -362,7 +544,7 @@ func TestCollectionService_AddFileToCollection_Duplicate(t *testing.T) {
 	fileRepo.On("Add", mock.Anything, mock.AnythingOfType("*domain.CollectionFile")).
 		Return(domain.ErrDuplicateCollectionFile)
 
-	err := svc.AddFileToCollection(context.Background(), uuid.New(), collectionID, uuid.New(), userID)
+	err := svc.AddFileToCollection(context.Background(), uuid.New(), collectionID, uuid.New(), userID, domain.RoleMember)
 
 	assert.ErrorIs(t, err, domain.ErrDuplicateCollectionFile)
 }
@@ -370,7 +552,7 @@ func TestCollectionService_AddFileToCollection_Duplicate(t *testing.T) {
 // --- SetPermission ---
 
 func TestCollectionService_SetPermission_Success(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
@@ -385,6 +567,7 @@ func TestCollectionService_SetPermission_Success(t *testing.T) {
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		GrantedBy:    ownerID,
+		CallerRole:   domain.RoleAdmin,
 		UserID:       targetID,
 		Permission:   domain.CollectionPermEditor,
 	})
@@ -394,12 +577,13 @@ func TestCollectionService_SetPermission_Success(t *testing.T) {
 }
 
 func TestCollectionService_SetPermission_InvalidPermission(t *testing.T) {
-	svc, _, _, _, _ := setupCollectionService()
+	svc, _, _, _ := setupCollectionService()
 
 	err := svc.SetPermission(context.Background(), &service.SetPermissionInput{
 		TenantID:     uuid.New(),
 		CollectionID: uuid.New(),
 		GrantedBy:    uuid.New(),
+		CallerRole:   domain.RoleAdmin,
 		UserID:       uuid.New(),
 		Permission:   "superadmin",
 	})
@@ -408,7 +592,7 @@ func TestCollectionService_SetPermission_InvalidPermission(t *testing.T) {
 }
 
 func TestCollectionService_SetPermission_NotOwner(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	editorID := uuid.New()
@@ -420,6 +604,7 @@ func TestCollectionService_SetPermission_NotOwner(t *testing.T) {
 		TenantID:     uuid.New(),
 		CollectionID: collectionID,
 		GrantedBy:    editorID,
+		CallerRole:   domain.RoleMember,
 		UserID:       uuid.New(),
 		Permission:   domain.CollectionPermViewer,
 	})
@@ -430,7 +615,7 @@ func TestCollectionService_SetPermission_NotOwner(t *testing.T) {
 // --- ListPermissions ---
 
 func TestCollectionService_ListPermissions_Success(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	ownerID := uuid.New()
@@ -444,7 +629,7 @@ func TestCollectionService_ListPermissions_Success(t *testing.T) {
 	permRepo.On("ListByCollection", mock.Anything, collectionID, 0, 20).
 		Return(expected, 1, nil)
 
-	perms, total, err := svc.ListPermissions(context.Background(), uuid.New(), collectionID, ownerID, 0, 20)
+	perms, total, err := svc.ListPermissions(context.Background(), uuid.New(), collectionID, ownerID, domain.RoleAdmin, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, perms, 1)
@@ -452,7 +637,7 @@ func TestCollectionService_ListPermissions_Success(t *testing.T) {
 }
 
 func TestCollectionService_ListPermissions_NotOwner(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	viewerID := uuid.New()
@@ -460,7 +645,7 @@ func TestCollectionService_ListPermissions_NotOwner(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, viewerID).
 		Return(viewerPerm(collectionID, viewerID), nil)
 
-	perms, total, err := svc.ListPermissions(context.Background(), uuid.New(), collectionID, viewerID, 0, 20)
+	perms, total, err := svc.ListPermissions(context.Background(), uuid.New(), collectionID, viewerID, domain.RoleViewer, 0, 20)
 
 	assert.Nil(t, perms)
 	assert.Equal(t, 0, total)
@@ -470,7 +655,7 @@ func TestCollectionService_ListPermissions_NotOwner(t *testing.T) {
 // --- RemovePermission ---
 
 func TestCollectionService_RemovePermission_Success(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	ownerID := uuid.New()
@@ -480,24 +665,24 @@ func TestCollectionService_RemovePermission_Success(t *testing.T) {
 		Return(ownerPerm(collectionID, ownerID), nil)
 	permRepo.On("Delete", mock.Anything, collectionID, targetID).Return(nil)
 
-	err := svc.RemovePermission(context.Background(), uuid.New(), collectionID, targetID, ownerID)
+	err := svc.RemovePermission(context.Background(), uuid.New(), collectionID, targetID, ownerID, domain.RoleAdmin)
 
 	assert.NoError(t, err)
 	permRepo.AssertExpectations(t)
 }
 
 func TestCollectionService_RemovePermission_SelfRemoval(t *testing.T) {
-	svc, _, _, _, _ := setupCollectionService()
+	svc, _, _, _ := setupCollectionService()
 
 	userID := uuid.New()
 
-	err := svc.RemovePermission(context.Background(), uuid.New(), uuid.New(), userID, userID)
+	err := svc.RemovePermission(context.Background(), uuid.New(), uuid.New(), userID, userID, domain.RoleMember)
 
 	assert.ErrorIs(t, err, domain.ErrSelfPermissionRemoval)
 }
 
 func TestCollectionService_RemovePermission_NotOwner(t *testing.T) {
-	svc, _, permRepo, _, _ := setupCollectionService()
+	svc, _, permRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	editorID := uuid.New()
@@ -506,7 +691,7 @@ func TestCollectionService_RemovePermission_NotOwner(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, editorID).
 		Return(editorPerm(collectionID, editorID), nil)
 
-	err := svc.RemovePermission(context.Background(), uuid.New(), collectionID, targetID, editorID)
+	err := svc.RemovePermission(context.Background(), uuid.New(), collectionID, targetID, editorID, domain.RoleMember)
 
 	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
 }

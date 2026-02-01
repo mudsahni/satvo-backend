@@ -76,6 +76,25 @@ func (r *collectionRepo) ListByUser(ctx context.Context, tenantID, userID uuid.U
 	return collections, total, nil
 }
 
+func (r *collectionRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Collection, int, error) {
+	var total int
+	err := r.db.GetContext(ctx, &total,
+		"SELECT COUNT(*) FROM collections WHERE tenant_id = $1", tenantID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("collectionRepo.ListByTenant count: %w", err)
+	}
+
+	var collections []domain.Collection
+	err = r.db.SelectContext(ctx, &collections,
+		`SELECT * FROM collections WHERE tenant_id = $1
+		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		tenantID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("collectionRepo.ListByTenant: %w", err)
+	}
+	return collections, total, nil
+}
+
 func (r *collectionRepo) Update(ctx context.Context, c *domain.Collection) error {
 	c.UpdatedAt = time.Now().UTC()
 	result, err := r.db.ExecContext(ctx,

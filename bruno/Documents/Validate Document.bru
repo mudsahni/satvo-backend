@@ -1,0 +1,15 @@
+meta {
+  name: Validate Document
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/documents/{{documentId}}/validate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

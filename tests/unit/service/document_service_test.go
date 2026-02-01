@@ -17,25 +17,27 @@ import (
 	"satvos/mocks"
 )
 
-func setupDocumentService() (
+func setupDocumentService() ( //nolint:gocritic // test helper benefits from multiple named returns
 	service.DocumentService,
 	*mocks.MockDocumentRepo,
 	*mocks.MockFileMetaRepo,
+	*mocks.MockCollectionPermissionRepo,
 	*mocks.MockDocumentParser,
 	*mocks.MockObjectStorage,
 ) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
-	return svc, docRepo, fileRepo, parser, storage
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, parser, storage, nil)
+	return svc, docRepo, fileRepo, permRepo, parser, storage
 }
 
 // --- CreateAndParse ---
 
 func TestDocumentService_CreateAndParse_Success(t *testing.T) {
-	svc, docRepo, fileRepo, parser, storage := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, parser, storage := setupDocumentService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -50,6 +52,10 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 		ContentType: "application/pdf",
 		Status:      domain.FileStatusUploaded,
 	}
+
+	// Admin bypasses collection permission check — permRepo returns error but admin has implicit owner
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
@@ -77,6 +83,7 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    userID,
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.NoError(t, err)
@@ -96,10 +103,13 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_FileNotFound(t *testing.T) {
-	svc, _, fileRepo, _, _ := setupDocumentService()
+	svc, _, fileRepo, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(nil, domain.ErrNotFound)
 
@@ -109,6 +119,7 @@ func TestDocumentService_CreateAndParse_FileNotFound(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.Nil(t, result)
@@ -117,7 +128,7 @@ func TestDocumentService_CreateAndParse_FileNotFound(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
-	svc, docRepo, fileRepo, _, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -128,6 +139,9 @@ func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
 		S3Bucket: "test-bucket",
 		S3Key:    "test-key",
 	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).
@@ -139,6 +153,7 @@ func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.Nil(t, result)
@@ -147,7 +162,7 @@ func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
-	svc, docRepo, fileRepo, _, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -159,6 +174,9 @@ func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
 		S3Key:    "test-key",
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Return(errors.New("db connection error"))
@@ -169,6 +187,7 @@ func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.Nil(t, result)
@@ -178,10 +197,11 @@ func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
 // --- GetByID ---
 
 func TestDocumentService_GetByID_Success(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
+	userID := uuid.New()
 
 	expected := &domain.Document{
 		ID:            docID,
@@ -189,23 +209,30 @@ func TestDocumentService_GetByID_Success(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusCompleted,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(expected, nil)
 
-	result, err := svc.GetByID(context.Background(), tenantID, docID)
+	result, err := svc.GetByID(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, result)
 }
 
 func TestDocumentService_GetByID_NotFound(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
 
-	result, err := svc.GetByID(context.Background(), tenantID, docID)
+	result, err := svc.GetByID(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, domain.ErrDocumentNotFound)
@@ -214,10 +241,11 @@ func TestDocumentService_GetByID_NotFound(t *testing.T) {
 // --- GetByFileID ---
 
 func TestDocumentService_GetByFileID_Success(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
+	userID := uuid.New()
 
 	expected := &domain.Document{
 		ID:       uuid.New(),
@@ -225,23 +253,30 @@ func TestDocumentService_GetByFileID_Success(t *testing.T) {
 		FileID:   fileID,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByFileID", mock.Anything, tenantID, fileID).Return(expected, nil)
 
-	result, err := svc.GetByFileID(context.Background(), tenantID, fileID)
+	result, err := svc.GetByFileID(context.Background(), tenantID, fileID, userID, domain.RoleAdmin)
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, result)
 }
 
 func TestDocumentService_GetByFileID_NotFound(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	docRepo.On("GetByFileID", mock.Anything, tenantID, fileID).Return(nil, domain.ErrDocumentNotFound)
 
-	result, err := svc.GetByFileID(context.Background(), tenantID, fileID)
+	result, err := svc.GetByFileID(context.Background(), tenantID, fileID, userID, domain.RoleAdmin)
 
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, domain.ErrDocumentNotFound)
@@ -250,20 +285,24 @@ func TestDocumentService_GetByFileID_NotFound(t *testing.T) {
 // --- ListByCollection ---
 
 func TestDocumentService_ListByCollection_Success(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
+	userID := uuid.New()
 
 	expected := []domain.Document{
 		{ID: uuid.New(), TenantID: tenantID, CollectionID: collectionID},
 		{ID: uuid.New(), TenantID: tenantID, CollectionID: collectionID},
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, 0, 20).
 		Return(expected, 2, nil)
 
-	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, 0, 20)
+	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, docs, 2)
@@ -271,15 +310,19 @@ func TestDocumentService_ListByCollection_Success(t *testing.T) {
 }
 
 func TestDocumentService_ListByCollection_Empty(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	docRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, 0, 20).
 		Return([]domain.Document{}, 0, nil)
 
-	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, 0, 20)
+	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Empty(t, docs)
@@ -289,9 +332,10 @@ func TestDocumentService_ListByCollection_Empty(t *testing.T) {
 // --- ListByTenant ---
 
 func TestDocumentService_ListByTenant_Success(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
+	userID := uuid.New()
 
 	expected := []domain.Document{
 		{ID: uuid.New(), TenantID: tenantID},
@@ -300,7 +344,7 @@ func TestDocumentService_ListByTenant_Success(t *testing.T) {
 	docRepo.On("ListByTenant", mock.Anything, tenantID, 0, 20).
 		Return(expected, 1, nil)
 
-	docs, total, err := svc.ListByTenant(context.Background(), tenantID, 0, 20)
+	docs, total, err := svc.ListByTenant(context.Background(), tenantID, userID, domain.RoleAdmin, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, docs, 1)
@@ -310,7 +354,7 @@ func TestDocumentService_ListByTenant_Success(t *testing.T) {
 // --- UpdateReview ---
 
 func TestDocumentService_UpdateReview_Approved(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -323,6 +367,9 @@ func TestDocumentService_UpdateReview_Approved(t *testing.T) {
 		ReviewStatus:  domain.ReviewStatusPending,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
 
@@ -330,6 +377,7 @@ func TestDocumentService_UpdateReview_Approved(t *testing.T) {
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: reviewerID,
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusApproved,
 		Notes:      "Looks good",
 	})
@@ -342,7 +390,7 @@ func TestDocumentService_UpdateReview_Approved(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -355,6 +403,9 @@ func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
 		ReviewStatus:  domain.ReviewStatusPending,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
 
@@ -362,6 +413,7 @@ func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: reviewerID,
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusRejected,
 		Notes:      "Incorrect amounts",
 	})
@@ -372,7 +424,7 @@ func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_NotParsedYet(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -383,12 +435,16 @@ func TestDocumentService_UpdateReview_NotParsedYet(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusProcessing,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 
 	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusApproved,
 	})
 
@@ -397,7 +453,7 @@ func TestDocumentService_UpdateReview_NotParsedYet(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_PendingStatus(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -408,12 +464,16 @@ func TestDocumentService_UpdateReview_PendingStatus(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusPending,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 
 	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusApproved,
 	})
 
@@ -422,7 +482,7 @@ func TestDocumentService_UpdateReview_PendingStatus(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_FailedStatus(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -433,12 +493,16 @@ func TestDocumentService_UpdateReview_FailedStatus(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusFailed,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 
 	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusApproved,
 	})
 
@@ -447,10 +511,13 @@ func TestDocumentService_UpdateReview_FailedStatus(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_DocNotFound(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
 
@@ -458,6 +525,7 @@ func TestDocumentService_UpdateReview_DocNotFound(t *testing.T) {
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusApproved,
 	})
 
@@ -466,7 +534,7 @@ func TestDocumentService_UpdateReview_DocNotFound(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -477,6 +545,9 @@ func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusCompleted,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Return(errors.New("db error"))
@@ -485,6 +556,7 @@ func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
 		TenantID:   tenantID,
 		DocumentID: docID,
 		ReviewerID: uuid.New(),
+		Role:       domain.RoleAdmin,
 		Status:     domain.ReviewStatusApproved,
 	})
 
@@ -496,11 +568,12 @@ func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
 // --- RetryParse ---
 
 func TestDocumentService_RetryParse_Success(t *testing.T) {
-	svc, docRepo, fileRepo, parser, storage := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, parser, storage := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
 	fileID := uuid.New()
+	userID := uuid.New()
 
 	existing := &domain.Document{
 		ID:               docID,
@@ -521,6 +594,9 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 		ContentType: "application/pdf",
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
@@ -533,7 +609,7 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 		PromptUsed:       "test prompt",
 	}, nil).Maybe()
 
-	result, err := svc.RetryParse(context.Background(), tenantID, docID)
+	result, err := svc.RetryParse(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
@@ -545,25 +621,30 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 }
 
 func TestDocumentService_RetryParse_DocNotFound(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
 
-	result, err := svc.RetryParse(context.Background(), tenantID, docID)
+	result, err := svc.RetryParse(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.Nil(t, result)
 	assert.ErrorIs(t, err, domain.ErrDocumentNotFound)
 }
 
 func TestDocumentService_RetryParse_FileNotFound(t *testing.T) {
-	svc, docRepo, fileRepo, _, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
 	fileID := uuid.New()
+	userID := uuid.New()
 
 	existing := &domain.Document{
 		ID:       docID,
@@ -571,10 +652,13 @@ func TestDocumentService_RetryParse_FileNotFound(t *testing.T) {
 		FileID:   fileID,
 	}
 
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
 	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(nil, domain.ErrNotFound)
 
-	result, err := svc.RetryParse(context.Background(), tenantID, docID)
+	result, err := svc.RetryParse(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.Nil(t, result)
 	assert.Error(t, err)
@@ -584,28 +668,30 @@ func TestDocumentService_RetryParse_FileNotFound(t *testing.T) {
 // --- Delete ---
 
 func TestDocumentService_Delete_Success(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
+	userID := uuid.New()
 
 	docRepo.On("Delete", mock.Anything, tenantID, docID).Return(nil)
 
-	err := svc.Delete(context.Background(), tenantID, docID)
+	err := svc.Delete(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.NoError(t, err)
 	docRepo.AssertExpectations(t)
 }
 
 func TestDocumentService_Delete_NotFound(t *testing.T) {
-	svc, docRepo, _, _, _ := setupDocumentService()
+	svc, docRepo, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
+	userID := uuid.New()
 
 	docRepo.On("Delete", mock.Anything, tenantID, docID).Return(domain.ErrDocumentNotFound)
 
-	err := svc.Delete(context.Background(), tenantID, docID)
+	err := svc.Delete(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
 
 	assert.ErrorIs(t, err, domain.ErrDocumentNotFound)
 }
@@ -615,9 +701,10 @@ func TestDocumentService_Delete_NotFound(t *testing.T) {
 func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, parser, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -634,6 +721,9 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 
 	parsedData := json.RawMessage(`{"invoice":{"invoice_number":"INV-001"}}`)
 	confidenceScores := json.RawMessage(`{"invoice":{"invoice_number":0.95}}`)
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
@@ -668,6 +758,7 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.NoError(t, err)
@@ -683,9 +774,10 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, parser, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -697,6 +789,9 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 		S3Key:       "test-key",
 		ContentType: "application/pdf",
 	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
@@ -722,6 +817,7 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.NoError(t, err)
@@ -736,9 +832,10 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
 	parser := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, parser, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, parser, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -750,6 +847,9 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 		S3Key:       "test-key",
 		ContentType: "application/pdf",
 	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
 
 	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
 	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
@@ -777,6 +877,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 		FileID:       fileID,
 		DocumentType: "invoice",
 		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
 	})
 
 	assert.NoError(t, err)

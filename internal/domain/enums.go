@@ -35,9 +35,51 @@ var AllowedExtensions = map[string]FileType{
 type UserRole string
 
 const (
-	RoleAdmin  UserRole = "admin"
-	RoleMember UserRole = "member"
+	RoleAdmin   UserRole = "admin"
+	RoleManager UserRole = "manager"
+	RoleMember  UserRole = "member"
+	RoleViewer  UserRole = "viewer"
 )
+
+// ValidUserRoles maps valid role strings for validation.
+var ValidUserRoles = map[UserRole]bool{
+	RoleAdmin:   true,
+	RoleManager: true,
+	RoleMember:  true,
+	RoleViewer:  true,
+}
+
+// RoleLevel returns the numeric level for role comparison.
+// Higher value = more access.
+func RoleLevel(role UserRole) int {
+	switch role {
+	case RoleAdmin:
+		return 4
+	case RoleManager:
+		return 3
+	case RoleMember:
+		return 2
+	case RoleViewer:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// ImplicitCollectionPerm returns the implicit collection permission for a tenant role.
+// admin → owner, manager → editor, member → viewer, viewer → "" (none).
+func ImplicitCollectionPerm(role UserRole) CollectionPermission {
+	switch role {
+	case RoleAdmin:
+		return CollectionPermOwner
+	case RoleManager:
+		return CollectionPermEditor
+	case RoleMember:
+		return CollectionPermViewer
+	default:
+		return ""
+	}
+}
 
 // CollectionPermission defines the access level for a collection.
 type CollectionPermission string

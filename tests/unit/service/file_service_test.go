@@ -39,7 +39,7 @@ func createMultipartFile(filename string, content []byte, contentType string) (m
 
 	part, _ := writer.CreatePart(h)
 	_, _ = part.Write(content)
-	writer.Close()
+	_ = writer.Close()
 
 	reader := multipart.NewReader(body, writer.Boundary())
 	form, _ := reader.ReadForm(int64(len(content) + 1024))
@@ -56,7 +56,7 @@ func pdfContent() []byte {
 func pngContent() []byte {
 	// PNG magic bytes: 137 80 78 71 13 10 26 10
 	header := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
-	return append(header, bytes.Repeat([]byte{0x00}, 100)...)
+	return append(header, make([]byte, 100)...)
 }
 
 func TestFileService_Upload_Success_PDF(t *testing.T) {
@@ -69,7 +69,7 @@ func TestFileService_Upload_Success_PDF(t *testing.T) {
 	userID := uuid.New()
 
 	file, header := createMultipartFile("document.pdf", pdfContent(), "application/pdf")
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fileRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.FileMeta")).Return(nil)
 	storage.On("Upload", mock.Anything, mock.AnythingOfType("port.UploadInput")).
@@ -102,7 +102,7 @@ func TestFileService_Upload_Success_PNG(t *testing.T) {
 	userID := uuid.New()
 
 	file, header := createMultipartFile("image.png", pngContent(), "image/png")
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fileRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.FileMeta")).Return(nil)
 	storage.On("Upload", mock.Anything, mock.AnythingOfType("port.UploadInput")).
@@ -127,7 +127,7 @@ func TestFileService_Upload_UnsupportedExtension(t *testing.T) {
 	svc := service.NewFileService(fileRepo, storage, &cfg)
 
 	file, header := createMultipartFile("malware.exe", []byte("MZ fake exe content"), "application/octet-stream")
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	result, err := svc.Upload(context.Background(), service.FileUploadInput{
 		TenantID:   uuid.New(),
@@ -149,7 +149,7 @@ func TestFileService_Upload_FileTooLarge(t *testing.T) {
 
 	// Create a file header with size exceeding limit
 	file, header := createMultipartFile("large.pdf", pdfContent(), "application/pdf")
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	header.Size = 2 * 1024 * 1024 // 2MB
 
 	result, err := svc.Upload(context.Background(), service.FileUploadInput{
@@ -171,7 +171,7 @@ func TestFileService_Upload_StorageFailure(t *testing.T) {
 
 	tenantID := uuid.New()
 	file, header := createMultipartFile("document.pdf", pdfContent(), "application/pdf")
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fileRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.FileMeta")).Return(nil)
 	storage.On("Upload", mock.Anything, mock.AnythingOfType("port.UploadInput")).

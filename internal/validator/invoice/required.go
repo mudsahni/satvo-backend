@@ -36,7 +36,7 @@ type ValidationResult struct {
 
 func (v *requiredFieldValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
 	if v.perItem {
-		var results []ValidationResult
+		results := make([]ValidationResult, 0, len(data.LineItems))
 		for i := range data.LineItems {
 			item := &data.LineItems[i]
 			val := v.extractItem(item)

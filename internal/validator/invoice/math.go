@@ -53,7 +53,7 @@ func MathValidators() []*mathValidator {
 			ruleKey: "math.line_item.taxable_amount", ruleName: "Math: Line Item Taxable Amount",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].taxable_amount", i)
@@ -68,7 +68,7 @@ func MathValidators() []*mathValidator {
 			ruleKey: "math.line_item.cgst_amount", ruleName: "Math: Line Item CGST Amount",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].cgst_amount", i)
@@ -83,7 +83,7 @@ func MathValidators() []*mathValidator {
 			ruleKey: "math.line_item.sgst_amount", ruleName: "Math: Line Item SGST Amount",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].sgst_amount", i)
@@ -98,7 +98,7 @@ func MathValidators() []*mathValidator {
 			ruleKey: "math.line_item.igst_amount", ruleName: "Math: Line Item IGST Amount",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].igst_amount", i)
@@ -113,7 +113,7 @@ func MathValidators() []*mathValidator {
 			ruleKey: "math.line_item.total", ruleName: "Math: Line Item Total",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d].total", i)

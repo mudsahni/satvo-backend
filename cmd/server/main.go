@@ -40,7 +40,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Initialize repositories
 	tenantRepo := postgres.NewTenantRepo(db)
@@ -76,7 +76,7 @@ func run() error {
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
-	documentSvc := service.NewDocumentService(docRepo, fileRepo, documentParser, s3Client, validationEngine)
+	documentSvc := service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentParser, s3Client, validationEngine)
 
 	// Initialize handlers
 	authH := handler.NewAuthHandler(authSvc)

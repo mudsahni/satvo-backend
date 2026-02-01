@@ -46,6 +46,10 @@ func NewUserService(repo port.UserRepository) UserService {
 }
 
 func (s *userService) Create(ctx context.Context, tenantID uuid.UUID, input CreateUserInput) (*domain.User, error) {
+	if !domain.ValidUserRoles[input.Role] {
+		return nil, domain.ErrInsufficientRole
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
 	if err != nil {
 		return nil, fmt.Errorf("hashing password: %w", err)
@@ -87,6 +91,9 @@ func (s *userService) Update(ctx context.Context, tenantID, userID uuid.UUID, in
 		user.FullName = *input.FullName
 	}
 	if input.Role != nil {
+		if !domain.ValidUserRoles[*input.Role] {
+			return nil, domain.ErrInsufficientRole
+		}
 		user.Role = *input.Role
 	}
 	if input.IsActive != nil {

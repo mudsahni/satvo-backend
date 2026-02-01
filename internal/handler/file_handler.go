@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"satvos/internal/domain"
 	"satvos/internal/middleware"
 	"satvos/internal/service"
 )
@@ -41,7 +42,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		RespondError(c, http.StatusBadRequest, "MISSING_FILE", "file field is required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	input := service.FileUploadInput{
 		TenantID:   tenantID,
@@ -56,6 +57,8 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	role := domain.UserRole(middleware.GetRole(c))
+
 	// Optional: add file to a collection if collection_id is provided
 	var warning string
 	if collectionIDStr := c.PostForm("collection_id"); collectionIDStr != "" {
@@ -63,7 +66,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		if parseErr != nil {
 			warning = "invalid collection_id format; file uploaded but not added to collection"
 		} else {
-			addErr := h.collectionService.AddFileToCollection(c.Request.Context(), tenantID, collectionID, meta.ID, userID)
+			addErr := h.collectionService.AddFileToCollection(c.Request.Context(), tenantID, collectionID, meta.ID, userID, role)
 			if addErr != nil {
 				log.Printf("fileHandler.Upload: failed to add file %s to collection %s: %v",
 					meta.ID, collectionID, addErr)

@@ -37,7 +37,7 @@ func LogicalValidators() []*logicalValidator {
 			ruleKey: "logic.line_item.non_negative", ruleName: "Logical: Line Item Non-Negative Amounts",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems)*7)
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					amounts := map[string]float64{
@@ -69,7 +69,7 @@ func LogicalValidators() []*logicalValidator {
 			ruleKey: "logic.line_item.valid_tax_rate", ruleName: "Logical: Valid Tax Rate",
 			severity: domain.ValidationSeverityWarning,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems)*3)
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					rates := map[string]float64{
@@ -98,7 +98,7 @@ func LogicalValidators() []*logicalValidator {
 			ruleKey: "logic.line_item.cgst_eq_sgst", ruleName: "Logical: CGST Equals SGST Rate",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					fp := fmt.Sprintf("line_items[%d]", i)
 					item := &d.LineItems[i]
@@ -121,13 +121,13 @@ func LogicalValidators() []*logicalValidator {
 			ruleKey: "logic.line_item.exclusive_tax", ruleName: "Logical: Exclusive Tax Types",
 			severity: domain.ValidationSeverityError,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					item := &d.LineItems[i]
 					fp := fmt.Sprintf("line_items[%d]", i)
 					hasCgstSgst := item.CGSTRate > 0 || item.SGSTRate > 0 || item.CGSTAmount > 0 || item.SGSTAmount > 0
 					hasIgst := item.IGSTRate > 0 || item.IGSTAmount > 0
-					passed := !(hasCgstSgst && hasIgst)
+					passed := !hasCgstSgst || !hasIgst
 					msg := fmt.Sprintf("Logical: Exclusive Tax Types: %s uses either CGST+SGST or IGST, not both", fp)
 					if !passed {
 						msg = fmt.Sprintf("Logical: Exclusive Tax Types: %s has both CGST/SGST and IGST applied", fp)
@@ -201,7 +201,7 @@ func LogicalValidators() []*logicalValidator {
 					"totals.igst":           d.Totals.IGST,
 					"totals.total":          d.Totals.Total,
 				}
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(amounts))
 				for fp, val := range amounts {
 					passed := val >= 0
 					msg := fmt.Sprintf("Logical: Non-Negative Totals: %s is non-negative", fp)
