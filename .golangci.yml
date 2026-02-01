@@ -1,4 +1,5 @@
 version: "2"
+
 run:
   timeout: 5m
 
@@ -16,25 +17,25 @@ linters:
     - unconvert
     - unparam
 
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-  gosec:
-    excludes:
-      - G101 # false positives on variable names like "token"
-  misspell:
-    locale: US
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    gosec:
+      excludes:
+        - G101 # false positives on variable names like "token"
+    misspell:
+      locale: US
 
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - unparam
-    - path: mocks/
-      linters:
-        - unused
-        - unparam
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - unparam
+      - path: mocks/
+        linters:
+          - unused
+          - unparam
