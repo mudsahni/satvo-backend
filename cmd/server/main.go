@@ -59,7 +59,6 @@ func run() error {
 	// Initialize document repositories
 	docRepo := postgres.NewDocumentRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
-	validationResultRepo := postgres.NewDocumentValidationResultRepo(db)
 
 	// Initialize parser
 	documentParser := claudeparser.NewParser(&cfg.Parser)
@@ -69,7 +68,7 @@ func run() error {
 	for _, v := range invoice.AllBuiltinValidators() {
 		registry.Register(v)
 	}
-	validationEngine := validator.NewEngine(registry, validationRuleRepo, validationResultRepo, docRepo)
+	validationEngine := validator.NewEngine(registry, validationRuleRepo, docRepo)
 
 	// Initialize services
 	authSvc := service.NewAuthService(userRepo, tenantRepo, cfg.JWT)

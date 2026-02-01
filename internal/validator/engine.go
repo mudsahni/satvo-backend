@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -13,26 +14,34 @@ import (
 	"satvos/internal/validator/invoice"
 )
 
+// ValidationResultEntry represents a single validation result stored in the JSONB array.
+type ValidationResultEntry struct {
+	RuleID        uuid.UUID `json:"rule_id"`
+	Passed        bool      `json:"passed"`
+	FieldPath     string    `json:"field_path"`
+	ExpectedValue string    `json:"expected_value"`
+	ActualValue   string    `json:"actual_value"`
+	Message       string    `json:"message"`
+	ValidatedAt   time.Time `json:"validated_at"`
+}
+
 // Engine orchestrates document validation.
 type Engine struct {
-	registry   *Registry
-	ruleRepo   port.DocumentValidationRuleRepository
-	resultRepo port.DocumentValidationResultRepository
-	docRepo    port.DocumentRepository
+	registry *Registry
+	ruleRepo port.DocumentValidationRuleRepository
+	docRepo  port.DocumentRepository
 }
 
 // NewEngine creates a new validation engine.
 func NewEngine(
 	registry *Registry,
 	ruleRepo port.DocumentValidationRuleRepository,
-	resultRepo port.DocumentValidationResultRepository,
 	docRepo port.DocumentRepository,
 ) *Engine {
 	return &Engine{
-		registry:   registry,
-		ruleRepo:   ruleRepo,
-		resultRepo: resultRepo,
-		docRepo:    docRepo,
+		registry: registry,
+		ruleRepo: ruleRepo,
+		docRepo:  docRepo,
 	}
 }
 
@@ -64,13 +73,9 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 		return fmt.Errorf("unmarshaling structured_data: %w", err)
 	}
 
-	// Delete previous results (idempotent re-run)
-	if err := e.resultRepo.DeleteByDocument(ctx, docID); err != nil {
-		return fmt.Errorf("deleting previous results: %w", err)
-	}
-
 	// Run validators and collect results
-	var allResults []domain.DocumentValidationResult
+	now := time.Now().UTC()
+	var allResults []ValidationResultEntry
 	hasError := false
 	hasWarning := false
 
@@ -83,16 +88,14 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 			}
 			vResults := v.Validate(ctx, &inv)
 			for _, vr := range vResults {
-				allResults = append(allResults, domain.DocumentValidationResult{
-					ID:            uuid.New(),
-					DocumentID:    docID,
+				allResults = append(allResults, ValidationResultEntry{
 					RuleID:        rule.ID,
-					TenantID:      tenantID,
 					Passed:        vr.Passed,
 					FieldPath:     vr.FieldPath,
 					ExpectedValue: vr.ExpectedValue,
 					ActualValue:   vr.ActualValue,
 					Message:       vr.Message,
+					ValidatedAt:   now,
 				})
 				if !vr.Passed {
 					if rule.Severity == domain.ValidationSeverityError {
@@ -106,14 +109,13 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 		// Custom (non-builtin) rules are skipped for now — extensible via CustomRuleExecutor.
 	}
 
-	// Batch insert results
-	if len(allResults) > 0 {
-		if err := e.resultRepo.CreateBatch(ctx, allResults); err != nil {
-			return fmt.Errorf("saving validation results: %w", err)
-		}
+	// Marshal results to JSON
+	resultsJSON, err := json.Marshal(allResults)
+	if err != nil {
+		return fmt.Errorf("marshaling validation results: %w", err)
 	}
 
-	// Compute and update validation_status
+	// Compute and update validation_status + results
 	var status domain.ValidationStatus
 	switch {
 	case hasError:
@@ -125,8 +127,9 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 	}
 
 	doc.ValidationStatus = status
-	if err := e.docRepo.UpdateValidationStatus(ctx, doc); err != nil {
-		return fmt.Errorf("updating validation status: %w", err)
+	doc.ValidationResults = resultsJSON
+	if err := e.docRepo.UpdateValidationResults(ctx, doc); err != nil {
+		return fmt.Errorf("updating validation results: %w", err)
 	}
 
 	log.Printf("validator.Engine: document %s validated — status=%s, results=%d", docID, status, len(allResults))
@@ -178,9 +181,12 @@ func (e *Engine) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (
 		return nil, err
 	}
 
-	results, err := e.resultRepo.ListByDocument(ctx, docID)
-	if err != nil {
-		return nil, fmt.Errorf("loading results: %w", err)
+	// Unmarshal validation results from the document's JSONB column
+	var results []ValidationResultEntry
+	if len(doc.ValidationResults) > 0 {
+		if err := json.Unmarshal(doc.ValidationResults, &results); err != nil {
+			return nil, fmt.Errorf("unmarshaling validation results: %w", err)
+		}
 	}
 
 	// Load rules for looking up severity
@@ -256,11 +262,11 @@ func (e *Engine) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (
 
 // ValidationResponse is the API response for GET /documents/:id/validation.
 type ValidationResponse struct {
-	DocumentID       uuid.UUID                  `json:"document_id"`
-	ValidationStatus domain.ValidationStatus    `json:"validation_status"`
-	Summary          ValidationSummary          `json:"summary"`
-	Results          []ValidationResultItem     `json:"results"`
-	FieldStatuses    map[string]*FieldStatus    `json:"field_statuses"`
+	DocumentID       uuid.UUID               `json:"document_id"`
+	ValidationStatus domain.ValidationStatus `json:"validation_status"`
+	Summary          ValidationSummary       `json:"summary"`
+	Results          []ValidationResultItem  `json:"results"`
+	FieldStatuses    map[string]*FieldStatus `json:"field_statuses"`
 }
 
 // ValidationSummary holds aggregate counts of validation results.

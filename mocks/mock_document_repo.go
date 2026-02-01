@@ -61,7 +61,7 @@ func (m *MockDocumentRepo) UpdateReviewStatus(ctx context.Context, doc *domain.D
 	return args.Error(0)
 }
 
-func (m *MockDocumentRepo) UpdateValidationStatus(ctx context.Context, doc *domain.Document) error {
+func (m *MockDocumentRepo) UpdateValidationResults(ctx context.Context, doc *domain.Document) error {
 	args := m.Called(ctx, doc)
 	return args.Error(0)
 }

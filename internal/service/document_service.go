@@ -86,9 +86,10 @@ func (s *documentService) CreateAndParse(ctx context.Context, input CreateDocume
 		DocumentType:     input.DocumentType,
 		ParsingStatus:    domain.ParsingStatusPending,
 		ReviewStatus:     domain.ReviewStatusPending,
-		ValidationStatus: domain.ValidationStatusPending,
-		StructuredData:   json.RawMessage("{}"),
-		ConfidenceScores: json.RawMessage("{}"),
+		ValidationStatus:  domain.ValidationStatusPending,
+		ValidationResults: json.RawMessage("[]"),
+		StructuredData:    json.RawMessage("{}"),
+		ConfidenceScores:  json.RawMessage("{}"),
 		CreatedBy:        input.CreatedBy,
 	}
 

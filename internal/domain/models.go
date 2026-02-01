@@ -79,8 +79,9 @@ type Document struct {
 	ReviewedBy       *uuid.UUID         `db:"reviewed_by" json:"reviewed_by"`
 	ReviewedAt       *time.Time         `db:"reviewed_at" json:"reviewed_at"`
 	ReviewerNotes    string             `db:"reviewer_notes" json:"reviewer_notes"`
-	ValidationStatus ValidationStatus   `db:"validation_status" json:"validation_status"`
-	CreatedBy        uuid.UUID          `db:"created_by" json:"created_by"`
+	ValidationStatus  ValidationStatus   `db:"validation_status" json:"validation_status"`
+	ValidationResults json.RawMessage    `db:"validation_results" json:"validation_results"`
+	CreatedBy         uuid.UUID          `db:"created_by" json:"created_by"`
 	CreatedAt        time.Time          `db:"created_at" json:"created_at"`
 	UpdatedAt        time.Time          `db:"updated_at" json:"updated_at"`
 }
@@ -111,20 +112,6 @@ type DocumentValidationRule struct {
 	CreatedBy      uuid.UUID          `db:"created_by" json:"created_by"`
 	CreatedAt      time.Time          `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time          `db:"updated_at" json:"updated_at"`
-}
-
-// DocumentValidationResult stores the result of running a validation rule against a document.
-type DocumentValidationResult struct {
-	ID            uuid.UUID `db:"id" json:"id"`
-	DocumentID    uuid.UUID `db:"document_id" json:"document_id"`
-	RuleID        uuid.UUID `db:"rule_id" json:"rule_id"`
-	TenantID      uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Passed        bool      `db:"passed" json:"passed"`
-	FieldPath     string    `db:"field_path" json:"field_path"`
-	ExpectedValue string    `db:"expected_value" json:"expected_value"`
-	ActualValue   string    `db:"actual_value" json:"actual_value"`
-	Message       string    `db:"message" json:"message"`
-	ValidatedAt   time.Time `db:"validated_at" json:"validated_at"`
 }
 
 // FileMeta stores metadata about an uploaded file.

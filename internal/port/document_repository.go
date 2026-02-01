@@ -17,7 +17,7 @@ type DocumentRepository interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	UpdateStructuredData(ctx context.Context, doc *domain.Document) error
 	UpdateReviewStatus(ctx context.Context, doc *domain.Document) error
-	UpdateValidationStatus(ctx context.Context, doc *domain.Document) error
+	UpdateValidationResults(ctx context.Context, doc *domain.Document) error
 	Delete(ctx context.Context, tenantID, docID uuid.UUID) error
 }
 
@@ -39,9 +39,3 @@ type DocumentValidationRuleRepository interface {
 	Delete(ctx context.Context, tenantID, ruleID uuid.UUID) error
 }
 
-// DocumentValidationResultRepository defines the contract for validation result persistence.
-type DocumentValidationResultRepository interface {
-	CreateBatch(ctx context.Context, results []domain.DocumentValidationResult) error
-	ListByDocument(ctx context.Context, documentID uuid.UUID) ([]domain.DocumentValidationResult, error)
-	DeleteByDocument(ctx context.Context, documentID uuid.UUID) error
-}

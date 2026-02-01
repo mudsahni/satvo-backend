@@ -20,7 +20,7 @@ type resultWithSeverity struct {
 // ComputeFieldStatuses derives per-field validation statuses from results and confidence scores.
 // confidenceMap maps field paths (e.g. "seller.gstin") to confidence float64 values.
 func ComputeFieldStatuses(
-	results []domain.DocumentValidationResult,
+	results []ValidationResultEntry,
 	rules map[string]*domain.DocumentValidationRule,
 	confidenceMap map[string]float64,
 ) map[string]*FieldStatus {
