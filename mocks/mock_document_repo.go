@@ -51,6 +51,14 @@ func (m *MockDocumentRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID,
 	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
+func (m *MockDocumentRepo) ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, userID, offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
+}
+
 func (m *MockDocumentRepo) UpdateStructuredData(ctx context.Context, doc *domain.Document) error {
 	args := m.Called(ctx, doc)
 	return args.Error(0)

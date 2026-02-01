@@ -16,6 +16,7 @@ import (
 type CreateCollectionInput struct {
 	TenantID    uuid.UUID
 	CreatedBy   uuid.UUID
+	Role        domain.UserRole
 	Name        string
 	Description string
 }
@@ -25,6 +26,7 @@ type UpdateCollectionInput struct {
 	TenantID     uuid.UUID
 	CollectionID uuid.UUID
 	UserID       uuid.UUID
+	Role         domain.UserRole
 	Name         string
 	Description  string
 }
@@ -34,6 +36,7 @@ type SetPermissionInput struct {
 	TenantID     uuid.UUID
 	CollectionID uuid.UUID
 	GrantedBy    uuid.UUID
+	CallerRole   domain.UserRole
 	UserID       uuid.UUID
 	Permission   domain.CollectionPermission
 }
@@ -54,18 +57,18 @@ type BatchUploadResult struct {
 
 // CollectionService defines the collection management contract.
 type CollectionService interface {
-	Create(ctx context.Context, input CreateCollectionInput) (*domain.Collection, error)
-	GetByID(ctx context.Context, tenantID, collectionID, userID uuid.UUID) (*domain.Collection, error)
-	List(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Collection, int, error)
+	Create(ctx context.Context, input *CreateCollectionInput) (*domain.Collection, error)
+	GetByID(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole) (*domain.Collection, error)
+	List(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Collection, int, error)
 	Update(ctx context.Context, input *UpdateCollectionInput) (*domain.Collection, error)
-	Delete(ctx context.Context, tenantID, collectionID, userID uuid.UUID) error
-	ListFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error)
-	BatchUploadFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, files []BatchUploadFileInput) ([]BatchUploadResult, error)
-	RemoveFile(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID) error
-	AddFileToCollection(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID) error
+	Delete(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole) error
+	ListFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.FileMeta, int, error)
+	BatchUploadFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, files []BatchUploadFileInput) ([]BatchUploadResult, error)
+	RemoveFile(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID, role domain.UserRole) error
+	AddFileToCollection(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID, role domain.UserRole) error
 	SetPermission(ctx context.Context, input *SetPermissionInput) error
-	ListPermissions(ctx context.Context, tenantID, collectionID, userID uuid.UUID, offset, limit int) ([]domain.CollectionPermissionEntry, int, error)
-	RemovePermission(ctx context.Context, tenantID, collectionID, targetUserID, userID uuid.UUID) error
+	ListPermissions(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.CollectionPermissionEntry, int, error)
+	RemovePermission(ctx context.Context, tenantID, collectionID, targetUserID, userID uuid.UUID, role domain.UserRole) error
 }
 
 type collectionService struct {
@@ -90,18 +93,47 @@ func NewCollectionService(
 	}
 }
 
-func (s *collectionService) requirePermission(ctx context.Context, collectionID, userID uuid.UUID, minLevel domain.CollectionPermission) error {
+// effectivePermission computes the effective collection permission for a user
+// based on their tenant role and explicit collection permission.
+// effective = max(implicit_from_role, explicit_collection_perm)
+// For viewer role: capped at viewer regardless of explicit perm.
+func (s *collectionService) effectivePermission(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole) domain.CollectionPermission {
+	implicit := domain.ImplicitCollectionPerm(role)
+
+	explicit := domain.CollectionPermission("")
 	perm, err := s.permRepo.GetByCollectionAndUser(ctx, collectionID, userID)
-	if err != nil {
-		return domain.ErrCollectionPermDenied
+	if err == nil {
+		explicit = perm.Permission
 	}
-	if domain.CollectionPermLevel(perm.Permission) < domain.CollectionPermLevel(minLevel) {
+
+	// For viewer role: cap at viewer regardless of explicit perm
+	if role == domain.RoleViewer {
+		if domain.CollectionPermLevel(explicit) > domain.CollectionPermLevel(domain.CollectionPermViewer) {
+			explicit = domain.CollectionPermViewer
+		}
+	}
+
+	if domain.CollectionPermLevel(implicit) >= domain.CollectionPermLevel(explicit) {
+		return implicit
+	}
+	return explicit
+}
+
+// requirePermission checks that the user's effective permission meets the minimum level.
+func (s *collectionService) requirePermission(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole, minLevel domain.CollectionPermission) error {
+	eff := s.effectivePermission(ctx, collectionID, userID, role)
+	if domain.CollectionPermLevel(eff) < domain.CollectionPermLevel(minLevel) {
 		return domain.ErrCollectionPermDenied
 	}
 	return nil
 }
 
-func (s *collectionService) Create(ctx context.Context, input CreateCollectionInput) (*domain.Collection, error) {
+func (s *collectionService) Create(ctx context.Context, input *CreateCollectionInput) (*domain.Collection, error) {
+	// Viewers cannot create collections
+	if input.Role == domain.RoleViewer {
+		return nil, domain.ErrInsufficientRole
+	}
+
 	collection := &domain.Collection{
 		ID:          uuid.New(),
 		TenantID:    input.TenantID,
@@ -136,19 +168,24 @@ func (s *collectionService) Create(ctx context.Context, input CreateCollectionIn
 	return collection, nil
 }
 
-func (s *collectionService) GetByID(ctx context.Context, tenantID, collectionID, userID uuid.UUID) (*domain.Collection, error) {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermViewer); err != nil {
+func (s *collectionService) GetByID(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole) (*domain.Collection, error) {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermViewer); err != nil {
 		return nil, err
 	}
 	return s.collectionRepo.GetByID(ctx, tenantID, collectionID)
 }
 
-func (s *collectionService) List(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Collection, int, error) {
+func (s *collectionService) List(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Collection, int, error) {
+	// Admin, manager, and member can see all collections in the tenant
+	if role == domain.RoleAdmin || role == domain.RoleManager || role == domain.RoleMember {
+		return s.collectionRepo.ListByTenant(ctx, tenantID, offset, limit)
+	}
+	// Viewer only sees collections they have explicit permission for
 	return s.collectionRepo.ListByUser(ctx, tenantID, userID, offset, limit)
 }
 
 func (s *collectionService) Update(ctx context.Context, input *UpdateCollectionInput) (*domain.Collection, error) {
-	if err := s.requirePermission(ctx, input.CollectionID, input.UserID, domain.CollectionPermOwner); err != nil {
+	if err := s.requirePermission(ctx, input.CollectionID, input.UserID, input.Role, domain.CollectionPermEditor); err != nil {
 		return nil, err
 	}
 
@@ -167,23 +204,23 @@ func (s *collectionService) Update(ctx context.Context, input *UpdateCollectionI
 	return collection, nil
 }
 
-func (s *collectionService) Delete(ctx context.Context, tenantID, collectionID, userID uuid.UUID) error {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermOwner); err != nil {
+func (s *collectionService) Delete(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole) error {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermOwner); err != nil {
 		return err
 	}
 	log.Printf("collectionService.Delete: deleting collection %s by user %s", collectionID, userID)
 	return s.collectionRepo.Delete(ctx, tenantID, collectionID)
 }
 
-func (s *collectionService) ListFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error) {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermViewer); err != nil {
+func (s *collectionService) ListFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.FileMeta, int, error) {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermViewer); err != nil {
 		return nil, 0, err
 	}
 	return s.fileRepo.ListByCollection(ctx, tenantID, collectionID, offset, limit)
 }
 
-func (s *collectionService) BatchUploadFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, files []BatchUploadFileInput) ([]BatchUploadResult, error) {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermEditor); err != nil {
+func (s *collectionService) BatchUploadFiles(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, files []BatchUploadFileInput) ([]BatchUploadResult, error) {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return nil, err
 	}
 
@@ -230,15 +267,15 @@ func (s *collectionService) BatchUploadFiles(ctx context.Context, tenantID, coll
 	return results, nil
 }
 
-func (s *collectionService) RemoveFile(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID) error {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermEditor); err != nil {
+func (s *collectionService) RemoveFile(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID, role domain.UserRole) error {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return err
 	}
 	return s.fileRepo.Remove(ctx, collectionID, fileID)
 }
 
-func (s *collectionService) AddFileToCollection(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID) error {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermEditor); err != nil {
+func (s *collectionService) AddFileToCollection(ctx context.Context, tenantID, collectionID, fileID, userID uuid.UUID, role domain.UserRole) error {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return err
 	}
 	cf := &domain.CollectionFile{
@@ -254,7 +291,7 @@ func (s *collectionService) SetPermission(ctx context.Context, input *SetPermiss
 	if !domain.ValidCollectionPermissions[input.Permission] {
 		return domain.ErrInvalidPermission
 	}
-	if err := s.requirePermission(ctx, input.CollectionID, input.GrantedBy, domain.CollectionPermOwner); err != nil {
+	if err := s.requirePermission(ctx, input.CollectionID, input.GrantedBy, input.CallerRole, domain.CollectionPermOwner); err != nil {
 		return err
 	}
 
@@ -271,18 +308,18 @@ func (s *collectionService) SetPermission(ctx context.Context, input *SetPermiss
 	return s.permRepo.Upsert(ctx, perm)
 }
 
-func (s *collectionService) ListPermissions(ctx context.Context, tenantID, collectionID, userID uuid.UUID, offset, limit int) ([]domain.CollectionPermissionEntry, int, error) {
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermOwner); err != nil {
+func (s *collectionService) ListPermissions(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.CollectionPermissionEntry, int, error) {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermOwner); err != nil {
 		return nil, 0, err
 	}
 	return s.permRepo.ListByCollection(ctx, collectionID, offset, limit)
 }
 
-func (s *collectionService) RemovePermission(ctx context.Context, tenantID, collectionID, targetUserID, userID uuid.UUID) error {
+func (s *collectionService) RemovePermission(ctx context.Context, tenantID, collectionID, targetUserID, userID uuid.UUID, role domain.UserRole) error {
 	if targetUserID == userID {
 		return domain.ErrSelfPermissionRemoval
 	}
-	if err := s.requirePermission(ctx, collectionID, userID, domain.CollectionPermOwner); err != nil {
+	if err := s.requirePermission(ctx, collectionID, userID, role, domain.CollectionPermOwner); err != nil {
 		return err
 	}
 	log.Printf("collectionService.RemovePermission: removing permission for user %s on collection %s by user %s",

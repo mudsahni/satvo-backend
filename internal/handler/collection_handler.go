@@ -35,6 +35,7 @@ func (h *CollectionHandler) Create(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	var req struct {
 		Name        string `json:"name" binding:"required"`
@@ -45,9 +46,10 @@ func (h *CollectionHandler) Create(c *gin.Context) {
 		return
 	}
 
-	collection, err := h.collectionService.Create(c.Request.Context(), service.CreateCollectionInput{
+	collection, err := h.collectionService.Create(c.Request.Context(), &service.CreateCollectionInput{
 		TenantID:    tenantID,
 		CreatedBy:   userID,
+		Role:        role,
 		Name:        req.Name,
 		Description: req.Description,
 	})
@@ -71,10 +73,11 @@ func (h *CollectionHandler) List(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	offset, limit := parsePagination(c)
 
-	collections, total, err := h.collectionService.List(c.Request.Context(), tenantID, userID, offset, limit)
+	collections, total, err := h.collectionService.List(c.Request.Context(), tenantID, userID, role, offset, limit)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -95,6 +98,7 @@ func (h *CollectionHandler) GetByID(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -102,7 +106,7 @@ func (h *CollectionHandler) GetByID(c *gin.Context) {
 		return
 	}
 
-	collection, err := h.collectionService.GetByID(c.Request.Context(), tenantID, collectionID, userID)
+	collection, err := h.collectionService.GetByID(c.Request.Context(), tenantID, collectionID, userID, role)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -110,7 +114,7 @@ func (h *CollectionHandler) GetByID(c *gin.Context) {
 
 	// Also fetch files for the collection (first page)
 	offset, limit := parsePagination(c)
-	files, totalFiles, err := h.collectionService.ListFiles(c.Request.Context(), tenantID, collectionID, userID, offset, limit)
+	files, totalFiles, err := h.collectionService.ListFiles(c.Request.Context(), tenantID, collectionID, userID, role, offset, limit)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -135,6 +139,7 @@ func (h *CollectionHandler) Update(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -155,6 +160,7 @@ func (h *CollectionHandler) Update(c *gin.Context) {
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		UserID:       userID,
+		Role:         role,
 		Name:         req.Name,
 		Description:  req.Description,
 	})
@@ -178,6 +184,7 @@ func (h *CollectionHandler) Delete(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -185,7 +192,7 @@ func (h *CollectionHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.collectionService.Delete(c.Request.Context(), tenantID, collectionID, userID); err != nil {
+	if err := h.collectionService.Delete(c.Request.Context(), tenantID, collectionID, userID, role); err != nil {
 		HandleError(c, err)
 		return
 	}
@@ -205,6 +212,7 @@ func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -228,7 +236,7 @@ func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 	openFiles := make([]multipart.File, 0, len(fileHeaders))
 	defer func() {
 		for _, f := range openFiles {
-			f.Close()
+			_ = f.Close()
 		}
 	}()
 	for _, fh := range fileHeaders {
@@ -244,7 +252,7 @@ func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 		})
 	}
 
-	results, err := h.collectionService.BatchUploadFiles(c.Request.Context(), tenantID, collectionID, userID, inputs)
+	results, err := h.collectionService.BatchUploadFiles(c.Request.Context(), tenantID, collectionID, userID, role, inputs)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -279,6 +287,7 @@ func (h *CollectionHandler) RemoveFile(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -292,7 +301,7 @@ func (h *CollectionHandler) RemoveFile(c *gin.Context) {
 		return
 	}
 
-	if err := h.collectionService.RemoveFile(c.Request.Context(), tenantID, collectionID, fileID, userID); err != nil {
+	if err := h.collectionService.RemoveFile(c.Request.Context(), tenantID, collectionID, fileID, userID, role); err != nil {
 		HandleError(c, err)
 		return
 	}
@@ -312,6 +321,7 @@ func (h *CollectionHandler) SetPermission(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -332,6 +342,7 @@ func (h *CollectionHandler) SetPermission(c *gin.Context) {
 		TenantID:     tenantID,
 		CollectionID: collectionID,
 		GrantedBy:    userID,
+		CallerRole:   role,
 		UserID:       req.UserID,
 		Permission:   req.Permission,
 	}); err != nil {
@@ -354,6 +365,7 @@ func (h *CollectionHandler) ListPermissions(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -363,7 +375,7 @@ func (h *CollectionHandler) ListPermissions(c *gin.Context) {
 
 	offset, limit := parsePagination(c)
 
-	perms, total, err := h.collectionService.ListPermissions(c.Request.Context(), tenantID, collectionID, userID, offset, limit)
+	perms, total, err := h.collectionService.ListPermissions(c.Request.Context(), tenantID, collectionID, userID, role, offset, limit)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -384,6 +396,7 @@ func (h *CollectionHandler) RemovePermission(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
 		return
 	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -397,7 +410,7 @@ func (h *CollectionHandler) RemovePermission(c *gin.Context) {
 		return
 	}
 
-	if err := h.collectionService.RemovePermission(c.Request.Context(), tenantID, collectionID, targetUserID, userID); err != nil {
+	if err := h.collectionService.RemovePermission(c.Request.Context(), tenantID, collectionID, targetUserID, userID, role); err != nil {
 		HandleError(c, err)
 		return
 	}

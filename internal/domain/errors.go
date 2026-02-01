@@ -23,4 +23,5 @@ var (
 	ErrDocumentAlreadyExists   = errors.New("document already exists for this file")
 	ErrDocumentNotParsed       = errors.New("document has not been parsed yet")
 	ErrValidationRuleNotFound  = errors.New("validation rule not found")
+	ErrInsufficientRole        = errors.New("insufficient role for this action")
 )

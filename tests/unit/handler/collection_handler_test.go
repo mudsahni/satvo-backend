@@ -39,7 +39,7 @@ func TestCollectionHandler_Create_Success(t *testing.T) {
 		Name:     "Test Collection",
 	}
 
-	mockSvc.On("Create", mock.Anything, mock.AnythingOfType("service.CreateCollectionInput")).
+	mockSvc.On("Create", mock.Anything, mock.AnythingOfType("*service.CreateCollectionInput")).
 		Return(expected, nil)
 
 	body, _ := json.Marshal(map[string]string{
@@ -109,7 +109,7 @@ func TestCollectionHandler_List_Success(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1"},
 	}
 
-	mockSvc.On("List", mock.Anything, tenantID, userID, 0, 20).
+	mockSvc.On("List", mock.Anything, tenantID, userID, domain.UserRole("member"), 0, 20).
 		Return(collections, 1, nil)
 
 	w := httptest.NewRecorder()
@@ -143,8 +143,8 @@ func TestCollectionHandler_GetByID_Success(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, Status: domain.FileStatusUploaded},
 	}
 
-	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID).Return(expected, nil)
-	mockSvc.On("ListFiles", mock.Anything, tenantID, collectionID, userID, 0, 20).
+	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member")).Return(expected, nil)
+	mockSvc.On("ListFiles", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member"), 0, 20).
 		Return(files, 1, nil)
 
 	w := httptest.NewRecorder()
@@ -183,7 +183,7 @@ func TestCollectionHandler_GetByID_NotFound(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID).
+	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member")).
 		Return(nil, domain.ErrCollectionNotFound)
 
 	w := httptest.NewRecorder()
@@ -204,7 +204,7 @@ func TestCollectionHandler_GetByID_PermDenied(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID).
+	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member")).
 		Return(nil, domain.ErrCollectionPermDenied)
 
 	w := httptest.NewRecorder()
@@ -282,7 +282,7 @@ func TestCollectionHandler_Delete_Success(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	mockSvc.On("Delete", mock.Anything, tenantID, collectionID, userID).Return(nil)
+	mockSvc.On("Delete", mock.Anything, tenantID, collectionID, userID, domain.UserRole("admin")).Return(nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -303,7 +303,7 @@ func TestCollectionHandler_Delete_PermDenied(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	mockSvc.On("Delete", mock.Anything, tenantID, collectionID, userID).
+	mockSvc.On("Delete", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member")).
 		Return(domain.ErrCollectionPermDenied)
 
 	w := httptest.NewRecorder()
@@ -327,7 +327,7 @@ func TestCollectionHandler_RemoveFile_Success(t *testing.T) {
 	collectionID := uuid.New()
 	fileID := uuid.New()
 
-	mockSvc.On("RemoveFile", mock.Anything, tenantID, collectionID, fileID, userID).Return(nil)
+	mockSvc.On("RemoveFile", mock.Anything, tenantID, collectionID, fileID, userID, domain.UserRole("member")).Return(nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -431,7 +431,7 @@ func TestCollectionHandler_ListPermissions_Success(t *testing.T) {
 		{ID: uuid.New(), CollectionID: collectionID, UserID: userID, Permission: domain.CollectionPermOwner},
 	}
 
-	mockSvc.On("ListPermissions", mock.Anything, tenantID, collectionID, userID, 0, 20).
+	mockSvc.On("ListPermissions", mock.Anything, tenantID, collectionID, userID, domain.UserRole("admin"), 0, 20).
 		Return(perms, 1, nil)
 
 	w := httptest.NewRecorder()
@@ -462,7 +462,7 @@ func TestCollectionHandler_RemovePermission_Success(t *testing.T) {
 	collectionID := uuid.New()
 	targetUserID := uuid.New()
 
-	mockSvc.On("RemovePermission", mock.Anything, tenantID, collectionID, targetUserID, userID).Return(nil)
+	mockSvc.On("RemovePermission", mock.Anything, tenantID, collectionID, targetUserID, userID, domain.UserRole("admin")).Return(nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -487,7 +487,7 @@ func TestCollectionHandler_RemovePermission_SelfRemoval(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	mockSvc.On("RemovePermission", mock.Anything, tenantID, collectionID, userID, userID).
+	mockSvc.On("RemovePermission", mock.Anything, tenantID, collectionID, userID, userID, domain.UserRole("admin")).
 		Return(domain.ErrSelfPermissionRemoval)
 
 	w := httptest.NewRecorder()
@@ -551,7 +551,7 @@ func TestFileHandler_Upload_WithCollectionID_Success(t *testing.T) {
 
 	mockFileSvc.On("Upload", mock.Anything, mock.AnythingOfType("service.FileUploadInput")).
 		Return(expectedMeta, nil)
-	mockCollSvc.On("AddFileToCollection", mock.Anything, tenantID, collectionID, fileID, userID).
+	mockCollSvc.On("AddFileToCollection", mock.Anything, tenantID, collectionID, fileID, userID, domain.UserRole("member")).
 		Return(nil)
 
 	// Build multipart body with file + collection_id
@@ -560,7 +560,7 @@ func TestFileHandler_Upload_WithCollectionID_Success(t *testing.T) {
 	part, _ := writer.CreateFormFile("file", "test.pdf")
 	_, _ = part.Write([]byte("%PDF-1.4 test content"))
 	_ = writer.WriteField("collection_id", collectionID.String())
-	writer.Close()
+	_ = writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -597,7 +597,7 @@ func TestFileHandler_Upload_WithCollectionID_CollectionFails(t *testing.T) {
 
 	mockFileSvc.On("Upload", mock.Anything, mock.AnythingOfType("service.FileUploadInput")).
 		Return(expectedMeta, nil)
-	mockCollSvc.On("AddFileToCollection", mock.Anything, tenantID, collectionID, fileID, userID).
+	mockCollSvc.On("AddFileToCollection", mock.Anything, tenantID, collectionID, fileID, userID, domain.UserRole("member")).
 		Return(domain.ErrCollectionPermDenied)
 
 	body := &bytes.Buffer{}
@@ -605,7 +605,7 @@ func TestFileHandler_Upload_WithCollectionID_CollectionFails(t *testing.T) {
 	part, _ := writer.CreateFormFile("file", "test.pdf")
 	_, _ = part.Write([]byte("%PDF-1.4 test content"))
 	_ = writer.WriteField("collection_id", collectionID.String())
-	writer.Close()
+	_ = writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

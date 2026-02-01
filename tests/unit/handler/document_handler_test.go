@@ -50,7 +50,8 @@ func TestDocumentHandler_Create_Success(t *testing.T) {
 			input.FileID == fileID &&
 			input.CollectionID == collectionID &&
 			input.DocumentType == "invoice" &&
-			input.CreatedBy == userID
+			input.CreatedBy == userID &&
+			input.Role == domain.UserRole("member")
 	})).Return(expected, nil)
 
 	body, _ := json.Marshal(map[string]string{
@@ -178,7 +179,7 @@ func TestDocumentHandler_GetByID_Success(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusCompleted,
 	}
 
-	mockSvc.On("GetByID", mock.Anything, tenantID, docID).Return(expected, nil)
+	mockSvc.On("GetByID", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).Return(expected, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -204,7 +205,7 @@ func TestDocumentHandler_GetByID_NotFound(t *testing.T) {
 	userID := uuid.New()
 	docID := uuid.New()
 
-	mockSvc.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
+	mockSvc.On("GetByID", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).Return(nil, domain.ErrDocumentNotFound)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -246,7 +247,7 @@ func TestDocumentHandler_List_ByTenant(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, ParsingStatus: domain.ParsingStatusCompleted},
 	}
 
-	mockSvc.On("ListByTenant", mock.Anything, tenantID, 0, 20).Return(docs, 1, nil)
+	mockSvc.On("ListByTenant", mock.Anything, tenantID, userID, domain.UserRole("member"), 0, 20).Return(docs, 1, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -276,7 +277,7 @@ func TestDocumentHandler_List_ByCollection(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, CollectionID: collectionID},
 	}
 
-	mockSvc.On("ListByCollection", mock.Anything, tenantID, collectionID, 0, 20).
+	mockSvc.On("ListByCollection", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member"), 0, 20).
 		Return(docs, 1, nil)
 
 	w := httptest.NewRecorder()
@@ -341,7 +342,7 @@ func TestDocumentHandler_Retry_Success(t *testing.T) {
 		ParsingStatus: domain.ParsingStatusPending,
 	}
 
-	mockSvc.On("RetryParse", mock.Anything, tenantID, docID).Return(expected, nil)
+	mockSvc.On("RetryParse", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).Return(expected, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -362,7 +363,7 @@ func TestDocumentHandler_Retry_NotFound(t *testing.T) {
 	userID := uuid.New()
 	docID := uuid.New()
 
-	mockSvc.On("RetryParse", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
+	mockSvc.On("RetryParse", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).Return(nil, domain.ErrDocumentNotFound)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -582,7 +583,7 @@ func TestDocumentHandler_Delete_Success(t *testing.T) {
 	userID := uuid.New()
 	docID := uuid.New()
 
-	mockSvc.On("Delete", mock.Anything, tenantID, docID).Return(nil)
+	mockSvc.On("Delete", mock.Anything, tenantID, docID, userID, domain.UserRole("admin")).Return(nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -603,7 +604,7 @@ func TestDocumentHandler_Delete_NotFound(t *testing.T) {
 	userID := uuid.New()
 	docID := uuid.New()
 
-	mockSvc.On("Delete", mock.Anything, tenantID, docID).Return(domain.ErrDocumentNotFound)
+	mockSvc.On("Delete", mock.Anything, tenantID, docID, userID, domain.UserRole("admin")).Return(domain.ErrDocumentNotFound)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

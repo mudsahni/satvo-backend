@@ -126,6 +126,30 @@ func (r *documentRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, off
 	return docs, total, nil
 }
 
+func (r *documentRepo) ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	var total int
+	err := r.db.GetContext(ctx, &total,
+		`SELECT COUNT(*) FROM documents d
+		 INNER JOIN collection_permissions cp ON cp.collection_id = d.collection_id
+		 WHERE d.tenant_id = $1 AND cp.user_id = $2`,
+		tenantID, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("documentRepo.ListByUserCollections count: %w", err)
+	}
+
+	var docs []domain.Document
+	err = r.db.SelectContext(ctx, &docs,
+		`SELECT d.* FROM documents d
+		 INNER JOIN collection_permissions cp ON cp.collection_id = d.collection_id
+		 WHERE d.tenant_id = $1 AND cp.user_id = $2
+		 ORDER BY d.created_at DESC LIMIT $3 OFFSET $4`,
+		tenantID, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("documentRepo.ListByUserCollections: %w", err)
+	}
+	return docs, total, nil
+}
+
 func (r *documentRepo) UpdateStructuredData(ctx context.Context, doc *domain.Document) error {
 	doc.UpdatedAt = time.Now().UTC()
 	result, err := r.db.ExecContext(ctx,

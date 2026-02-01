@@ -52,7 +52,7 @@ func TestFileHandler_Upload_Success(t *testing.T) {
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("file", "test.pdf")
 	_, _ = part.Write([]byte("%PDF-1.4 test content"))
-	writer.Close()
+	_ = writer.Close()
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)

@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
 
@@ -8,8 +10,6 @@ linters:
     - staticcheck
     - unused
     - ineffassign
-    - gosimple
-    - typecheck
     - gocritic
     - gosec
     - misspell
@@ -17,17 +17,17 @@ linters:
     - unconvert
     - unparam
 
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - performance
-      - style
-  gosec:
-    excludes:
-      - G101 # false positives on variable names like "token"
-  misspell:
-    locale: US
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    gosec:
+      excludes:
+        - G101 # false positives on variable names like "token"
+    misspell:
+      locale: US
 
 issues:
   exclude-rules:

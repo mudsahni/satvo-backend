@@ -94,8 +94,9 @@ func makeRule(id uuid.UUID, key string, severity domain.ValidationSeverity) doma
 // --- ValidateDocument ---
 
 func allBuiltinKeys() []string {
-	keys := make([]string, 0)
-	for _, v := range invoice.AllBuiltinValidators() {
+	validators := invoice.AllBuiltinValidators()
+	keys := make([]string, 0, len(validators))
+	for _, v := range validators {
 		keys = append(keys, v.RuleKey())
 	}
 	return keys

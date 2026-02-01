@@ -21,6 +21,7 @@ type CreateDocumentInput struct {
 	FileID       uuid.UUID
 	DocumentType string
 	CreatedBy    uuid.UUID
+	Role         domain.UserRole
 }
 
 // UpdateReviewInput is the DTO for updating a document's review status.
@@ -28,6 +29,7 @@ type UpdateReviewInput struct {
 	TenantID   uuid.UUID
 	DocumentID uuid.UUID
 	ReviewerID uuid.UUID
+	Role       domain.UserRole
 	Status     domain.ReviewStatus
 	Notes      string
 }
@@ -35,20 +37,21 @@ type UpdateReviewInput struct {
 // DocumentService defines the document management contract.
 type DocumentService interface {
 	CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error)
-	GetByID(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error)
-	GetByFileID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.Document, error)
-	ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
-	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	GetByID(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
+	GetByFileID(ctx context.Context, tenantID, fileID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
+	ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error)
+	ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error)
 	UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error)
-	RetryParse(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error)
+	RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
 	ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error
 	GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error)
-	Delete(ctx context.Context, tenantID, docID uuid.UUID) error
+	Delete(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error
 }
 
 type documentService struct {
 	docRepo   port.DocumentRepository
 	fileRepo  port.FileMetaRepository
+	permRepo  port.CollectionPermissionRepository
 	parser    port.DocumentParser
 	storage   port.ObjectStorage
 	validator *validator.Engine
@@ -58,6 +61,7 @@ type documentService struct {
 func NewDocumentService(
 	docRepo port.DocumentRepository,
 	fileRepo port.FileMetaRepository,
+	permRepo port.CollectionPermissionRepository,
 	parser port.DocumentParser,
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
@@ -65,13 +69,50 @@ func NewDocumentService(
 	return &documentService{
 		docRepo:   docRepo,
 		fileRepo:  fileRepo,
+		permRepo:  permRepo,
 		parser:    parser,
 		storage:   storage,
 		validator: validationEngine,
 	}
 }
 
+// effectiveCollectionPerm computes the effective collection permission for a user.
+func (s *documentService) effectiveCollectionPerm(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole) domain.CollectionPermission {
+	implicit := domain.ImplicitCollectionPerm(role)
+
+	explicit := domain.CollectionPermission("")
+	perm, err := s.permRepo.GetByCollectionAndUser(ctx, collectionID, userID)
+	if err == nil {
+		explicit = perm.Permission
+	}
+
+	if role == domain.RoleViewer {
+		if domain.CollectionPermLevel(explicit) > domain.CollectionPermLevel(domain.CollectionPermViewer) {
+			explicit = domain.CollectionPermViewer
+		}
+	}
+
+	if domain.CollectionPermLevel(implicit) >= domain.CollectionPermLevel(explicit) {
+		return implicit
+	}
+	return explicit
+}
+
+// requireCollectionPerm checks that the user has the minimum permission on a collection.
+func (s *documentService) requireCollectionPerm(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole, minLevel domain.CollectionPermission) error {
+	eff := s.effectiveCollectionPerm(ctx, collectionID, userID, role)
+	if domain.CollectionPermLevel(eff) < domain.CollectionPermLevel(minLevel) {
+		return domain.ErrCollectionPermDenied
+	}
+	return nil
+}
+
 func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error) {
+	// Check editor+ permission on the collection
+	if err := s.requireCollectionPerm(ctx, input.CollectionID, input.CreatedBy, input.Role, domain.CollectionPermEditor); err != nil {
+		return nil, err
+	}
+
 	// Verify the file exists
 	file, err := s.fileRepo.GetByID(ctx, input.TenantID, input.FileID)
 	if err != nil {
@@ -179,25 +220,52 @@ func (s *documentService) failParsing(ctx context.Context, doc *domain.Document,
 	}
 }
 
-func (s *documentService) GetByID(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error) {
-	return s.docRepo.GetByID(ctx, tenantID, docID)
+func (s *documentService) GetByID(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error) {
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermViewer); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }
 
-func (s *documentService) GetByFileID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.Document, error) {
-	return s.docRepo.GetByFileID(ctx, tenantID, fileID)
+func (s *documentService) GetByFileID(ctx context.Context, tenantID, fileID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error) {
+	doc, err := s.docRepo.GetByFileID(ctx, tenantID, fileID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermViewer); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }
 
-func (s *documentService) ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+func (s *documentService) ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error) {
+	if err := s.requireCollectionPerm(ctx, collectionID, userID, role, domain.CollectionPermViewer); err != nil {
+		return nil, 0, err
+	}
 	return s.docRepo.ListByCollection(ctx, tenantID, collectionID, offset, limit)
 }
 
-func (s *documentService) ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
-	return s.docRepo.ListByTenant(ctx, tenantID, offset, limit)
+func (s *documentService) ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error) {
+	// Admin, manager, and member see all documents
+	if role == domain.RoleAdmin || role == domain.RoleManager || role == domain.RoleMember {
+		return s.docRepo.ListByTenant(ctx, tenantID, offset, limit)
+	}
+	// Viewer sees only documents in collections they have access to
+	return s.docRepo.ListByUserCollections(ctx, tenantID, userID, offset, limit)
 }
 
 func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error) {
 	doc, err := s.docRepo.GetByID(ctx, input.TenantID, input.DocumentID)
 	if err != nil {
+		return nil, err
+	}
+
+	// Check editor+ permission on the collection
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, input.ReviewerID, input.Role, domain.CollectionPermEditor); err != nil {
 		return nil, err
 	}
 
@@ -218,9 +286,14 @@ func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewI
 	return doc, nil
 }
 
-func (s *documentService) RetryParse(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error) {
+func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error) {
 	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
 	if err != nil {
+		return nil, err
+	}
+
+	// Check editor+ permission on the collection
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return nil, err
 	}
 
@@ -270,6 +343,6 @@ func (s *documentService) GetValidation(ctx context.Context, tenantID, docID uui
 	return s.validator.GetValidation(ctx, tenantID, docID)
 }
 
-func (s *documentService) Delete(ctx context.Context, tenantID, docID uuid.UUID) error {
+func (s *documentService) Delete(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error {
 	return s.docRepo.Delete(ctx, tenantID, docID)
 }

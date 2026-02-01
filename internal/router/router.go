@@ -44,14 +44,14 @@ func Setup(
 
 	// File routes
 	files := protected.Group("/files")
-	files.POST("/upload", fileH.Upload)
+	files.POST("/upload", middleware.RequireRole(domain.RoleAdmin, domain.RoleManager, domain.RoleMember), fileH.Upload)
 	files.GET("", fileH.List)
 	files.GET("/:id", fileH.GetByID)
 	files.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), fileH.Delete)
 
 	// Collection routes
 	collections := protected.Group("/collections")
-	collections.POST("", collectionH.Create)
+	collections.POST("", middleware.RequireRole(domain.RoleAdmin, domain.RoleManager, domain.RoleMember), collectionH.Create)
 	collections.GET("", collectionH.List)
 	collections.GET("/:id", collectionH.GetByID)
 	collections.PUT("/:id", collectionH.Update)

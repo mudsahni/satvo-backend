@@ -232,7 +232,7 @@ func FormatValidators() []*formatValidator {
 			ruleKey: "fmt.line_item.hsn_sac", ruleName: "Format: HSN/SAC Code",
 			fieldPath: "line_items[i].hsn_sac_code", severity: domain.ValidationSeverityWarning,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				var results []ValidationResult
+				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
 					fp := fmt.Sprintf("line_items[%d].hsn_sac_code", i)
 					results = append(results, regexCheck(fp, d.LineItems[i].HSNSACCode, "4-8 digit HSN/SAC code", "Format: HSN/SAC Code", hsnPattern))
