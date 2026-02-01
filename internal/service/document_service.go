@@ -100,10 +100,13 @@ func (s *documentService) CreateAndParse(ctx context.Context, input CreateDocume
 		return nil, fmt.Errorf("creating document: %w", err)
 	}
 
+	// Copy before launching goroutine so the caller's value is independent of background work
+	result := *doc
+
 	// Launch background parsing
 	go s.parseInBackground(doc.ID, doc.TenantID, file.S3Bucket, file.S3Key, file.ContentType, doc.DocumentType)
 
-	return doc, nil
+	return &result, nil
 }
 
 func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, key, contentType, documentType string) {
@@ -238,9 +241,12 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID uuid.U
 
 	log.Printf("documentService.RetryParse: retrying parsing for document %s", docID)
 
+	// Copy before launching goroutine so the caller's value is independent of background work
+	result := *doc
+
 	go s.parseInBackground(doc.ID, doc.TenantID, file.S3Bucket, file.S3Key, file.ContentType, doc.DocumentType)
 
-	return doc, nil
+	return &result, nil
 }
 
 func (s *documentService) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error {
