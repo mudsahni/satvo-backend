@@ -64,7 +64,7 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 
 	reqBody := map[string]interface{}{
 		"model":      p.model,
-		"max_tokens": 8192,
+		"max_tokens": 16384,
 		"messages": []map[string]interface{}{
 			{
 				"role":    "user",
@@ -141,6 +141,12 @@ func buildContentBlocks(input port.ParseInput, prompt string) ([]map[string]inte
 
 func buildPrompt(documentType string) string {
 	return `You are a document data extraction assistant. Analyze the provided ` + documentType + ` document and extract ALL data into the following JSON structure.
+
+IMPORTANT INSTRUCTIONS:
+- The document may span multiple pages. Extract ALL line items from every page and every section (e.g., Genuine Parts, Other Parts, Labor, Other Labor, Services, Other Charges) into a single flat "line_items" array.
+- It is critical that you extract EVERY line item. Do not skip, summarize, or omit any items.
+- Normalize all dates to DD-MM-YYYY format. Strip timestamps, annotations like "(On or Before)", and other non-date text.
+- State codes must be exactly 2 digits, zero-padded (e.g., "07" not "7").
 
 Return ONLY valid JSON with no markdown formatting, no code fences, no explanation — just the raw JSON object.
 

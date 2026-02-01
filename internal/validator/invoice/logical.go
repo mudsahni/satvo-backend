@@ -10,7 +10,9 @@ import (
 
 // Valid GST tax rates.
 var validTaxRates = map[float64]bool{
-	0: true, 0.25: true, 3: true, 5: true, 12: true, 18: true, 28: true,
+	0: true, 0.125: true, 0.25: true, 1.5: true, 2.5: true,
+	3: true, 5: true, 6: true, 9: true, 12: true, 14: true,
+	18: true, 28: true,
 }
 
 // logicalValidator checks logical constraints on the invoice data.
@@ -86,7 +88,7 @@ func LogicalValidators() []*logicalValidator {
 						}
 						results = append(results, ValidationResult{
 							Passed: passed, FieldPath: fp,
-							ExpectedValue: "one of {0, 0.25, 3, 5, 12, 18, 28}",
+							ExpectedValue: "one of {0, 0.125, 0.25, 1.5, 2.5, 3, 5, 6, 9, 12, 14, 18, 28}",
 							ActualValue:   fmtf(rate), Message: msg,
 						})
 					}

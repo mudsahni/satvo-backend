@@ -190,6 +190,10 @@ func gstinStateCheck(party, gstin, stateCode string) []ValidationResult {
 			Message: fmt.Sprintf("Cross-field: %s GSTIN-State Match: fields missing, skipping", party),
 		}}
 	}
+	// Normalize state_code to 2-digit for comparison
+	if len(stateCode) == 1 {
+		stateCode = "0" + stateCode
+	}
 	if len(gstin) < 2 {
 		return []ValidationResult{{
 			Passed: false, FieldPath: fieldPath,

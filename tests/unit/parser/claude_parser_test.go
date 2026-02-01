@@ -45,7 +45,7 @@ func TestClaudeParser_Parse_PDF_Success(t *testing.T) {
 		err := json.NewDecoder(r.Body).Decode(&reqBody)
 		assert.NoError(t, err)
 		assert.Equal(t, "claude-sonnet-4-20250514", reqBody["model"])
-		assert.Equal(t, float64(8192), reqBody["max_tokens"])
+		assert.Equal(t, float64(16384), reqBody["max_tokens"])
 
 		messages := reqBody["messages"].([]interface{})
 		assert.Len(t, messages, 1)
