@@ -756,3 +756,251 @@ func TestDocumentHandler_Delete_NoAuth(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+// --- Create with name and tags ---
+
+func TestDocumentHandler_Create_WithNameAndTags(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	fileID := uuid.New()
+	collectionID := uuid.New()
+	docID := uuid.New()
+
+	expected := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		CollectionID:  collectionID,
+		FileID:        fileID,
+		Name:          "My Invoice",
+		DocumentType:  "invoice",
+		ParsingStatus: domain.ParsingStatusPending,
+	}
+
+	mockSvc.On("CreateAndParse", mock.Anything, mock.MatchedBy(func(input *service.CreateDocumentInput) bool {
+		return input.Name == "My Invoice" &&
+			input.Tags["vendor"] == "Acme" &&
+			input.Tags["year"] == "2025"
+	})).Return(expected, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"file_id":       fileID.String(),
+		"collection_id": collectionID.String(),
+		"document_type": "invoice",
+		"name":          "My Invoice",
+		"tags":          map[string]string{"vendor": "Acme", "year": "2025"},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Create(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+// --- ListTags ---
+
+func TestDocumentHandler_ListTags_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	tags := []domain.DocumentTag{
+		{ID: uuid.New(), DocumentID: docID, Key: "vendor", Value: "Acme", Source: "user"},
+		{ID: uuid.New(), DocumentID: docID, Key: "seller_name", Value: "Acme Corp", Source: "auto"},
+	}
+
+	mockSvc.On("ListTags", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).Return(tags, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/"+docID.String()+"/tags", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.ListTags(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_ListTags_InvalidID(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/bad-id/tags", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: "bad-id"}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.ListTags(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- AddTags ---
+
+func TestDocumentHandler_AddTags_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	resultTags := []domain.DocumentTag{
+		{ID: uuid.New(), DocumentID: docID, Key: "vendor", Value: "Acme", Source: "user"},
+	}
+
+	mockSvc.On("AddTags", mock.Anything, tenantID, docID, userID, domain.UserRole("member"),
+		map[string]string{"vendor": "Acme"}).Return(resultTags, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"tags": map[string]string{"vendor": "Acme"},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+docID.String()+"/tags", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.AddTags(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_AddTags_MissingBody(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	body, _ := json.Marshal(map[string]interface{}{})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+docID.String()+"/tags", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.AddTags(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- DeleteTag ---
+
+func TestDocumentHandler_DeleteTag_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+	tagID := uuid.New()
+
+	mockSvc.On("DeleteTag", mock.Anything, tenantID, docID, userID, domain.UserRole("member"), tagID).Return(nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodDelete, "/api/v1/documents/"+docID.String()+"/tags/"+tagID.String(), http.NoBody)
+	c.Params = gin.Params{
+		{Key: "id", Value: docID.String()},
+		{Key: "tagId", Value: tagID.String()},
+	}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.DeleteTag(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_DeleteTag_InvalidTagID(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodDelete, "/api/v1/documents/"+docID.String()+"/tags/bad-id", http.NoBody)
+	c.Params = gin.Params{
+		{Key: "id", Value: docID.String()},
+		{Key: "tagId", Value: "bad-id"},
+	}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.DeleteTag(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- SearchByTag ---
+
+func TestDocumentHandler_SearchByTag_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	docs := []domain.Document{
+		{ID: uuid.New(), TenantID: tenantID},
+	}
+
+	mockSvc.On("SearchByTag", mock.Anything, tenantID, "vendor", "Acme", 0, 20).
+		Return(docs, 1, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet,
+		"/api/v1/documents/search/tags?key=vendor&value=Acme&offset=0&limit=20", http.NoBody)
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.SearchByTag(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Meta)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_SearchByTag_MissingParams(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/search/tags?key=vendor", http.NoBody)
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.SearchByTag(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}

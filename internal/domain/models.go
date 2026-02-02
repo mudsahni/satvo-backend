@@ -63,31 +63,31 @@ type CollectionFile struct {
 
 // Document represents a parsed document linked to an uploaded file.
 type Document struct {
-	ID                   uuid.UUID            `db:"id" json:"id"`
-	TenantID             uuid.UUID            `db:"tenant_id" json:"tenant_id"`
-	CollectionID         uuid.UUID            `db:"collection_id" json:"collection_id"`
-	FileID               uuid.UUID            `db:"file_id" json:"file_id"`
-	Name                 string               `db:"name" json:"name"`
-	DocumentType         string               `db:"document_type" json:"document_type"`
-	ParserModel          string               `db:"parser_model" json:"parser_model"`
-	ParserPrompt         string               `db:"parser_prompt" json:"parser_prompt"`
-	StructuredData       json.RawMessage      `db:"structured_data" json:"structured_data"`
-	ConfidenceScores     json.RawMessage      `db:"confidence_scores" json:"confidence_scores"`
-	ParsingStatus        ParsingStatus        `db:"parsing_status" json:"parsing_status"`
-	ParsingError         string               `db:"parsing_error" json:"parsing_error"`
-	ParsedAt             *time.Time           `db:"parsed_at" json:"parsed_at"`
-	ReviewStatus         ReviewStatus         `db:"review_status" json:"review_status"`
-	ReviewedBy           *uuid.UUID           `db:"reviewed_by" json:"reviewed_by"`
-	ReviewedAt           *time.Time           `db:"reviewed_at" json:"reviewed_at"`
-	ReviewerNotes        string               `db:"reviewer_notes" json:"reviewer_notes"`
-	ValidationStatus     ValidationStatus     `db:"validation_status" json:"validation_status"`
-	ValidationResults    json.RawMessage      `db:"validation_results" json:"validation_results"`
-	ReconciliationStatus ReconciliationStatus `db:"reconciliation_status" json:"reconciliation_status"`
-	ParseMode            ParseMode            `db:"parse_mode" json:"parse_mode"`
-	FieldProvenance      json.RawMessage      `db:"field_provenance" json:"field_provenance"`
-	CreatedBy            uuid.UUID            `db:"created_by" json:"created_by"`
-	CreatedAt            time.Time            `db:"created_at" json:"created_at"`
-	UpdatedAt            time.Time            `db:"updated_at" json:"updated_at"`
+	ID               uuid.UUID          `db:"id" json:"id"`
+	TenantID         uuid.UUID          `db:"tenant_id" json:"tenant_id"`
+	CollectionID     uuid.UUID          `db:"collection_id" json:"collection_id"`
+	FileID           uuid.UUID          `db:"file_id" json:"file_id"`
+	Name             string             `db:"name" json:"name"`
+	DocumentType     string             `db:"document_type" json:"document_type"`
+	ParserModel      string             `db:"parser_model" json:"parser_model"`
+	ParserPrompt     string             `db:"parser_prompt" json:"parser_prompt"`
+	StructuredData   json.RawMessage    `db:"structured_data" json:"structured_data"`
+	ConfidenceScores json.RawMessage    `db:"confidence_scores" json:"confidence_scores"`
+	ParsingStatus    ParsingStatus      `db:"parsing_status" json:"parsing_status"`
+	ParsingError     string             `db:"parsing_error" json:"parsing_error"`
+	ParsedAt         *time.Time         `db:"parsed_at" json:"parsed_at"`
+	ReviewStatus     ReviewStatus       `db:"review_status" json:"review_status"`
+	ReviewedBy       *uuid.UUID         `db:"reviewed_by" json:"reviewed_by"`
+	ReviewedAt       *time.Time         `db:"reviewed_at" json:"reviewed_at"`
+	ReviewerNotes    string             `db:"reviewer_notes" json:"reviewer_notes"`
+	ValidationStatus      ValidationStatus     `db:"validation_status" json:"validation_status"`
+	ValidationResults     json.RawMessage      `db:"validation_results" json:"validation_results"`
+	ReconciliationStatus  ReconciliationStatus `db:"reconciliation_status" json:"reconciliation_status"`
+	ParseMode             ParseMode            `db:"parse_mode" json:"parse_mode"`
+	FieldProvenance       json.RawMessage      `db:"field_provenance" json:"field_provenance"`
+	CreatedBy             uuid.UUID            `db:"created_by" json:"created_by"`
+	CreatedAt             time.Time            `db:"created_at" json:"created_at"`
+	UpdatedAt             time.Time            `db:"updated_at" json:"updated_at"`
 }
 
 // DocumentTag represents a searchable tag on a document.
