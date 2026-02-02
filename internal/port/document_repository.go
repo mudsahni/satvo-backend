@@ -28,6 +28,7 @@ type DocumentTagRepository interface {
 	ListByDocument(ctx context.Context, documentID uuid.UUID) ([]domain.DocumentTag, error)
 	SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error)
 	DeleteByDocument(ctx context.Context, documentID uuid.UUID) error
+	DeleteByDocumentAndSource(ctx context.Context, documentID uuid.UUID, source string) error
 }
 
 // DocumentValidationRuleRepository defines the contract for validation rule persistence.
