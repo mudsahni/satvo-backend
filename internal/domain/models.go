@@ -79,11 +79,14 @@ type Document struct {
 	ReviewedBy       *uuid.UUID         `db:"reviewed_by" json:"reviewed_by"`
 	ReviewedAt       *time.Time         `db:"reviewed_at" json:"reviewed_at"`
 	ReviewerNotes    string             `db:"reviewer_notes" json:"reviewer_notes"`
-	ValidationStatus  ValidationStatus   `db:"validation_status" json:"validation_status"`
-	ValidationResults json.RawMessage    `db:"validation_results" json:"validation_results"`
-	CreatedBy         uuid.UUID          `db:"created_by" json:"created_by"`
-	CreatedAt        time.Time          `db:"created_at" json:"created_at"`
-	UpdatedAt        time.Time          `db:"updated_at" json:"updated_at"`
+	ValidationStatus      ValidationStatus     `db:"validation_status" json:"validation_status"`
+	ValidationResults     json.RawMessage      `db:"validation_results" json:"validation_results"`
+	ReconciliationStatus  ReconciliationStatus `db:"reconciliation_status" json:"reconciliation_status"`
+	ParseMode             ParseMode            `db:"parse_mode" json:"parse_mode"`
+	FieldProvenance       json.RawMessage      `db:"field_provenance" json:"field_provenance"`
+	CreatedBy             uuid.UUID            `db:"created_by" json:"created_by"`
+	CreatedAt             time.Time            `db:"created_at" json:"created_at"`
+	UpdatedAt             time.Time            `db:"updated_at" json:"updated_at"`
 }
 
 // DocumentTag represents a searchable tag on a document.
@@ -108,8 +111,9 @@ type DocumentValidationRule struct {
 	Severity       ValidationSeverity `db:"severity" json:"severity"`
 	IsActive       bool               `db:"is_active" json:"is_active"`
 	IsBuiltin      bool               `db:"is_builtin" json:"is_builtin"`
-	BuiltinRuleKey *string            `db:"builtin_rule_key" json:"builtin_rule_key"`
-	CreatedBy      uuid.UUID          `db:"created_by" json:"created_by"`
+	BuiltinRuleKey         *string            `db:"builtin_rule_key" json:"builtin_rule_key"`
+	ReconciliationCritical bool               `db:"reconciliation_critical" json:"reconciliation_critical"`
+	CreatedBy              uuid.UUID          `db:"created_by" json:"created_by"`
 	CreatedAt      time.Time          `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time          `db:"updated_at" json:"updated_at"`
 }

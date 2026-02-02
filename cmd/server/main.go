@@ -9,7 +9,10 @@ import (
 
 	"satvos/internal/config"
 	"satvos/internal/handler"
+	"satvos/internal/parser"
 	claudeparser "satvos/internal/parser/claude"
+	geminiparser "satvos/internal/parser/gemini"
+	"satvos/internal/port"
 	"satvos/internal/repository/postgres"
 	"satvos/internal/router"
 	"satvos/internal/service"
@@ -60,8 +63,32 @@ func run() error {
 	docRepo := postgres.NewDocumentRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 
-	// Initialize parser
-	documentParser := claudeparser.NewParser(&cfg.Parser)
+	// Register parser providers
+	parser.RegisterProvider("claude", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
+		return claudeparser.NewParser(provCfg), nil
+	})
+	parser.RegisterProvider("gemini", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
+		return geminiparser.NewParser(provCfg), nil
+	})
+
+	// Initialize primary parser
+	primaryCfg := cfg.Parser.PrimaryConfig()
+	documentParser, err := parser.NewParser(primaryCfg)
+	if err != nil {
+		return fmt.Errorf("failed to create primary parser: %w", err)
+	}
+
+	// Initialize optional merge parser for dual-parse mode
+	var mergeDocParser port.DocumentParser
+	if secondaryCfg := cfg.Parser.SecondaryConfig(); secondaryCfg != nil {
+		secondaryParser, secErr := parser.NewParser(secondaryCfg)
+		if secErr != nil {
+			log.Printf("WARNING: failed to create secondary parser (%v), dual-parse mode will be unavailable", secErr)
+		} else {
+			mergeDocParser = parser.NewMergeParser(documentParser, secondaryParser)
+			log.Printf("Multi-parser mode enabled: primary=%s, secondary=%s", primaryCfg.Provider, secondaryCfg.Provider)
+		}
+	}
 
 	// Initialize validation engine
 	registry := validator.NewRegistry()
@@ -76,7 +103,12 @@ func run() error {
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
-	documentSvc := service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentParser, s3Client, validationEngine)
+	var documentSvc service.DocumentService
+	if mergeDocParser != nil {
+		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, collectionPermRepo, documentParser, mergeDocParser, s3Client, validationEngine)
+	} else {
+		documentSvc = service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentParser, s3Client, validationEngine)
+	}
 
 	// Initialize handlers
 	authH := handler.NewAuthHandler(authSvc)

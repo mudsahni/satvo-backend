@@ -9,10 +9,11 @@ import (
 
 // crossFieldValidator checks relationships between different fields.
 type crossFieldValidator struct {
-	ruleKey  string
-	ruleName string
-	severity domain.ValidationSeverity
-	validate func(*GSTInvoice) []ValidationResult
+	ruleKey       string
+	ruleName      string
+	severity      domain.ValidationSeverity
+	reconCritical bool
+	validate      func(*GSTInvoice) []ValidationResult
 }
 
 func (v *crossFieldValidator) RuleKey() string  { return v.ruleKey }
@@ -21,6 +22,7 @@ func (v *crossFieldValidator) RuleType() domain.ValidationRuleType {
 	return domain.ValidationRuleCrossField
 }
 func (v *crossFieldValidator) Severity() domain.ValidationSeverity { return v.severity }
+func (v *crossFieldValidator) ReconciliationCritical() bool        { return v.reconCritical }
 
 func (v *crossFieldValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
 	return v.validate(data)
@@ -31,14 +33,14 @@ func CrossFieldValidators() []*crossFieldValidator {
 	return []*crossFieldValidator{
 		{
 			ruleKey: "xf.seller.gstin_state", ruleName: "Cross-field: Seller GSTIN-State Match",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				return gstinStateCheck("seller", d.Seller.GSTIN, d.Seller.StateCode)
 			},
 		},
 		{
 			ruleKey: "xf.buyer.gstin_state", ruleName: "Cross-field: Buyer GSTIN-State Match",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				return gstinStateCheck("buyer", d.Buyer.GSTIN, d.Buyer.StateCode)
 			},
@@ -59,7 +61,7 @@ func CrossFieldValidators() []*crossFieldValidator {
 		},
 		{
 			ruleKey: "xf.tax_type.intrastate", ruleName: "Cross-field: Intrastate Tax Type",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				if d.Seller.StateCode == "" || d.Buyer.StateCode == "" {
 					return []ValidationResult{{
@@ -94,7 +96,7 @@ func CrossFieldValidators() []*crossFieldValidator {
 		},
 		{
 			ruleKey: "xf.tax_type.interstate", ruleName: "Cross-field: Interstate Tax Type",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				if d.Seller.StateCode == "" || d.Buyer.StateCode == "" {
 					return []ValidationResult{{

@@ -31,14 +31,14 @@ func (r *documentValidationRuleRepo) Create(ctx context.Context, rule *domain.Do
 	query := `INSERT INTO document_validation_rules (
 		id, tenant_id, collection_id, document_type, rule_name,
 		rule_type, rule_config, severity, is_active,
-		is_builtin, builtin_rule_key,
+		is_builtin, builtin_rule_key, reconciliation_critical,
 		created_by, created_at, updated_at
-	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+	) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		rule.ID, rule.TenantID, rule.CollectionID, rule.DocumentType, rule.RuleName,
 		rule.RuleType, rule.RuleConfig, rule.Severity, rule.IsActive,
-		rule.IsBuiltin, rule.BuiltinRuleKey,
+		rule.IsBuiltin, rule.BuiltinRuleKey, rule.ReconciliationCritical,
 		rule.CreatedBy, rule.CreatedAt, rule.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("documentValidationRuleRepo.Create: %w", err)

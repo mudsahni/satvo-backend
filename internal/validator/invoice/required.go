@@ -9,13 +9,14 @@ import (
 
 // requiredFieldValidator checks that a required field is not empty.
 type requiredFieldValidator struct {
-	ruleKey     string
-	ruleName    string
-	fieldPath   string
-	severity    domain.ValidationSeverity
-	extract     func(*GSTInvoice) string
-	perItem     bool // true for line-item level checks
-	extractItem func(*LineItem) string
+	ruleKey       string
+	ruleName      string
+	fieldPath     string
+	severity      domain.ValidationSeverity
+	reconCritical bool
+	extract       func(*GSTInvoice) string
+	perItem       bool // true for line-item level checks
+	extractItem   func(*LineItem) string
 }
 
 func (v *requiredFieldValidator) RuleKey() string  { return v.ruleKey }
@@ -24,6 +25,7 @@ func (v *requiredFieldValidator) RuleType() domain.ValidationRuleType {
 	return domain.ValidationRuleRequired
 }
 func (v *requiredFieldValidator) Severity() domain.ValidationSeverity { return v.severity }
+func (v *requiredFieldValidator) ReconciliationCritical() bool        { return v.reconCritical }
 
 // ValidationResult is a local alias to avoid import cycles.
 type ValidationResult struct {
@@ -84,17 +86,17 @@ func RequiredFieldValidators() []*requiredFieldValidator {
 	return []*requiredFieldValidator{
 		{
 			ruleKey: "req.invoice.number", ruleName: "Required: Invoice Number",
-			fieldPath: "invoice.invoice_number", severity: domain.ValidationSeverityError,
+			fieldPath: "invoice.invoice_number", severity: domain.ValidationSeverityError, reconCritical: true,
 			extract: func(d *GSTInvoice) string { return d.Invoice.InvoiceNumber },
 		},
 		{
 			ruleKey: "req.invoice.date", ruleName: "Required: Invoice Date",
-			fieldPath: "invoice.invoice_date", severity: domain.ValidationSeverityError,
+			fieldPath: "invoice.invoice_date", severity: domain.ValidationSeverityError, reconCritical: true,
 			extract: func(d *GSTInvoice) string { return d.Invoice.InvoiceDate },
 		},
 		{
 			ruleKey: "req.invoice.place_of_supply", ruleName: "Required: Place of Supply",
-			fieldPath: "invoice.place_of_supply", severity: domain.ValidationSeverityError,
+			fieldPath: "invoice.place_of_supply", severity: domain.ValidationSeverityError, reconCritical: true,
 			extract: func(d *GSTInvoice) string { return d.Invoice.PlaceOfSupply },
 		},
 		{
@@ -104,12 +106,12 @@ func RequiredFieldValidators() []*requiredFieldValidator {
 		},
 		{
 			ruleKey: "req.seller.name", ruleName: "Required: Seller Name",
-			fieldPath: "seller.name", severity: domain.ValidationSeverityError,
+			fieldPath: "seller.name", severity: domain.ValidationSeverityError, reconCritical: true,
 			extract: func(d *GSTInvoice) string { return d.Seller.Name },
 		},
 		{
 			ruleKey: "req.seller.gstin", ruleName: "Required: Seller GSTIN",
-			fieldPath: "seller.gstin", severity: domain.ValidationSeverityError,
+			fieldPath: "seller.gstin", severity: domain.ValidationSeverityError, reconCritical: true,
 			extract: func(d *GSTInvoice) string { return d.Seller.GSTIN },
 		},
 		{
@@ -124,7 +126,7 @@ func RequiredFieldValidators() []*requiredFieldValidator {
 		},
 		{
 			ruleKey: "req.buyer.gstin", ruleName: "Required: Buyer GSTIN",
-			fieldPath: "buyer.gstin", severity: domain.ValidationSeverityError,
+			fieldPath: "buyer.gstin", severity: domain.ValidationSeverityError, reconCritical: true,
 			extract: func(d *GSTInvoice) string { return d.Buyer.GSTIN },
 		},
 		{

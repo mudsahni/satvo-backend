@@ -1,7 +1,7 @@
 meta {
-  name: Create Document
+  name: Create Document (Dual Parse)
   type: http
-  seq: 1
+  seq: 9
 }
 
 post {
@@ -19,7 +19,7 @@ body:json {
     "file_id": "{{fileId}}",
     "collection_id": "{{collectionId}}",
     "document_type": "invoice",
-    "parse_mode": "single"
+    "parse_mode": "dual"
   }
 }
 

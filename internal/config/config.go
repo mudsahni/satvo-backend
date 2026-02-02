@@ -18,13 +18,49 @@ type Config struct {
 	Parser ParserConfig
 }
 
-// ParserConfig holds LLM document parser settings.
-type ParserConfig struct {
+// ParserProviderConfig holds settings for a single LLM parser provider.
+type ParserProviderConfig struct {
 	Provider     string `mapstructure:"provider"`
 	APIKey       string `mapstructure:"api_key"`
 	DefaultModel string `mapstructure:"default_model"`
 	MaxRetries   int    `mapstructure:"max_retries"`
 	TimeoutSecs  int    `mapstructure:"timeout_secs"`
+}
+
+// ParserConfig holds LLM document parser settings with multi-provider support.
+type ParserConfig struct {
+	// Legacy flat fields (backwards-compatible)
+	Provider     string `mapstructure:"provider"`
+	APIKey       string `mapstructure:"api_key"`
+	DefaultModel string `mapstructure:"default_model"`
+	MaxRetries   int    `mapstructure:"max_retries"`
+	TimeoutSecs  int    `mapstructure:"timeout_secs"`
+
+	// Multi-provider fields
+	Primary   ParserProviderConfig `mapstructure:"primary"`
+	Secondary ParserProviderConfig `mapstructure:"secondary"`
+}
+
+// PrimaryConfig returns the primary parser provider config, falling back to legacy flat fields.
+func (p *ParserConfig) PrimaryConfig() *ParserProviderConfig {
+	if p.Primary.Provider != "" {
+		return &p.Primary
+	}
+	return &ParserProviderConfig{
+		Provider:     p.Provider,
+		APIKey:       p.APIKey,
+		DefaultModel: p.DefaultModel,
+		MaxRetries:   p.MaxRetries,
+		TimeoutSecs:  p.TimeoutSecs,
+	}
+}
+
+// SecondaryConfig returns the secondary parser provider config, or nil if not configured.
+func (p *ParserConfig) SecondaryConfig() *ParserProviderConfig {
+	if p.Secondary.Provider != "" {
+		return &p.Secondary
+	}
+	return nil
 }
 
 // ServerConfig holds HTTP server settings.
@@ -120,12 +156,24 @@ func Load() (*Config, error) {
 	v.SetDefault("log.level", "debug")
 	v.SetDefault("log.format", "console")
 
-	// Parser defaults
+	// Parser defaults (legacy flat)
 	v.SetDefault("parser.provider", "claude")
 	v.SetDefault("parser.api_key", "")
 	v.SetDefault("parser.default_model", "claude-sonnet-4-20250514")
 	v.SetDefault("parser.max_retries", 2)
 	v.SetDefault("parser.timeout_secs", 120)
+
+	// Parser primary/secondary defaults
+	v.SetDefault("parser.primary.provider", "")
+	v.SetDefault("parser.primary.api_key", "")
+	v.SetDefault("parser.primary.default_model", "")
+	v.SetDefault("parser.primary.max_retries", 2)
+	v.SetDefault("parser.primary.timeout_secs", 120)
+	v.SetDefault("parser.secondary.provider", "")
+	v.SetDefault("parser.secondary.api_key", "")
+	v.SetDefault("parser.secondary.default_model", "")
+	v.SetDefault("parser.secondary.max_retries", 2)
+	v.SetDefault("parser.secondary.timeout_secs", 120)
 
 	// Bind environment variables explicitly for nested keys
 	envBindings := map[string]string{
@@ -154,11 +202,21 @@ func Load() (*Config, error) {
 		"s3.presign_expiry":    "SATVOS_S3_PRESIGN_EXPIRY",
 		"log.level":            "SATVOS_LOG_LEVEL",
 		"log.format":           "SATVOS_LOG_FORMAT",
-		"parser.provider":      "SATVOS_PARSER_PROVIDER",
-		"parser.api_key":       "SATVOS_PARSER_API_KEY",
-		"parser.default_model": "SATVOS_PARSER_DEFAULT_MODEL",
-		"parser.max_retries":   "SATVOS_PARSER_MAX_RETRIES",
-		"parser.timeout_secs":  "SATVOS_PARSER_TIMEOUT_SECS",
+		"parser.provider":                "SATVOS_PARSER_PROVIDER",
+		"parser.api_key":                 "SATVOS_PARSER_API_KEY",
+		"parser.default_model":           "SATVOS_PARSER_DEFAULT_MODEL",
+		"parser.max_retries":             "SATVOS_PARSER_MAX_RETRIES",
+		"parser.timeout_secs":            "SATVOS_PARSER_TIMEOUT_SECS",
+		"parser.primary.provider":        "SATVOS_PARSER_PRIMARY_PROVIDER",
+		"parser.primary.api_key":         "SATVOS_PARSER_PRIMARY_API_KEY",
+		"parser.primary.default_model":   "SATVOS_PARSER_PRIMARY_DEFAULT_MODEL",
+		"parser.primary.max_retries":     "SATVOS_PARSER_PRIMARY_MAX_RETRIES",
+		"parser.primary.timeout_secs":    "SATVOS_PARSER_PRIMARY_TIMEOUT_SECS",
+		"parser.secondary.provider":      "SATVOS_PARSER_SECONDARY_PROVIDER",
+		"parser.secondary.api_key":       "SATVOS_PARSER_SECONDARY_API_KEY",
+		"parser.secondary.default_model": "SATVOS_PARSER_SECONDARY_DEFAULT_MODEL",
+		"parser.secondary.max_retries":   "SATVOS_PARSER_SECONDARY_MAX_RETRIES",
+		"parser.secondary.timeout_secs":  "SATVOS_PARSER_SECONDARY_TIMEOUT_SECS",
 	}
 	for key, env := range envBindings {
 		_ = v.BindEnv(key, env)
@@ -206,6 +264,20 @@ func Load() (*Config, error) {
 		DefaultModel: v.GetString("parser.default_model"),
 		MaxRetries:   v.GetInt("parser.max_retries"),
 		TimeoutSecs:  v.GetInt("parser.timeout_secs"),
+		Primary: ParserProviderConfig{
+			Provider:     v.GetString("parser.primary.provider"),
+			APIKey:       v.GetString("parser.primary.api_key"),
+			DefaultModel: v.GetString("parser.primary.default_model"),
+			MaxRetries:   v.GetInt("parser.primary.max_retries"),
+			TimeoutSecs:  v.GetInt("parser.primary.timeout_secs"),
+		},
+		Secondary: ParserProviderConfig{
+			Provider:     v.GetString("parser.secondary.provider"),
+			APIKey:       v.GetString("parser.secondary.api_key"),
+			DefaultModel: v.GetString("parser.secondary.default_model"),
+			MaxRetries:   v.GetInt("parser.secondary.max_retries"),
+			TimeoutSecs:  v.GetInt("parser.secondary.timeout_secs"),
+		},
 	}
 
 	return cfg, nil

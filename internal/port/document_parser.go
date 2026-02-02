@@ -18,6 +18,8 @@ type ParseOutput struct {
 	ConfidenceScores json.RawMessage
 	ModelUsed        string
 	PromptUsed       string
+	FieldProvenance  map[string]string // which model provided each field (populated in dual parse mode)
+	SecondaryModel   string            // secondary model used (for audit trail in dual parse mode)
 }
 
 // DocumentParser abstracts LLM-based document parsing.

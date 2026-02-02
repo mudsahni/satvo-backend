@@ -8,11 +8,12 @@ import (
 
 // BuiltinValidator wraps a validator function and its metadata for the registry.
 type BuiltinValidator struct {
-	key      string
-	name     string
-	ruleType domain.ValidationRuleType
-	sev      domain.ValidationSeverity
-	fn       func(context.Context, *GSTInvoice) []ValidationResult
+	key           string
+	name          string
+	ruleType      domain.ValidationRuleType
+	sev           domain.ValidationSeverity
+	reconCritical bool
+	fn            func(context.Context, *GSTInvoice) []ValidationResult
 }
 
 func (b *BuiltinValidator) Validate(ctx context.Context, data *GSTInvoice) []ValidationResult {
@@ -22,6 +23,7 @@ func (b *BuiltinValidator) RuleKey() string                     { return b.key }
 func (b *BuiltinValidator) RuleName() string                    { return b.name }
 func (b *BuiltinValidator) RuleType() domain.ValidationRuleType { return b.ruleType }
 func (b *BuiltinValidator) Severity() domain.ValidationSeverity { return b.sev }
+func (b *BuiltinValidator) ReconciliationCritical() bool        { return b.reconCritical }
 
 // AllBuiltinValidators returns all built-in validators for GST invoices.
 func AllBuiltinValidators() []*BuiltinValidator {
@@ -38,7 +40,8 @@ func AllBuiltinValidators() []*BuiltinValidator {
 		all = append(all, &BuiltinValidator{
 			key: v.RuleKey(), name: v.RuleName(),
 			ruleType: v.RuleType(), sev: v.Severity(),
-			fn: v.Validate,
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
 		})
 	}
 
@@ -48,7 +51,8 @@ func AllBuiltinValidators() []*BuiltinValidator {
 		all = append(all, &BuiltinValidator{
 			key: v.RuleKey(), name: v.RuleName(),
 			ruleType: v.RuleType(), sev: v.Severity(),
-			fn: v.Validate,
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
 		})
 	}
 
@@ -58,7 +62,8 @@ func AllBuiltinValidators() []*BuiltinValidator {
 		all = append(all, &BuiltinValidator{
 			key: v.RuleKey(), name: v.RuleName(),
 			ruleType: v.RuleType(), sev: v.Severity(),
-			fn: v.Validate,
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
 		})
 	}
 
@@ -68,7 +73,8 @@ func AllBuiltinValidators() []*BuiltinValidator {
 		all = append(all, &BuiltinValidator{
 			key: v.RuleKey(), name: v.RuleName(),
 			ruleType: v.RuleType(), sev: v.Severity(),
-			fn: v.Validate,
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
 		})
 	}
 
@@ -78,7 +84,8 @@ func AllBuiltinValidators() []*BuiltinValidator {
 		all = append(all, &BuiltinValidator{
 			key: v.RuleKey(), name: v.RuleName(),
 			ruleType: v.RuleType(), sev: v.Severity(),
-			fn: v.Validate,
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
 		})
 	}
 

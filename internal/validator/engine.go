@@ -16,13 +16,14 @@ import (
 
 // ValidationResultEntry represents a single validation result stored in the JSONB array.
 type ValidationResultEntry struct {
-	RuleID        uuid.UUID `json:"rule_id"`
-	Passed        bool      `json:"passed"`
-	FieldPath     string    `json:"field_path"`
-	ExpectedValue string    `json:"expected_value"`
-	ActualValue   string    `json:"actual_value"`
-	Message       string    `json:"message"`
-	ValidatedAt   time.Time `json:"validated_at"`
+	RuleID                 uuid.UUID `json:"rule_id"`
+	Passed                 bool      `json:"passed"`
+	FieldPath              string    `json:"field_path"`
+	ExpectedValue          string    `json:"expected_value"`
+	ActualValue            string    `json:"actual_value"`
+	Message                string    `json:"message"`
+	ReconciliationCritical bool      `json:"reconciliation_critical"`
+	ValidatedAt            time.Time `json:"validated_at"`
 }
 
 // Engine orchestrates document validation.
@@ -78,6 +79,8 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 	var allResults []ValidationResultEntry
 	hasError := false
 	hasWarning := false
+	hasReconError := false
+	hasReconWarning := false
 
 	for idx := range rules {
 		rule := &rules[idx]
@@ -90,19 +93,27 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 			vResults := v.Validate(ctx, &inv)
 			for _, vr := range vResults {
 				allResults = append(allResults, ValidationResultEntry{
-					RuleID:        rule.ID,
-					Passed:        vr.Passed,
-					FieldPath:     vr.FieldPath,
-					ExpectedValue: vr.ExpectedValue,
-					ActualValue:   vr.ActualValue,
-					Message:       vr.Message,
-					ValidatedAt:   now,
+					RuleID:                 rule.ID,
+					Passed:                 vr.Passed,
+					FieldPath:              vr.FieldPath,
+					ExpectedValue:          vr.ExpectedValue,
+					ActualValue:            vr.ActualValue,
+					Message:                vr.Message,
+					ReconciliationCritical: rule.ReconciliationCritical,
+					ValidatedAt:            now,
 				})
 				if !vr.Passed {
 					if rule.Severity == domain.ValidationSeverityError {
 						hasError = true
 					} else {
 						hasWarning = true
+					}
+					if rule.ReconciliationCritical {
+						if rule.Severity == domain.ValidationSeverityError {
+							hasReconError = true
+						} else {
+							hasReconWarning = true
+						}
 					}
 				}
 			}
@@ -116,7 +127,7 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 		return fmt.Errorf("marshaling validation results: %w", err)
 	}
 
-	// Compute and update validation_status + results
+	// Compute validation_status
 	var status domain.ValidationStatus
 	switch {
 	case hasError:
@@ -127,13 +138,25 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 		status = domain.ValidationStatusValid
 	}
 
+	// Compute reconciliation_status
+	var reconStatus domain.ReconciliationStatus
+	switch {
+	case hasReconError:
+		reconStatus = domain.ReconciliationStatusInvalid
+	case hasReconWarning:
+		reconStatus = domain.ReconciliationStatusWarning
+	default:
+		reconStatus = domain.ReconciliationStatusValid
+	}
+
 	doc.ValidationStatus = status
 	doc.ValidationResults = resultsJSON
+	doc.ReconciliationStatus = reconStatus
 	if err := e.docRepo.UpdateValidationResults(ctx, doc); err != nil {
 		return fmt.Errorf("updating validation results: %w", err)
 	}
 
-	log.Printf("validator.Engine: document %s validated — status=%s, results=%d", docID, status, len(allResults))
+	log.Printf("validator.Engine: document %s validated — status=%s, reconciliation=%s, results=%d", docID, status, reconStatus, len(allResults))
 	return nil
 }
 
@@ -155,17 +178,18 @@ func (e *Engine) EnsureBuiltinRules(ctx context.Context, tenantID uuid.UUID, doc
 		}
 		key := v.RuleKey()
 		rule := &domain.DocumentValidationRule{
-			ID:             uuid.New(),
-			TenantID:       tenantID,
-			DocumentType:   documentType,
-			RuleName:       v.RuleName(),
-			RuleType:       v.RuleType(),
-			RuleConfig:     json.RawMessage("{}"),
-			Severity:       v.Severity(),
-			IsActive:       true,
-			IsBuiltin:      true,
-			BuiltinRuleKey: &key,
-			CreatedBy:      createdBy,
+			ID:                     uuid.New(),
+			TenantID:               tenantID,
+			DocumentType:           documentType,
+			RuleName:               v.RuleName(),
+			RuleType:               v.RuleType(),
+			RuleConfig:             json.RawMessage("{}"),
+			Severity:               v.Severity(),
+			IsActive:               true,
+			IsBuiltin:              true,
+			BuiltinRuleKey:         &key,
+			ReconciliationCritical: v.ReconciliationCritical(),
+			CreatedBy:              createdBy,
 		}
 		if err := e.ruleRepo.Create(ctx, rule); err != nil {
 			return fmt.Errorf("seeding builtin rule %s: %w", v.RuleKey(), err)
@@ -211,16 +235,27 @@ func (e *Engine) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (
 	fieldStatuses := ComputeFieldStatuses(results, rulesMap, confidenceMap)
 
 	// Build summary
-	var passed, errors, warnings int
+	var passed, errorCount, warningCount int
+	var reconPassed, reconErrors, reconWarnings int
 	for _, r := range results {
 		if r.Passed {
 			passed++
+			if r.ReconciliationCritical {
+				reconPassed++
+			}
 		} else {
 			rule := rulesMap[r.RuleID.String()]
 			if rule != nil && rule.Severity == domain.ValidationSeverityError {
-				errors++
+				errorCount++
 			} else {
-				warnings++
+				warningCount++
+			}
+			if r.ReconciliationCritical {
+				if rule != nil && rule.Severity == domain.ValidationSeverityError {
+					reconErrors++
+				} else {
+					reconWarnings++
+				}
 			}
 		}
 	}
@@ -230,14 +265,15 @@ func (e *Engine) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (
 	for _, r := range results {
 		rule := rulesMap[r.RuleID.String()]
 		item := ValidationResultItem{
-			RuleName:      "",
-			RuleType:      "",
-			Severity:      "",
-			Passed:        r.Passed,
-			FieldPath:     r.FieldPath,
-			ExpectedValue: r.ExpectedValue,
-			ActualValue:   r.ActualValue,
-			Message:       r.Message,
+			RuleName:               "",
+			RuleType:               "",
+			Severity:               "",
+			Passed:                 r.Passed,
+			FieldPath:              r.FieldPath,
+			ExpectedValue:          r.ExpectedValue,
+			ActualValue:            r.ActualValue,
+			Message:                r.Message,
+			ReconciliationCritical: r.ReconciliationCritical,
 		}
 		if rule != nil {
 			item.RuleName = rule.RuleName
@@ -253,8 +289,15 @@ func (e *Engine) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (
 		Summary: ValidationSummary{
 			Total:    len(results),
 			Passed:   passed,
-			Errors:   errors,
-			Warnings: warnings,
+			Errors:   errorCount,
+			Warnings: warningCount,
+		},
+		ReconciliationStatus: doc.ReconciliationStatus,
+		ReconciliationSummary: ReconciliationSummary{
+			Total:    reconPassed + reconErrors + reconWarnings,
+			Passed:   reconPassed,
+			Errors:   reconErrors,
+			Warnings: reconWarnings,
 		},
 		Results:       resultItems,
 		FieldStatuses: fieldStatuses,
@@ -263,11 +306,13 @@ func (e *Engine) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (
 
 // ValidationResponse is the API response for GET /documents/:id/validation.
 type ValidationResponse struct {
-	DocumentID       uuid.UUID               `json:"document_id"`
-	ValidationStatus domain.ValidationStatus `json:"validation_status"`
-	Summary          ValidationSummary       `json:"summary"`
-	Results          []ValidationResultItem  `json:"results"`
-	FieldStatuses    map[string]*FieldStatus `json:"field_statuses"`
+	DocumentID            uuid.UUID                    `json:"document_id"`
+	ValidationStatus      domain.ValidationStatus      `json:"validation_status"`
+	Summary               ValidationSummary            `json:"summary"`
+	ReconciliationStatus  domain.ReconciliationStatus  `json:"reconciliation_status"`
+	ReconciliationSummary ReconciliationSummary        `json:"reconciliation_summary"`
+	Results               []ValidationResultItem       `json:"results"`
+	FieldStatuses         map[string]*FieldStatus      `json:"field_statuses"`
 }
 
 // ValidationSummary holds aggregate counts of validation results.
@@ -278,16 +323,25 @@ type ValidationSummary struct {
 	Warnings int `json:"warnings"`
 }
 
+// ReconciliationSummary holds aggregate counts for reconciliation-critical rules only.
+type ReconciliationSummary struct {
+	Total    int `json:"total"`
+	Passed   int `json:"passed"`
+	Errors   int `json:"errors"`
+	Warnings int `json:"warnings"`
+}
+
 // ValidationResultItem is a single validation result in the API response.
 type ValidationResultItem struct {
-	RuleName      string `json:"rule_name"`
-	RuleType      string `json:"rule_type"`
-	Severity      string `json:"severity"`
-	Passed        bool   `json:"passed"`
-	FieldPath     string `json:"field_path"`
-	ExpectedValue string `json:"expected_value"`
-	ActualValue   string `json:"actual_value"`
-	Message       string `json:"message"`
+	RuleName               string `json:"rule_name"`
+	RuleType               string `json:"rule_type"`
+	Severity               string `json:"severity"`
+	Passed                 bool   `json:"passed"`
+	FieldPath              string `json:"field_path"`
+	ExpectedValue          string `json:"expected_value"`
+	ActualValue            string `json:"actual_value"`
+	Message                string `json:"message"`
+	ReconciliationCritical bool   `json:"reconciliation_critical"`
 }
 
 // flattenConfidenceScores converts the nested confidence JSON into a flat map of field_path → confidence.

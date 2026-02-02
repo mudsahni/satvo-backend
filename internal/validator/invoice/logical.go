@@ -17,16 +17,18 @@ var validTaxRates = map[float64]bool{
 
 // logicalValidator checks logical constraints on the invoice data.
 type logicalValidator struct {
-	ruleKey  string
-	ruleName string
-	severity domain.ValidationSeverity
-	validate func(*GSTInvoice) []ValidationResult
+	ruleKey       string
+	ruleName      string
+	severity      domain.ValidationSeverity
+	reconCritical bool
+	validate      func(*GSTInvoice) []ValidationResult
 }
 
 func (v *logicalValidator) RuleKey() string                     { return v.ruleKey }
 func (v *logicalValidator) RuleName() string                    { return v.ruleName }
 func (v *logicalValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleCustom }
 func (v *logicalValidator) Severity() domain.ValidationSeverity { return v.severity }
+func (v *logicalValidator) ReconciliationCritical() bool        { return v.reconCritical }
 
 func (v *logicalValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
 	return v.validate(data)
@@ -121,7 +123,7 @@ func LogicalValidators() []*logicalValidator {
 		},
 		{
 			ruleKey: "logic.line_item.exclusive_tax", ruleName: "Logical: Exclusive Tax Types",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				results := make([]ValidationResult, 0, len(d.LineItems))
 				for i := range d.LineItems {
@@ -146,7 +148,7 @@ func LogicalValidators() []*logicalValidator {
 		},
 		{
 			ruleKey: "logic.line_items.at_least_one", ruleName: "Logical: At Least One Line Item",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				passed := len(d.LineItems) >= 1
 				msg := "Logical: At Least One Line Item: invoice has line items"

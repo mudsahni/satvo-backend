@@ -160,6 +160,30 @@ const (
 	ValidationStatusWarning ValidationStatus = "warning"
 )
 
+// ReconciliationStatus represents the GST reconciliation readiness of a document.
+type ReconciliationStatus string
+
+const (
+	ReconciliationStatusPending ReconciliationStatus = "pending"
+	ReconciliationStatusValid   ReconciliationStatus = "valid"
+	ReconciliationStatusInvalid ReconciliationStatus = "invalid"
+	ReconciliationStatusWarning ReconciliationStatus = "warning"
+)
+
+// ParseMode defines how document parsing is performed.
+type ParseMode string
+
+const (
+	ParseModeSingle ParseMode = "single"
+	ParseModeDual   ParseMode = "dual"
+)
+
+// ValidParseModes maps valid parse mode strings.
+var ValidParseModes = map[ParseMode]bool{
+	ParseModeSingle: true,
+	ParseModeDual:   true,
+}
+
 // FieldValidationStatus represents the computed validation state of a single field.
 type FieldValidationStatus string
 

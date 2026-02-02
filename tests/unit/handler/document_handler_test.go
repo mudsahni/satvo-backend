@@ -164,6 +164,114 @@ func TestDocumentHandler_Create_FileNotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+// --- Create with parse_mode ---
+
+func TestDocumentHandler_Create_WithParseMode(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	fileID := uuid.New()
+	collectionID := uuid.New()
+	docID := uuid.New()
+
+	expected := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParseMode:     domain.ParseModeDual,
+		ParsingStatus: domain.ParsingStatusPending,
+	}
+
+	mockSvc.On("CreateAndParse", mock.Anything, mock.MatchedBy(func(input *service.CreateDocumentInput) bool {
+		return input.ParseMode == domain.ParseModeDual
+	})).Return(expected, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"file_id":       fileID.String(),
+		"collection_id": collectionID.String(),
+		"document_type": "invoice",
+		"parse_mode":    "dual",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Create(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_Create_DefaultParseMode(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	fileID := uuid.New()
+	collectionID := uuid.New()
+	docID := uuid.New()
+
+	expected := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParseMode:     domain.ParseModeSingle,
+		ParsingStatus: domain.ParsingStatusPending,
+	}
+
+	mockSvc.On("CreateAndParse", mock.Anything, mock.MatchedBy(func(input *service.CreateDocumentInput) bool {
+		return input.ParseMode == domain.ParseModeSingle
+	})).Return(expected, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"file_id":       fileID.String(),
+		"collection_id": collectionID.String(),
+		"document_type": "invoice",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Create(c)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_Create_InvalidParseMode(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	body, _ := json.Marshal(map[string]string{
+		"file_id":       uuid.New().String(),
+		"collection_id": uuid.New().String(),
+		"document_type": "invoice",
+		"parse_mode":    "triple",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Create(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.False(t, resp.Success)
+}
+
 // --- GetByID ---
 
 func TestDocumentHandler_GetByID_Success(t *testing.T) {

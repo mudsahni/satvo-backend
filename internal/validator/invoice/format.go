@@ -29,17 +29,19 @@ var knownCurrencies = map[string]bool{
 
 // formatValidator checks a field against a regex or format rule.
 type formatValidator struct {
-	ruleKey   string
-	ruleName  string
-	fieldPath string
-	severity  domain.ValidationSeverity
-	validate  func(*GSTInvoice) []ValidationResult
+	ruleKey       string
+	ruleName      string
+	fieldPath     string
+	severity      domain.ValidationSeverity
+	reconCritical bool
+	validate      func(*GSTInvoice) []ValidationResult
 }
 
 func (v *formatValidator) RuleKey() string                     { return v.ruleKey }
 func (v *formatValidator) RuleName() string                    { return v.ruleName }
 func (v *formatValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleRegex }
 func (v *formatValidator) Severity() domain.ValidationSeverity { return v.severity }
+func (v *formatValidator) ReconciliationCritical() bool        { return v.reconCritical }
 
 func (v *formatValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
 	return v.validate(data)
@@ -138,14 +140,14 @@ func FormatValidators() []*formatValidator {
 	return []*formatValidator{
 		{
 			ruleKey: "fmt.seller.gstin", ruleName: "Format: Seller GSTIN",
-			fieldPath: "seller.gstin", severity: domain.ValidationSeverityError,
+			fieldPath: "seller.gstin", severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				return []ValidationResult{regexCheck("seller.gstin", d.Seller.GSTIN, "15-char GSTIN format", "Format: Seller GSTIN", gstinPattern)}
 			},
 		},
 		{
 			ruleKey: "fmt.buyer.gstin", ruleName: "Format: Buyer GSTIN",
-			fieldPath: "buyer.gstin", severity: domain.ValidationSeverityError,
+			fieldPath: "buyer.gstin", severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				return []ValidationResult{regexCheck("buyer.gstin", d.Buyer.GSTIN, "15-char GSTIN format", "Format: Buyer GSTIN", gstinPattern)}
 			},
@@ -166,14 +168,14 @@ func FormatValidators() []*formatValidator {
 		},
 		{
 			ruleKey: "fmt.seller.state_code", ruleName: "Format: Seller State Code",
-			fieldPath: "seller.state_code", severity: domain.ValidationSeverityError,
+			fieldPath: "seller.state_code", severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				return []ValidationResult{stateCodeCheck("seller.state_code", d.Seller.StateCode, "Format: Seller State Code")}
 			},
 		},
 		{
 			ruleKey: "fmt.buyer.state_code", ruleName: "Format: Buyer State Code",
-			fieldPath: "buyer.state_code", severity: domain.ValidationSeverityError,
+			fieldPath: "buyer.state_code", severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				return []ValidationResult{stateCodeCheck("buyer.state_code", d.Buyer.StateCode, "Format: Buyer State Code")}
 			},

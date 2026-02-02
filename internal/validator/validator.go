@@ -14,4 +14,5 @@ type Validator interface {
 	RuleName() string
 	RuleType() domain.ValidationRuleType
 	Severity() domain.ValidationSeverity
+	ReconciliationCritical() bool
 }
