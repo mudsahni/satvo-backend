@@ -133,7 +133,7 @@ func MathValidators() []*mathValidator {
 				var sum float64
 				for idx := range d.LineItems {
 					item := &d.LineItems[idx]
-					sum += item.TaxableAmount
+					sum += item.Total
 				}
 				passed := approxEqual(d.Totals.Subtotal, sum)
 				return []ValidationResult{mathResult(passed, "totals.subtotal", fmtf(sum), fmtf(d.Totals.Subtotal), "Math: Subtotal")}
@@ -143,7 +143,12 @@ func MathValidators() []*mathValidator {
 			ruleKey: "math.totals.taxable_amount", ruleName: "Math: Taxable Amount",
 			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
-				expected := d.Totals.Subtotal - d.Totals.TotalDiscount
+				var sum float64
+				for idx := range d.LineItems {
+					item := &d.LineItems[idx]
+					sum += item.TaxableAmount
+				}
+				expected := sum - d.Totals.TotalDiscount
 				passed := approxEqual(d.Totals.TaxableAmount, expected)
 				return []ValidationResult{mathResult(passed, "totals.taxable_amount", fmtf(expected), fmtf(d.Totals.TaxableAmount), "Math: Taxable Amount")}
 			},
