@@ -20,6 +20,7 @@ type CreateDocumentInput struct {
 	CollectionID uuid.UUID
 	FileID       uuid.UUID
 	DocumentType string
+	ParseMode    domain.ParseMode
 	CreatedBy    uuid.UUID
 	Role         domain.UserRole
 }
@@ -49,12 +50,13 @@ type DocumentService interface {
 }
 
 type documentService struct {
-	docRepo   port.DocumentRepository
-	fileRepo  port.FileMetaRepository
-	permRepo  port.CollectionPermissionRepository
-	parser    port.DocumentParser
-	storage   port.ObjectStorage
-	validator *validator.Engine
+	docRepo     port.DocumentRepository
+	fileRepo    port.FileMetaRepository
+	permRepo    port.CollectionPermissionRepository
+	parser      port.DocumentParser
+	mergeParser port.DocumentParser // optional merge parser for dual mode
+	storage     port.ObjectStorage
+	validator   *validator.Engine
 }
 
 // NewDocumentService creates a new DocumentService implementation.
@@ -73,6 +75,27 @@ func NewDocumentService(
 		parser:    parser,
 		storage:   storage,
 		validator: validationEngine,
+	}
+}
+
+// NewDocumentServiceWithMerge creates a DocumentService with dual-parse support.
+func NewDocumentServiceWithMerge(
+	docRepo port.DocumentRepository,
+	fileRepo port.FileMetaRepository,
+	permRepo port.CollectionPermissionRepository,
+	parser port.DocumentParser,
+	mergeParser port.DocumentParser,
+	storage port.ObjectStorage,
+	validationEngine *validator.Engine,
+) DocumentService {
+	return &documentService{
+		docRepo:     docRepo,
+		fileRepo:    fileRepo,
+		permRepo:    permRepo,
+		parser:      parser,
+		mergeParser: mergeParser,
+		storage:     storage,
+		validator:   validationEngine,
 	}
 }
 
@@ -119,19 +142,32 @@ func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocum
 		return nil, fmt.Errorf("looking up file: %w", err)
 	}
 
+	parseMode := input.ParseMode
+	if parseMode == "" {
+		parseMode = domain.ParseModeSingle
+	}
+	// Fall back to single if dual requested but no merge parser configured
+	if parseMode == domain.ParseModeDual && s.mergeParser == nil {
+		log.Printf("documentService.CreateAndParse: dual parse requested but no merge parser configured, falling back to single")
+		parseMode = domain.ParseModeSingle
+	}
+
 	doc := &domain.Document{
-		ID:                uuid.New(),
-		TenantID:          input.TenantID,
-		CollectionID:      input.CollectionID,
-		FileID:            input.FileID,
-		DocumentType:      input.DocumentType,
-		ParsingStatus:     domain.ParsingStatusPending,
-		ReviewStatus:      domain.ReviewStatusPending,
-		ValidationStatus:  domain.ValidationStatusPending,
-		ValidationResults: json.RawMessage("[]"),
-		StructuredData:    json.RawMessage("{}"),
-		ConfidenceScores:  json.RawMessage("{}"),
-		CreatedBy:         input.CreatedBy,
+		ID:                   uuid.New(),
+		TenantID:             input.TenantID,
+		CollectionID:         input.CollectionID,
+		FileID:               input.FileID,
+		DocumentType:         input.DocumentType,
+		ParsingStatus:        domain.ParsingStatusPending,
+		ReviewStatus:         domain.ReviewStatusPending,
+		ValidationStatus:     domain.ValidationStatusPending,
+		ReconciliationStatus: domain.ReconciliationStatusPending,
+		ValidationResults:    json.RawMessage("[]"),
+		StructuredData:       json.RawMessage("{}"),
+		ConfidenceScores:     json.RawMessage("{}"),
+		ParseMode:            parseMode,
+		FieldProvenance:      json.RawMessage("{}"),
+		CreatedBy:            input.CreatedBy,
 	}
 
 	log.Printf("documentService.CreateAndParse: creating document %s for file %s (tenant %s)",
@@ -148,6 +184,13 @@ func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocum
 	go s.parseInBackground(doc.ID, doc.TenantID, file.S3Bucket, file.S3Key, file.ContentType, doc.DocumentType)
 
 	return &result, nil
+}
+
+func (s *documentService) selectParser(mode domain.ParseMode) port.DocumentParser {
+	if mode == domain.ParseModeDual && s.mergeParser != nil {
+		return s.mergeParser
+	}
+	return s.parser
 }
 
 func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, key, contentType, documentType string) {
@@ -175,8 +218,11 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 		return
 	}
 
+	// Select parser based on document's parse mode
+	activeParser := s.selectParser(doc.ParseMode)
+
 	// Call parser
-	output, err := s.parser.Parse(ctx, port.ParseInput{
+	output, err := activeParser.Parse(ctx, port.ParseInput{
 		FileBytes:    fileBytes,
 		ContentType:  contentType,
 		DocumentType: documentType,
@@ -195,6 +241,13 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	doc.ParsingStatus = domain.ParsingStatusCompleted
 	doc.ParsingError = ""
 	doc.ParsedAt = &now
+
+	// Save field provenance if present
+	if len(output.FieldProvenance) > 0 {
+		if provenanceJSON, jsonErr := json.Marshal(output.FieldProvenance); jsonErr == nil {
+			doc.FieldProvenance = provenanceJSON
+		}
+	}
 
 	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
 		log.Printf("documentService.parseInBackground: failed to save results for %s: %v", docID, err)

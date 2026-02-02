@@ -1,6 +1,6 @@
 # SATVOS
 
-A multi-tenant document processing service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, AWS S3 storage, document collections with permission-based access control, LLM-powered document parsing, and automated GST invoice validation with 50+ built-in rules.
+A multi-tenant document processing service built in Go. Supports tenant-isolated file management with JWT authentication, role-based access control, AWS S3 storage, document collections with permission-based access control, multi-provider LLM-powered document parsing (with optional dual-parse merge mode), automated GST invoice validation with 50+ built-in rules, and reconciliation tiering for GSTR-2A/2B matching.
 
 ## Table of Contents
 
@@ -42,16 +42,17 @@ internal/
   middleware/     Auth, tenant guard, request logging
   service/        Business logic layer
   port/           Interface definitions (repository, storage, parser)
-  parser/         LLM parser implementations
+  parser/         LLM parser implementations (factory, shared prompt, merge parser)
     claude/       Anthropic Claude parser (Messages API)
+    gemini/       Google Gemini parser (stub)
   validator/      Document validation engine
     invoice/      GST invoice validators (required, format, math, crossfield, logical)
   repository/     PostgreSQL implementations (sqlx + pgx)
   storage/        S3 client implementation
   router/         Route definitions and middleware wiring
   mocks/          Generated mocks (uber/mock)
-tests/unit/       Unit tests (handlers, services, middleware, validators)
-db/migrations/    SQL migration files (7 migrations)
+tests/unit/       Unit tests (handlers, services, middleware, validators, parsers, config)
+db/migrations/    SQL migration files (9 migrations)
 ```
 
 ## Tech Stack
@@ -63,8 +64,8 @@ db/migrations/    SQL migration files (7 migrations)
 | Database | PostgreSQL 16 |
 | Object Storage | AWS S3 (LocalStack for dev) |
 | Auth | JWT (HS256) + bcrypt |
-| Document Parsing | Anthropic Claude API (Messages API) |
-| Validation | Pluggable rule engine (50+ built-in GST rules) |
+| Document Parsing | Anthropic Claude API, Google Gemini (stub); multi-provider with dual-parse merge |
+| Validation | Pluggable rule engine (50+ built-in GST rules) with reconciliation tiering |
 | Config | Viper (env vars) |
 | Migrations | golang-migrate |
 
@@ -167,12 +168,20 @@ SATVOS_S3_PRESIGN_EXPIRY=3600            # seconds
 SATVOS_LOG_LEVEL=debug
 SATVOS_LOG_FORMAT=console
 
-# Document Parser (LLM)
-SATVOS_PARSER_PROVIDER=claude              # "claude" (future: "gemini", "openai")
+# Document Parser (LLM) — Single provider (legacy)
+SATVOS_PARSER_PROVIDER=claude              # "claude" or "gemini"
 SATVOS_PARSER_API_KEY=sk-ant-...           # Anthropic API key
 SATVOS_PARSER_DEFAULT_MODEL=claude-sonnet-4-20250514
 SATVOS_PARSER_MAX_RETRIES=2
 SATVOS_PARSER_TIMEOUT_SECS=120
+
+# Document Parser — Multi-provider (overrides legacy if set)
+SATVOS_PARSER_PRIMARY_PROVIDER=claude
+SATVOS_PARSER_PRIMARY_API_KEY=sk-ant-...
+SATVOS_PARSER_PRIMARY_DEFAULT_MODEL=claude-sonnet-4-20250514
+SATVOS_PARSER_SECONDARY_PROVIDER=gemini    # optional; enables dual-parse mode
+SATVOS_PARSER_SECONDARY_API_KEY=...
+SATVOS_PARSER_SECONDARY_DEFAULT_MODEL=gemini-2.0-flash
 ```
 
 ## Database Migrations
@@ -184,7 +193,7 @@ go run ./cmd/migrate steps N     # Apply N migrations
 go run ./cmd/migrate version     # Show current version
 ```
 
-Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules` (per-tenant, cascade). Validation results are stored as JSONB on the `documents` table.
+Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules` (per-tenant, cascade). Validation results are stored as JSONB on the `documents` table. Migration 008 adds reconciliation tiering columns; migration 009 adds multi-parser columns (`parse_mode`, `field_provenance`).
 
 ## API Reference
 
@@ -550,13 +559,13 @@ Documents represent parsed and validated versions of uploaded files. When you cr
 
 ```
 Upload File ──> Create Document ──> Background LLM Parsing ──> Auto-Validation ──> Human Review
-                                          |                         |
-                                    parsing_status:           validation_status:
-                                    pending -> processing     pending -> valid
-                                    -> completed/failed       -> warning/invalid
+                (parse_mode:             |                         |
+                 single/dual)      parsing_status:           validation_status:      reconciliation_status:
+                                   pending -> processing     pending -> valid        pending -> valid
+                                   -> completed/failed       -> warning/invalid      -> warning/invalid
 ```
 
-**Full workflow**: Upload a file -> Create a document (triggers parsing) -> Poll until `parsing_status=completed` -> Validation runs automatically -> Check validation results -> Approve or reject.
+**Full workflow**: Upload a file -> Create a document (triggers parsing, optionally in dual-parse mode) -> Poll until `parsing_status=completed` -> Validation runs automatically (computing both `validation_status` and `reconciliation_status`) -> Check validation results -> Approve or reject.
 
 All document endpoints require `Authorization: Bearer {access_token}`.
 
@@ -571,9 +580,12 @@ curl -X POST http://localhost:8080/api/v1/documents \
   -d '{
     "file_id": "<file_id>",
     "collection_id": "<collection_id>",
-    "document_type": "invoice"
+    "document_type": "invoice",
+    "parse_mode": "single"
   }'
 ```
+
+`parse_mode` is optional. Valid values: `single` (default, uses primary parser) or `dual` (runs primary + secondary parsers in parallel and merges results). If `dual` is requested but no secondary parser is configured, falls back to `single`.
 
 Response:
 
@@ -587,8 +599,11 @@ Response:
     "document_type": "invoice",
     "parsing_status": "pending",
     "review_status": "pending",
+    "parse_mode": "single",
+    "reconciliation_status": "pending",
     "structured_data": {},
-    "confidence_scores": {}
+    "confidence_scores": {},
+    "field_provenance": {}
   }
 }
 ```
@@ -680,6 +695,13 @@ Response:
       "errors": 0,
       "warnings": 3
     },
+    "reconciliation_status": "valid",
+    "reconciliation_summary": {
+      "total": 21,
+      "passed": 21,
+      "errors": 0,
+      "warnings": 0
+    },
     "results": [
       {
         "rule_name": "Required: Invoice Number",
@@ -689,7 +711,8 @@ Response:
         "field_path": "invoice.invoice_number",
         "expected_value": "non-empty value",
         "actual_value": "INV-001",
-        "message": "Required: Invoice Number: invoice.invoice_number is present"
+        "message": "Required: Invoice Number: invoice.invoice_number is present",
+        "reconciliation_critical": true
       }
     ],
     "field_statuses": {
@@ -707,6 +730,8 @@ Response:
 ```
 
 **Validation status values**: `pending` (not yet validated), `valid` (all rules passed), `warning` (only warning-severity failures), `invalid` (error-severity failures).
+
+**Reconciliation status values**: `pending`, `valid` (all reconciliation-critical rules passed), `warning` (only warning-severity recon-critical failures), `invalid` (error-severity recon-critical failures). Computed independently from `validation_status` using only the 21 reconciliation-critical rules needed for GSTR-2A/2B matching.
 
 **Field status values**: `valid`, `invalid` (error-severity rule failed), `unsure` (warning-severity rule failed or low confidence score).
 

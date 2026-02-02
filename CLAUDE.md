@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images, and an automated validation engine with 50+ built-in GST invoice rules. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 50+ built-in GST invoice rules, and reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -34,6 +34,8 @@ internal/
                              ParsingStatus (pending/processing/completed/failed),
                              ReviewStatus (pending/approved/rejected),
                              ValidationStatus (pending/valid/warning/invalid),
+                             ReconciliationStatus (pending/valid/warning/invalid),
+                             ParseMode (single/dual),
                              ValidationSeverity (error/warning),
                              ValidationRuleType (required_field/regex/sum_check/cross_field/custom),
                              FieldValidationStatus (valid/invalid/unsure)
@@ -84,12 +86,20 @@ internal/
     document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
   storage/s3/
     s3_client.go             S3 implementation (supports LocalStack endpoint)
-  parser/claude/
-    claude_parser.go         Anthropic Messages API parser (PDF as document blocks, images as image blocks)
+  parser/
+    factory.go               Parser provider registry and factory (RegisterProvider, NewParser)
+    prompt.go                Shared GST invoice extraction prompt (BuildGSTInvoicePrompt)
+    merge.go                 MergeParser — wraps two DocumentParsers, runs in parallel, merges results
+    claude/
+      claude_parser.go       Anthropic Messages API parser (PDF as document blocks, images as image blocks)
+    gemini/
+      gemini_parser.go       Google Gemini parser (stub — not yet implemented)
   validator/
-    engine.go                Validation orchestrator — loads rules, runs validators, computes status,
-                             auto-seeds builtin rules per tenant, returns ValidationResponse
-    validator.go             Validator interface (Validate, RuleKey, RuleName, RuleType, Severity)
+    engine.go                Validation orchestrator — loads rules, runs validators, computes
+                             validation_status + reconciliation_status, auto-seeds builtin rules,
+                             returns ValidationResponse with reconciliation summary
+    validator.go             Validator interface (Validate, RuleKey, RuleName, RuleType, Severity,
+                             ReconciliationCritical)
     registry.go              Map-based validator registry (Register, Get, All)
     field_status.go          Computes per-field status from rule results + confidence scores
     invoice/                 GST invoice validators (50 built-in rules):
@@ -104,9 +114,10 @@ internal/
     router.go                Route definitions, middleware wiring
   mocks/                     Generated mocks (uber/mock) for testing
 
-tests/unit/                  Unit tests for handlers, services, middleware, validators
-db/migrations/               7 SQL migrations: tenants -> users -> file_metadata -> collections
+tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
+db/migrations/               9 SQL migrations: tenants -> users -> file_metadata -> collections
                              -> documents -> validation columns -> consolidated validation results
+                             -> reconciliation tiering -> multi-parser fields
 ```
 
 ## Data Flow
@@ -167,17 +178,24 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   │       - Look up validator in Registry by builtin_rule_key       │
   │       - Run Validator.Validate(ctx, *GSTInvoice)               │
   │       - Collect ValidationResult (passed, field_path, message)  │
-  │    4. Determine overall status:                                 │
+  │       - Track reconciliation_critical flag per result           │
+  │    4. Determine overall validation_status:                      │
   │       - Any error failure → ValidationStatusInvalid             │
   │       - Only warning failures → ValidationStatusWarning         │
   │       - All passed → ValidationStatusValid                      │
-  │    5. Save results as JSONB to documents.validation_results     │
+  │    5. Determine reconciliation_status (from critical rules only)│
+  │       - Any recon-critical error → ReconciliationStatusInvalid  │
+  │       - Only recon-critical warnings → Warning                  │
+  │       - All recon-critical passed → ReconciliationStatusValid   │
+  │    6. Save results as JSONB to documents.validation_results     │
   │                                                                 │
   │  GetValidation(ctx, tenantID, docID)                           │
   │    1. Load document (structured_data, confidence_scores, etc.)  │
   │    2. Load validation rules                                     │
   │    3. ComputeFieldStatuses (results + confidence → per-field)   │
-  │    4. Return ValidationResponse (summary, results, statuses)    │
+  │    4. Return ValidationResponse (summary, reconciliation        │
+  │       summary, results with reconciliation_critical flag,       │
+  │       field statuses)                                           │
   └─────────────────────────────────────────────────────────────────┘
                               │
               ┌───────────────┼───────────────┐
@@ -232,8 +250,60 @@ Results are stored as JSONB directly on the `documents` table (`validation_resul
 ```json
 {"rule_id": "uuid", "passed": true, "field_path": "seller.gstin",
  "expected_value": "non-empty", "actual_value": "29ABCDE1234F1Z5",
- "message": "...", "validated_at": "2025-01-15T10:30:00Z"}
+ "message": "...", "reconciliation_critical": true,
+ "validated_at": "2025-01-15T10:30:00Z"}
 ```
+
+### Reconciliation Tiering
+
+21 of the 50 validation rules are classified as **reconciliation-critical** for GSTR-2A/2B matching. These are the fields the GST portal uses for invoice matching: supplier GSTIN, invoice number/date, total value, taxable value, CGST/SGST/IGST amounts, place of supply, and reverse charge.
+
+The `reconciliation_status` field on documents is computed independently from `validation_status`:
+- Only reconciliation-critical rule failures affect `reconciliation_status`
+- Non-critical failures (e.g., missing PAN, payment details, HSN codes) affect `validation_status` but leave `reconciliation_status` valid
+
+Each validator implements `ReconciliationCritical() bool`. Each `DocumentValidationRule` row has a `reconciliation_critical` boolean. The engine tracks recon errors/warnings separately and saves the result to `documents.reconciliation_status`.
+
+**Reconciliation-critical rule keys** (21 total): `req.invoice.number`, `req.invoice.date`, `req.invoice.place_of_supply`, `req.seller.name`, `req.seller.gstin`, `req.buyer.gstin`, `fmt.seller.gstin`, `fmt.buyer.gstin`, `fmt.seller.state_code`, `fmt.buyer.state_code`, `math.totals.taxable_amount`, `math.totals.cgst`, `math.totals.sgst`, `math.totals.igst`, `math.totals.grand_total`, `xf.seller.gstin_state`, `xf.buyer.gstin_state`, `xf.tax_type.intrastate`, `xf.tax_type.interstate`, `logic.line_items.at_least_one`, `logic.line_item.exclusive_tax`.
+
+### Multi-Parser Architecture
+
+The system supports multiple LLM parser backends with an opt-in dual-parse merge mode:
+
+```
+  ParserConfig (config.go)
+    Primary + Secondary
+         │
+  Parser Factory (factory.go)
+    RegisterProvider() / NewParser()
+         │
+    ┌────┼────┐
+    │    │    │
+  Claude Gemini OpenAI
+  (live) (stub) (future)
+         │
+  MergeParser (merge.go)
+    wraps 2 parsers
+    runs both in parallel
+    merges field-by-field
+```
+
+**Parse modes** (`parse_mode` field on documents):
+- `single` (default): Uses primary parser only
+- `dual`: Uses MergeParser which runs primary + secondary in parallel
+
+**Merge strategy** (in `internal/parser/merge.go`):
+- **Agreement**: Both extract same value → use it, confidence boosted by 20%
+- **One empty**: Use the non-empty value with its confidence
+- **Disagreement**: Prefer value matching expected format (e.g., GSTIN regex), reduce confidence, record provenance
+- **Line items**: Pick the array from whichever parser has more items (no per-item merging)
+
+**Field provenance** (`field_provenance` JSONB on documents): Records which model provided each field — `"agree"`, `"primary"`, `"secondary"`, `"primary_format"`, `"secondary_format"`, or `"disagreement"`.
+
+**Config** (`ParserConfig` in `config.go`):
+- Legacy flat fields (`SATVOS_PARSER_PROVIDER`, etc.) still work via `PrimaryConfig()` fallback
+- Multi-provider: `SATVOS_PARSER_PRIMARY_PROVIDER`, `SATVOS_PARSER_PRIMARY_API_KEY`, `SATVOS_PARSER_SECONDARY_PROVIDER`, etc.
+- If no secondary configured, dual parse mode falls back to single with log warning
 
 ## Key Conventions
 
@@ -246,9 +316,9 @@ Results are stored as JSONB directly on the `documents` table (`validation_resul
 - **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
-- **Document parsing**: Background goroutine downloads file from S3, sends to LLM (Claude via direct HTTP to Messages API), saves structured JSON + confidence scores. Status progresses: pending -> processing -> completed/failed. **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
-- **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. Claude implementation in `parser/claude/`. Swappable to Gemini/OpenAI by implementing the interface.
-- **Validation**: Runs automatically after parsing completes. 50 built-in GST invoice rules across 5 categories. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid.
+- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
+- **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini stub in `parser/gemini/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`.
+- **Validation**: Runs automatically after parsing completes. 50 built-in GST invoice rules across 5 categories. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.
 - **Pagination**: `offset` and `limit` query params on list endpoints.
 - **Testing**: Unit tests use testify assertions and uber/mock for interface mocking. Tests run with `-race` flag in CI.
@@ -259,7 +329,7 @@ Results are stored as JSONB directly on the `documents` table (`validation_resul
 
 ## Tech Stack
 
-- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing)
+- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing), Google Gemini API (stub, document parsing)
 
 ## Important Files for Common Tasks
 
@@ -268,7 +338,7 @@ Results are stored as JSONB directly on the `documents` table (`validation_resul
 - **Adding a migration**: `db/migrations/` (sequential numbered SQL files, up + down)
 - **Modifying config**: `internal/config/config.go` (struct + viper binding), `.env.example`
 - **Adding middleware**: `internal/middleware/`, wire it in `internal/router/router.go`
-- **Adding a new parser provider**: Implement `port.DocumentParser` interface in `internal/parser/<provider>/`, wire in `cmd/server/main.go` based on `cfg.Parser.Provider`
+- **Adding a new parser provider**: Implement `port.DocumentParser` interface in `internal/parser/<provider>/`, register via `parser.RegisterProvider()` in `cmd/server/main.go`, use shared prompt from `parser.BuildGSTInvoicePrompt()`
 - **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`
 - **Adding a new document type**: Create typed model in `internal/validator/<type>/types.go`, implement validators, register in `cmd/server/main.go`
 - **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.

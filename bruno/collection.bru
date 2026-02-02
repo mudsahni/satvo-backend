@@ -1,10 +1,11 @@
 headers {
-  Content-Type: application/json
+  ~Content-Type: application/json
 }
 
 vars:pre-request {
-  baseUrl: http://localhost:8080
   email: muditsahni@msn.com
   tenantSlug: gls
   password: admin123
+  baseUrl: https://satvo-backend-production.up.railway.app
+  ~baseUrl: http://localhost:8080
 }

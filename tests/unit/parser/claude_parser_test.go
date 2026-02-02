@@ -15,7 +15,7 @@ import (
 )
 
 func newTestParser(serverURL string) *claude.Parser {
-	cfg := &config.ParserConfig{
+	cfg := &config.ParserProviderConfig{
 		Provider:     "claude",
 		APIKey:       "test-api-key",
 		DefaultModel: "claude-sonnet-4-20250514",

@@ -12,16 +12,18 @@ const mathTolerance = 1.00
 
 // mathValidator checks arithmetic relationships between fields.
 type mathValidator struct {
-	ruleKey  string
-	ruleName string
-	severity domain.ValidationSeverity
-	validate func(*GSTInvoice) []ValidationResult
+	ruleKey       string
+	ruleName      string
+	severity      domain.ValidationSeverity
+	reconCritical bool
+	validate      func(*GSTInvoice) []ValidationResult
 }
 
 func (v *mathValidator) RuleKey() string                     { return v.ruleKey }
 func (v *mathValidator) RuleName() string                    { return v.ruleName }
 func (v *mathValidator) RuleType() domain.ValidationRuleType { return domain.ValidationRuleSumCheck }
 func (v *mathValidator) Severity() domain.ValidationSeverity { return v.severity }
+func (v *mathValidator) ReconciliationCritical() bool        { return v.reconCritical }
 
 func (v *mathValidator) Validate(_ context.Context, data *GSTInvoice) []ValidationResult {
 	return v.validate(data)
@@ -139,7 +141,7 @@ func MathValidators() []*mathValidator {
 		},
 		{
 			ruleKey: "math.totals.taxable_amount", ruleName: "Math: Taxable Amount",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				expected := d.Totals.Subtotal - d.Totals.TotalDiscount
 				passed := approxEqual(d.Totals.TaxableAmount, expected)
@@ -148,7 +150,7 @@ func MathValidators() []*mathValidator {
 		},
 		{
 			ruleKey: "math.totals.cgst", ruleName: "Math: Total CGST",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
 				for idx := range d.LineItems {
@@ -161,7 +163,7 @@ func MathValidators() []*mathValidator {
 		},
 		{
 			ruleKey: "math.totals.sgst", ruleName: "Math: Total SGST",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
 				for idx := range d.LineItems {
@@ -174,7 +176,7 @@ func MathValidators() []*mathValidator {
 		},
 		{
 			ruleKey: "math.totals.igst", ruleName: "Math: Total IGST",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				var sum float64
 				for idx := range d.LineItems {
@@ -187,7 +189,7 @@ func MathValidators() []*mathValidator {
 		},
 		{
 			ruleKey: "math.totals.grand_total", ruleName: "Math: Grand Total",
-			severity: domain.ValidationSeverityError,
+			severity: domain.ValidationSeverityError, reconCritical: true,
 			validate: func(d *GSTInvoice) []ValidationResult {
 				expected := d.Totals.TaxableAmount + d.Totals.CGST + d.Totals.SGST + d.Totals.IGST + d.Totals.Cess + d.Totals.RoundOff
 				passed := approxEqual(d.Totals.Total, expected)

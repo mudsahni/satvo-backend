@@ -36,12 +36,22 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 	role := domain.UserRole(middleware.GetRole(c))
 
 	var req struct {
-		FileID       uuid.UUID `json:"file_id" binding:"required"`
-		CollectionID uuid.UUID `json:"collection_id" binding:"required"`
-		DocumentType string    `json:"document_type" binding:"required"`
+		FileID       uuid.UUID       `json:"file_id" binding:"required"`
+		CollectionID uuid.UUID       `json:"collection_id" binding:"required"`
+		DocumentType string          `json:"document_type" binding:"required"`
+		ParseMode    domain.ParseMode `json:"parse_mode"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "file_id, collection_id, and document_type are required")
+		return
+	}
+
+	// Default to single parse mode
+	if req.ParseMode == "" {
+		req.ParseMode = domain.ParseModeSingle
+	}
+	if !domain.ValidParseModes[req.ParseMode] {
+		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "parse_mode must be 'single' or 'dual'")
 		return
 	}
 
@@ -50,6 +60,7 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		CollectionID: req.CollectionID,
 		FileID:       req.FileID,
 		DocumentType: req.DocumentType,
+		ParseMode:    req.ParseMode,
 		CreatedBy:    userID,
 		Role:         role,
 	})

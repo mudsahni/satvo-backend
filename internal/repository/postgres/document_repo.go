@@ -34,15 +34,17 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		parser_model, parser_prompt, structured_data, confidence_scores,
 		parsing_status, parsing_error, parsed_at,
 		review_status, reviewed_by, reviewed_at, reviewer_notes,
-		validation_status, validation_results,
+		validation_status, validation_results, reconciliation_status,
+		parse_mode, field_provenance,
 		created_by, created_at, updated_at
 	) VALUES (
 		$1, $2, $3, $4, $5,
 		$6, $7, $8, $9,
 		$10, $11, $12,
 		$13, $14, $15, $16,
-		$17, $18,
-		$19, $20, $21
+		$17, $18, $19,
+		$20, $21,
+		$22, $23, $24
 	)`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -50,7 +52,8 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		doc.ParserModel, doc.ParserPrompt, doc.StructuredData, doc.ConfidenceScores,
 		doc.ParsingStatus, doc.ParsingError, doc.ParsedAt,
 		doc.ReviewStatus, doc.ReviewedBy, doc.ReviewedAt, doc.ReviewerNotes,
-		doc.ValidationStatus, doc.ValidationResults,
+		doc.ValidationStatus, doc.ValidationResults, doc.ReconciliationStatus,
+		doc.ParseMode, doc.FieldProvenance,
 		doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") && strings.Contains(err.Error(), "file_id") {
@@ -156,11 +159,13 @@ func (r *documentRepo) UpdateStructuredData(ctx context.Context, doc *domain.Doc
 		`UPDATE documents SET
 			structured_data = $1, confidence_scores = $2,
 			parsing_status = $3, parsing_error = $4, parsed_at = $5,
-			parser_model = $6, parser_prompt = $7, updated_at = $8
-		 WHERE id = $9 AND tenant_id = $10`,
+			parser_model = $6, parser_prompt = $7,
+			field_provenance = $8, updated_at = $9
+		 WHERE id = $10 AND tenant_id = $11`,
 		doc.StructuredData, doc.ConfidenceScores,
 		doc.ParsingStatus, doc.ParsingError, doc.ParsedAt,
-		doc.ParserModel, doc.ParserPrompt, doc.UpdatedAt,
+		doc.ParserModel, doc.ParserPrompt,
+		doc.FieldProvenance, doc.UpdatedAt,
 		doc.ID, doc.TenantID)
 	if err != nil {
 		return fmt.Errorf("documentRepo.UpdateStructuredData: %w", err)
@@ -195,9 +200,9 @@ func (r *documentRepo) UpdateReviewStatus(ctx context.Context, doc *domain.Docum
 func (r *documentRepo) UpdateValidationResults(ctx context.Context, doc *domain.Document) error {
 	doc.UpdatedAt = time.Now().UTC()
 	result, err := r.db.ExecContext(ctx,
-		`UPDATE documents SET validation_results = $1, validation_status = $2, updated_at = $3
-		 WHERE id = $4 AND tenant_id = $5`,
-		doc.ValidationResults, doc.ValidationStatus, doc.UpdatedAt, doc.ID, doc.TenantID)
+		`UPDATE documents SET validation_results = $1, validation_status = $2, reconciliation_status = $3, updated_at = $4
+		 WHERE id = $5 AND tenant_id = $6`,
+		doc.ValidationResults, doc.ValidationStatus, doc.ReconciliationStatus, doc.UpdatedAt, doc.ID, doc.TenantID)
 	if err != nil {
 		return fmt.Errorf("documentRepo.UpdateValidationResults: %w", err)
 	}

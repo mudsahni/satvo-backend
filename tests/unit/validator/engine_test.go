@@ -477,6 +477,340 @@ func TestEngine_GetValidation_EmptyResults(t *testing.T) {
 	assert.Empty(t, resp.Results)
 }
 
+// --- Reconciliation Tiering ---
+
+func TestEngine_ValidateDocument_ReconciliationCriticalError(t *testing.T) {
+	engine, docRepo, ruleRepo := setupEngine()
+	ctx := context.Background()
+	tenantID := uuid.New()
+	docID := uuid.New()
+
+	// Invoice missing seller GSTIN → reconciliation-critical error
+	inv := invoice.GSTInvoice{
+		Invoice: invoice.InvoiceHeader{
+			InvoiceNumber: "INV-001",
+			InvoiceDate:   "15/01/2025",
+			PlaceOfSupply: "Karnataka",
+		},
+		Seller: invoice.Party{
+			Name:      "Seller Corp",
+			GSTIN:     "", // missing → reconciliation-critical error
+			StateCode: "29",
+		},
+		Buyer: invoice.Party{
+			Name:      "Buyer Corp",
+			GSTIN:     "29FGHIJ5678K1Z2",
+			StateCode: "29",
+		},
+		LineItems: []invoice.LineItem{
+			{Description: "Widget", Quantity: 1, UnitPrice: 100, TaxableAmount: 100, Total: 100},
+		},
+		Totals: invoice.Totals{Subtotal: 100, TaxableAmount: 100, Total: 100},
+	}
+	data, _ := json.Marshal(inv)
+
+	doc := &domain.Document{
+		ID:                docID,
+		TenantID:          tenantID,
+		DocumentType:      "invoice",
+		StructuredData:    data,
+		ConfidenceScores:  json.RawMessage("{}"),
+		ValidationResults: json.RawMessage("[]"),
+		CreatedBy:         uuid.New(),
+	}
+
+	reqGSTINKey := "req.seller.gstin"
+	rule := makeRule(uuid.New(), reqGSTINKey, domain.ValidationSeverityError)
+	rule.ReconciliationCritical = true
+	rules := []domain.DocumentValidationRule{rule}
+
+	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
+	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
+	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
+	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			d := args.Get(1).(*domain.Document)
+			assert.Equal(t, domain.ValidationStatusInvalid, d.ValidationStatus)
+			assert.Equal(t, domain.ReconciliationStatusInvalid, d.ReconciliationStatus)
+		}).Return(nil)
+
+	err := engine.ValidateDocument(ctx, tenantID, docID)
+	assert.NoError(t, err)
+}
+
+func TestEngine_ValidateDocument_NonReconCriticalError_ReconValid(t *testing.T) {
+	engine, docRepo, ruleRepo := setupEngine()
+	ctx := context.Background()
+	tenantID := uuid.New()
+	docID := uuid.New()
+
+	// Invoice missing due date → non-reconciliation-critical warning
+	inv := invoice.GSTInvoice{
+		Invoice: invoice.InvoiceHeader{
+			InvoiceNumber: "INV-001",
+			InvoiceDate:   "15/01/2025",
+			Currency:      "", // missing → warning, NOT recon-critical
+			PlaceOfSupply: "Karnataka",
+		},
+		Seller: invoice.Party{Name: "S", GSTIN: "29ABCDE1234F1Z5", StateCode: "29"},
+		Buyer:  invoice.Party{Name: "B", GSTIN: "29FGHIJ5678K1Z2", StateCode: "29"},
+	}
+	data, _ := json.Marshal(inv)
+
+	doc := &domain.Document{
+		ID:                docID,
+		TenantID:          tenantID,
+		DocumentType:      "invoice",
+		StructuredData:    data,
+		ConfidenceScores:  json.RawMessage("{}"),
+		ValidationResults: json.RawMessage("[]"),
+		CreatedBy:         uuid.New(),
+	}
+
+	currencyKey := "req.invoice.currency"
+	rule := makeRule(uuid.New(), currencyKey, domain.ValidationSeverityWarning)
+	rule.ReconciliationCritical = false
+	rules := []domain.DocumentValidationRule{rule}
+
+	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
+	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
+	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
+	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			d := args.Get(1).(*domain.Document)
+			assert.Equal(t, domain.ValidationStatusWarning, d.ValidationStatus)
+			// Reconciliation should be valid since the failing rule is not recon-critical
+			assert.Equal(t, domain.ReconciliationStatusValid, d.ReconciliationStatus)
+		}).Return(nil)
+
+	err := engine.ValidateDocument(ctx, tenantID, docID)
+	assert.NoError(t, err)
+}
+
+func TestEngine_ValidateDocument_MixedReconAndNonRecon(t *testing.T) {
+	engine, docRepo, ruleRepo := setupEngine()
+	ctx := context.Background()
+	tenantID := uuid.New()
+	docID := uuid.New()
+
+	// Invoice missing seller GSTIN (recon-critical error) AND currency (non-recon warning)
+	inv := invoice.GSTInvoice{
+		Invoice: invoice.InvoiceHeader{
+			InvoiceNumber: "INV-001",
+			InvoiceDate:   "15/01/2025",
+			Currency:      "", // warning, not recon-critical
+			PlaceOfSupply: "Karnataka",
+		},
+		Seller: invoice.Party{Name: "S", GSTIN: "", StateCode: "29"}, // error, recon-critical
+		Buyer:  invoice.Party{Name: "B", GSTIN: "29FGHIJ5678K1Z2", StateCode: "29"},
+	}
+	data, _ := json.Marshal(inv)
+
+	doc := &domain.Document{
+		ID:                docID,
+		TenantID:          tenantID,
+		DocumentType:      "invoice",
+		StructuredData:    data,
+		ConfidenceScores:  json.RawMessage("{}"),
+		ValidationResults: json.RawMessage("[]"),
+		CreatedBy:         uuid.New(),
+	}
+
+	reconRule := makeRule(uuid.New(), "req.seller.gstin", domain.ValidationSeverityError)
+	reconRule.ReconciliationCritical = true
+
+	nonReconRule := makeRule(uuid.New(), "req.invoice.currency", domain.ValidationSeverityWarning)
+	nonReconRule.ReconciliationCritical = false
+
+	rules := []domain.DocumentValidationRule{reconRule, nonReconRule}
+
+	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
+	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
+	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
+	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			d := args.Get(1).(*domain.Document)
+			assert.Equal(t, domain.ValidationStatusInvalid, d.ValidationStatus)
+			assert.Equal(t, domain.ReconciliationStatusInvalid, d.ReconciliationStatus)
+		}).Return(nil)
+
+	err := engine.ValidateDocument(ctx, tenantID, docID)
+	assert.NoError(t, err)
+}
+
+func TestEngine_ValidateDocument_AllPass_ReconValid(t *testing.T) {
+	engine, docRepo, ruleRepo := setupEngine()
+	ctx := context.Background()
+	tenantID := uuid.New()
+	docID := uuid.New()
+
+	doc := &domain.Document{
+		ID:                docID,
+		TenantID:          tenantID,
+		DocumentType:      "invoice",
+		StructuredData:    validInvoiceJSON(),
+		ConfidenceScores:  json.RawMessage("{}"),
+		ValidationResults: json.RawMessage("[]"),
+		CreatedBy:         uuid.New(),
+	}
+
+	ruleKey := "req.invoice.number"
+	rule := makeRule(uuid.New(), ruleKey, domain.ValidationSeverityError)
+	rule.ReconciliationCritical = true
+	rules := []domain.DocumentValidationRule{rule}
+
+	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
+	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
+	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
+	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			d := args.Get(1).(*domain.Document)
+			assert.Equal(t, domain.ValidationStatusValid, d.ValidationStatus)
+			assert.Equal(t, domain.ReconciliationStatusValid, d.ReconciliationStatus)
+		}).Return(nil)
+
+	err := engine.ValidateDocument(ctx, tenantID, docID)
+	assert.NoError(t, err)
+}
+
+func TestEngine_EnsureBuiltinRules_SetsReconciliationCritical(t *testing.T) {
+	engine, _, ruleRepo := setupEngine()
+	ctx := context.Background()
+	tenantID := uuid.New()
+	createdBy := uuid.New()
+
+	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return([]string{}, nil)
+
+	var reconCriticalKeys []string
+	ruleRepo.On("Create", ctx, mock.AnythingOfType("*domain.DocumentValidationRule")).
+		Run(func(args mock.Arguments) {
+			rule := args.Get(1).(*domain.DocumentValidationRule)
+			if rule.ReconciliationCritical && rule.BuiltinRuleKey != nil {
+				reconCriticalKeys = append(reconCriticalKeys, *rule.BuiltinRuleKey)
+			}
+		}).Return(nil)
+
+	err := engine.EnsureBuiltinRules(ctx, tenantID, "invoice", createdBy)
+
+	assert.NoError(t, err)
+
+	// Verify the expected 21 reconciliation-critical keys
+	expectedReconKeys := map[string]bool{
+		"req.invoice.number":          true,
+		"req.invoice.date":            true,
+		"req.invoice.place_of_supply": true,
+		"req.seller.name":             true,
+		"req.seller.gstin":            true,
+		"req.buyer.gstin":             true,
+		"fmt.seller.gstin":            true,
+		"fmt.buyer.gstin":             true,
+		"fmt.seller.state_code":       true,
+		"fmt.buyer.state_code":        true,
+		"math.totals.taxable_amount":  true,
+		"math.totals.cgst":            true,
+		"math.totals.sgst":            true,
+		"math.totals.igst":            true,
+		"math.totals.grand_total":     true,
+		"xf.seller.gstin_state":       true,
+		"xf.buyer.gstin_state":        true,
+		"xf.tax_type.intrastate":      true,
+		"xf.tax_type.interstate":      true,
+		"logic.line_items.at_least_one":  true,
+		"logic.line_item.exclusive_tax": true,
+	}
+
+	assert.Equal(t, len(expectedReconKeys), len(reconCriticalKeys), "expected 21 reconciliation-critical rules")
+	for _, key := range reconCriticalKeys {
+		assert.True(t, expectedReconKeys[key], "unexpected reconciliation-critical key: %s", key)
+	}
+}
+
+func TestEngine_GetValidation_ReconciliationSummary(t *testing.T) {
+	engine, docRepo, ruleRepo := setupEngine()
+	ctx := context.Background()
+	tenantID := uuid.New()
+	docID := uuid.New()
+	reconRuleID := uuid.New()
+	nonReconRuleID := uuid.New()
+
+	reconKey := "req.seller.gstin"
+	nonReconKey := "req.invoice.currency"
+
+	results := []validator.ValidationResultEntry{
+		{RuleID: reconRuleID, Passed: false, FieldPath: "seller.gstin", Message: "missing GSTIN", ReconciliationCritical: true},
+		{RuleID: nonReconRuleID, Passed: false, FieldPath: "invoice.currency", Message: "missing currency", ReconciliationCritical: false},
+	}
+	resultsJSON, _ := json.Marshal(results)
+
+	doc := &domain.Document{
+		ID:                   docID,
+		TenantID:             tenantID,
+		DocumentType:         "invoice",
+		ValidationStatus:     domain.ValidationStatusInvalid,
+		ReconciliationStatus: domain.ReconciliationStatusInvalid,
+		ValidationResults:    resultsJSON,
+		StructuredData:       json.RawMessage("{}"),
+		ConfidenceScores:     json.RawMessage("{}"),
+	}
+
+	reconRule := makeRule(reconRuleID, reconKey, domain.ValidationSeverityError)
+	reconRule.ReconciliationCritical = true
+	nonReconRule := makeRule(nonReconRuleID, nonReconKey, domain.ValidationSeverityWarning)
+	nonReconRule.ReconciliationCritical = false
+
+	rules := []domain.DocumentValidationRule{reconRule, nonReconRule}
+
+	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
+	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
+
+	resp, err := engine.GetValidation(ctx, tenantID, docID)
+
+	assert.NoError(t, err)
+	assert.Equal(t, domain.ReconciliationStatusInvalid, resp.ReconciliationStatus)
+
+	// Reconciliation summary should only count the recon-critical rule
+	assert.Equal(t, 1, resp.ReconciliationSummary.Total)
+	assert.Equal(t, 0, resp.ReconciliationSummary.Passed)
+	assert.Equal(t, 1, resp.ReconciliationSummary.Errors)
+	assert.Equal(t, 0, resp.ReconciliationSummary.Warnings)
+
+	// Overall summary should count both
+	assert.Equal(t, 2, resp.Summary.Total)
+	assert.Equal(t, 0, resp.Summary.Passed)
+	assert.Equal(t, 1, resp.Summary.Errors)
+	assert.Equal(t, 1, resp.Summary.Warnings)
+
+	// Verify reconciliation_critical flag in results
+	assert.True(t, resp.Results[0].ReconciliationCritical)
+	assert.False(t, resp.Results[1].ReconciliationCritical)
+}
+
+// --- ReconciliationCritical on validators ---
+
+func TestBuiltinValidators_ReconciliationCritical(t *testing.T) {
+	validators := invoice.AllBuiltinValidators()
+
+	reconCriticalKeys := map[string]bool{
+		"req.invoice.number": true, "req.invoice.date": true,
+		"req.invoice.place_of_supply": true, "req.seller.name": true,
+		"req.seller.gstin": true, "req.buyer.gstin": true,
+		"fmt.seller.gstin": true, "fmt.buyer.gstin": true,
+		"fmt.seller.state_code": true, "fmt.buyer.state_code": true,
+		"math.totals.taxable_amount": true, "math.totals.cgst": true,
+		"math.totals.sgst": true, "math.totals.igst": true,
+		"math.totals.grand_total": true,
+		"xf.seller.gstin_state": true, "xf.buyer.gstin_state": true,
+		"xf.tax_type.intrastate": true, "xf.tax_type.interstate": true,
+		"logic.line_items.at_least_one": true, "logic.line_item.exclusive_tax": true,
+	}
+
+	for _, v := range validators {
+		expected := reconCriticalKeys[v.RuleKey()]
+		assert.Equal(t, expected, v.ReconciliationCritical(),
+			"rule %s: expected ReconciliationCritical=%v, got %v", v.RuleKey(), expected, v.ReconciliationCritical())
+	}
+}
+
 func TestEngine_GetValidation_WithConfidenceScores(t *testing.T) {
 	engine, docRepo, ruleRepo := setupEngine()
 	ctx := context.Background()
