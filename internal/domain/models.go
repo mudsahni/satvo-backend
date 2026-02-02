@@ -67,6 +67,7 @@ type Document struct {
 	TenantID         uuid.UUID          `db:"tenant_id" json:"tenant_id"`
 	CollectionID     uuid.UUID          `db:"collection_id" json:"collection_id"`
 	FileID           uuid.UUID          `db:"file_id" json:"file_id"`
+	Name             string             `db:"name" json:"name"`
 	DocumentType     string             `db:"document_type" json:"document_type"`
 	ParserModel      string             `db:"parser_model" json:"parser_model"`
 	ParserPrompt     string             `db:"parser_prompt" json:"parser_prompt"`
@@ -96,6 +97,7 @@ type DocumentTag struct {
 	TenantID   uuid.UUID `db:"tenant_id" json:"tenant_id"`
 	Key        string    `db:"key" json:"key"`
 	Value      string    `db:"value" json:"value"`
+	Source     string    `db:"source" json:"source"`
 	CreatedAt  time.Time `db:"created_at" json:"created_at"`
 }
 

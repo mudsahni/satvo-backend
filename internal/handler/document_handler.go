@@ -36,10 +36,12 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 	role := domain.UserRole(middleware.GetRole(c))
 
 	var req struct {
-		FileID       uuid.UUID       `json:"file_id" binding:"required"`
-		CollectionID uuid.UUID       `json:"collection_id" binding:"required"`
-		DocumentType string          `json:"document_type" binding:"required"`
-		ParseMode    domain.ParseMode `json:"parse_mode"`
+		FileID       uuid.UUID         `json:"file_id" binding:"required"`
+		CollectionID uuid.UUID         `json:"collection_id" binding:"required"`
+		DocumentType string            `json:"document_type" binding:"required"`
+		ParseMode    domain.ParseMode  `json:"parse_mode"`
+		Name         string            `json:"name"`
+		Tags         map[string]string `json:"tags"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "file_id, collection_id, and document_type are required")
@@ -61,6 +63,8 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 		FileID:       req.FileID,
 		DocumentType: req.DocumentType,
 		ParseMode:    req.ParseMode,
+		Name:         req.Name,
+		Tags:         req.Tags,
 		CreatedBy:    userID,
 		Role:         role,
 	})
@@ -264,6 +268,132 @@ func (h *DocumentHandler) GetValidation(c *gin.Context) {
 	}
 
 	RespondOK(c, result)
+}
+
+// ListTags handles GET /api/v1/documents/:id/tags
+func (h *DocumentHandler) ListTags(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	tags, err := h.documentService.ListTags(c.Request.Context(), tenantID, docID, userID, role)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, tags)
+}
+
+// AddTags handles POST /api/v1/documents/:id/tags
+func (h *DocumentHandler) AddTags(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	var req struct {
+		Tags map[string]string `json:"tags" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "tags map is required")
+		return
+	}
+
+	tags, err := h.documentService.AddTags(c.Request.Context(), tenantID, docID, userID, role, req.Tags)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondCreated(c, tags)
+}
+
+// DeleteTag handles DELETE /api/v1/documents/:id/tags/:tagId
+func (h *DocumentHandler) DeleteTag(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	tagID, err := uuid.Parse(c.Param("tagId"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid tag ID")
+		return
+	}
+
+	if err := h.documentService.DeleteTag(c.Request.Context(), tenantID, docID, userID, role, tagID); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, gin.H{"message": "tag deleted"})
+}
+
+// SearchByTag handles GET /api/v1/documents/search/tags
+func (h *DocumentHandler) SearchByTag(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+
+	key := c.Query("key")
+	value := c.Query("value")
+	if key == "" || value == "" {
+		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "key and value query parameters are required")
+		return
+	}
+
+	offset, limit := parsePagination(c)
+
+	docs, total, err := h.documentService.SearchByTag(c.Request.Context(), tenantID, key, value, offset, limit)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondPaginated(c, docs, PagMeta{Total: total, Offset: offset, Limit: limit})
 }
 
 // Delete handles DELETE /api/v1/documents/:id

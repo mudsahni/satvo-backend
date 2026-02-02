@@ -12,6 +12,7 @@ import (
 	"satvos/internal/domain"
 	"satvos/internal/port"
 	"satvos/internal/validator"
+	"satvos/internal/validator/invoice"
 )
 
 // CreateDocumentInput is the DTO for creating a document and triggering parsing.
@@ -21,6 +22,8 @@ type CreateDocumentInput struct {
 	FileID       uuid.UUID
 	DocumentType string
 	ParseMode    domain.ParseMode
+	Name         string
+	Tags         map[string]string
 	CreatedBy    uuid.UUID
 	Role         domain.UserRole
 }
@@ -47,12 +50,17 @@ type DocumentService interface {
 	ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error
 	GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error)
 	Delete(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error
+	ListTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) ([]domain.DocumentTag, error)
+	AddTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tags map[string]string) ([]domain.DocumentTag, error)
+	DeleteTag(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tagID uuid.UUID) error
+	SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error)
 }
 
 type documentService struct {
 	docRepo     port.DocumentRepository
 	fileRepo    port.FileMetaRepository
 	permRepo    port.CollectionPermissionRepository
+	tagRepo     port.DocumentTagRepository
 	parser      port.DocumentParser
 	mergeParser port.DocumentParser // optional merge parser for dual mode
 	storage     port.ObjectStorage
@@ -64,6 +72,7 @@ func NewDocumentService(
 	docRepo port.DocumentRepository,
 	fileRepo port.FileMetaRepository,
 	permRepo port.CollectionPermissionRepository,
+	tagRepo port.DocumentTagRepository,
 	parser port.DocumentParser,
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
@@ -72,6 +81,7 @@ func NewDocumentService(
 		docRepo:   docRepo,
 		fileRepo:  fileRepo,
 		permRepo:  permRepo,
+		tagRepo:   tagRepo,
 		parser:    parser,
 		storage:   storage,
 		validator: validationEngine,
@@ -83,6 +93,7 @@ func NewDocumentServiceWithMerge(
 	docRepo port.DocumentRepository,
 	fileRepo port.FileMetaRepository,
 	permRepo port.CollectionPermissionRepository,
+	tagRepo port.DocumentTagRepository,
 	parser port.DocumentParser,
 	mergeParser port.DocumentParser,
 	storage port.ObjectStorage,
@@ -92,6 +103,7 @@ func NewDocumentServiceWithMerge(
 		docRepo:     docRepo,
 		fileRepo:    fileRepo,
 		permRepo:    permRepo,
+		tagRepo:     tagRepo,
 		parser:      parser,
 		mergeParser: mergeParser,
 		storage:     storage,
@@ -152,11 +164,17 @@ func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocum
 		parseMode = domain.ParseModeSingle
 	}
 
+	name := input.Name
+	if name == "" {
+		name = file.OriginalName
+	}
+
 	doc := &domain.Document{
 		ID:                   uuid.New(),
 		TenantID:             input.TenantID,
 		CollectionID:         input.CollectionID,
 		FileID:               input.FileID,
+		Name:                 name,
 		DocumentType:         input.DocumentType,
 		ParsingStatus:        domain.ParsingStatusPending,
 		ReviewStatus:         domain.ReviewStatusPending,
@@ -175,6 +193,24 @@ func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocum
 
 	if err := s.docRepo.Create(ctx, doc); err != nil {
 		return nil, fmt.Errorf("creating document: %w", err)
+	}
+
+	// Save user-provided tags
+	if len(input.Tags) > 0 && s.tagRepo != nil {
+		tags := make([]domain.DocumentTag, 0, len(input.Tags))
+		for k, v := range input.Tags {
+			tags = append(tags, domain.DocumentTag{
+				ID:         uuid.New(),
+				DocumentID: doc.ID,
+				TenantID:   doc.TenantID,
+				Key:        k,
+				Value:      v,
+				Source:     "user",
+			})
+		}
+		if tagErr := s.tagRepo.CreateBatch(ctx, tags); tagErr != nil {
+			log.Printf("documentService.CreateAndParse: failed to save user tags for %s: %v", doc.ID, tagErr)
+		}
 	}
 
 	// Copy before launching goroutine so the caller's value is independent of background work
@@ -255,6 +291,11 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	}
 
 	log.Printf("documentService.parseInBackground: document %s parsed successfully", docID)
+
+	// Extract auto-tags from parsed data
+	if s.tagRepo != nil {
+		s.extractAndSaveAutoTags(ctx, docID, tenantID, doc.StructuredData)
+	}
 
 	// Run validation after successful parsing
 	if s.validator != nil {
@@ -356,6 +397,13 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userI
 		return nil, fmt.Errorf("looking up file for retry: %w", err)
 	}
 
+	// Delete auto-tags before re-parsing
+	if s.tagRepo != nil {
+		if tagErr := s.tagRepo.DeleteByDocumentAndSource(ctx, docID, "auto"); tagErr != nil {
+			log.Printf("documentService.RetryParse: failed to delete auto-tags for %s: %v", docID, tagErr)
+		}
+	}
+
 	// Reset to pending
 	doc.ParsingStatus = domain.ParsingStatusPending
 	doc.ParsingError = ""
@@ -398,4 +446,157 @@ func (s *documentService) GetValidation(ctx context.Context, tenantID, docID uui
 
 func (s *documentService) Delete(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error {
 	return s.docRepo.Delete(ctx, tenantID, docID)
+}
+
+func (s *documentService) ListTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) ([]domain.DocumentTag, error) {
+	// Verify document exists and user has access
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermViewer); err != nil {
+		return nil, err
+	}
+	return s.tagRepo.ListByDocument(ctx, docID)
+}
+
+func (s *documentService) AddTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tagsMap map[string]string) ([]domain.DocumentTag, error) {
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermEditor); err != nil {
+		return nil, err
+	}
+
+	tags := make([]domain.DocumentTag, 0, len(tagsMap))
+	for k, v := range tagsMap {
+		tags = append(tags, domain.DocumentTag{
+			ID:         uuid.New(),
+			DocumentID: docID,
+			TenantID:   tenantID,
+			Key:        k,
+			Value:      v,
+			Source:     "user",
+		})
+	}
+
+	if err := s.tagRepo.CreateBatch(ctx, tags); err != nil {
+		return nil, fmt.Errorf("adding tags: %w", err)
+	}
+	return tags, nil
+}
+
+func (s *documentService) DeleteTag(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tagID uuid.UUID) error {
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		return err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermEditor); err != nil {
+		return err
+	}
+
+	// Verify tag belongs to document by listing and checking
+	tags, err := s.tagRepo.ListByDocument(ctx, docID)
+	if err != nil {
+		return fmt.Errorf("listing tags: %w", err)
+	}
+	found := false
+	for i := range tags {
+		if tags[i].ID == tagID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return domain.ErrNotFound
+	}
+
+	// Delete all tags for document and re-create the ones we want to keep
+	// Since we don't have a single-tag delete, we use DeleteByDocument and recreate
+	// Actually, let's just do a direct delete. We need to add that or use the existing approach.
+	// For simplicity, we'll delete by document and re-create remaining.
+	remaining := make([]domain.DocumentTag, 0, len(tags)-1)
+	for i := range tags {
+		if tags[i].ID != tagID {
+			tags[i].ID = uuid.New() // new IDs for re-insert
+			remaining = append(remaining, tags[i])
+		}
+	}
+
+	if err := s.tagRepo.DeleteByDocument(ctx, docID); err != nil {
+		return fmt.Errorf("deleting tags: %w", err)
+	}
+	if len(remaining) > 0 {
+		if err := s.tagRepo.CreateBatch(ctx, remaining); err != nil {
+			return fmt.Errorf("re-creating tags: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *documentService) SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error) {
+	return s.tagRepo.SearchByTag(ctx, tenantID, key, value, offset, limit)
+}
+
+func (s *documentService) extractAndSaveAutoTags(ctx context.Context, docID, tenantID uuid.UUID, structuredData json.RawMessage) {
+	var inv invoice.GSTInvoice
+	if err := json.Unmarshal(structuredData, &inv); err != nil {
+		log.Printf("documentService.extractAndSaveAutoTags: failed to unmarshal structured data for %s: %v", docID, err)
+		return
+	}
+
+	tagMap := map[string]string{}
+	if inv.Invoice.InvoiceNumber != "" {
+		tagMap["invoice_number"] = inv.Invoice.InvoiceNumber
+	}
+	if inv.Invoice.InvoiceDate != "" {
+		tagMap["invoice_date"] = inv.Invoice.InvoiceDate
+	}
+	if inv.Seller.Name != "" {
+		tagMap["seller_name"] = inv.Seller.Name
+	}
+	if inv.Seller.GSTIN != "" {
+		tagMap["seller_gstin"] = inv.Seller.GSTIN
+	}
+	if inv.Buyer.Name != "" {
+		tagMap["buyer_name"] = inv.Buyer.Name
+	}
+	if inv.Buyer.GSTIN != "" {
+		tagMap["buyer_gstin"] = inv.Buyer.GSTIN
+	}
+	if inv.Invoice.InvoiceType != "" {
+		tagMap["invoice_type"] = inv.Invoice.InvoiceType
+	}
+	if inv.Invoice.PlaceOfSupply != "" {
+		tagMap["place_of_supply"] = inv.Invoice.PlaceOfSupply
+	}
+	if inv.Totals.Total != 0 {
+		tagMap["total_amount"] = fmt.Sprintf("%.2f", inv.Totals.Total)
+	}
+
+	if len(tagMap) == 0 {
+		return
+	}
+
+	// Delete existing auto-tags and save new ones
+	if err := s.tagRepo.DeleteByDocumentAndSource(ctx, docID, "auto"); err != nil {
+		log.Printf("documentService.extractAndSaveAutoTags: failed to delete old auto-tags for %s: %v", docID, err)
+	}
+
+	tags := make([]domain.DocumentTag, 0, len(tagMap))
+	for k, v := range tagMap {
+		tags = append(tags, domain.DocumentTag{
+			ID:         uuid.New(),
+			DocumentID: docID,
+			TenantID:   tenantID,
+			Key:        k,
+			Value:      v,
+			Source:     "auto",
+		})
+	}
+
+	if err := s.tagRepo.CreateBatch(ctx, tags); err != nil {
+		log.Printf("documentService.extractAndSaveAutoTags: failed to save auto-tags for %s: %v", docID, err)
+	}
 }

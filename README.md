@@ -52,7 +52,7 @@ internal/
   router/         Route definitions and middleware wiring
   mocks/          Generated mocks (uber/mock)
 tests/unit/       Unit tests (handlers, services, middleware, validators, parsers, config)
-db/migrations/    SQL migration files (9 migrations)
+db/migrations/    SQL migration files (10 migrations)
 ```
 
 ## Tech Stack
@@ -193,7 +193,7 @@ go run ./cmd/migrate steps N     # Apply N migrations
 go run ./cmd/migrate version     # Show current version
 ```
 
-Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules` (per-tenant, cascade). Validation results are stored as JSONB on the `documents` table. Migration 008 adds reconciliation tiering columns; migration 009 adds multi-parser columns (`parse_mode`, `field_provenance`).
+Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenant, cascade) -> `collections`, `collection_permissions`, `collection_files` (per-tenant, cascade) -> `documents`, `document_tags`, `document_validation_rules` (per-tenant, cascade). Validation results are stored as JSONB on the `documents` table. Migration 008 adds reconciliation tiering columns; migration 009 adds multi-parser columns (`parse_mode`, `field_provenance`); migration 010 adds `name` to documents and `source` to document_tags.
 
 ## API Reference
 
@@ -581,11 +581,18 @@ curl -X POST http://localhost:8080/api/v1/documents \
     "file_id": "<file_id>",
     "collection_id": "<collection_id>",
     "document_type": "invoice",
-    "parse_mode": "single"
+    "parse_mode": "single",
+    "name": "Q4 Invoice from Acme",
+    "tags": {
+      "vendor": "Acme Corp",
+      "quarter": "Q4"
+    }
   }'
 ```
 
-`parse_mode` is optional. Valid values: `single` (default, uses primary parser) or `dual` (runs primary + secondary parsers in parallel and merges results). If `dual` is requested but no secondary parser is configured, falls back to `single`.
+- `parse_mode` is optional. Valid values: `single` (default, uses primary parser) or `dual` (runs primary + secondary parsers in parallel and merges results). If `dual` is requested but no secondary parser is configured, falls back to `single`.
+- `name` is optional. If omitted, defaults to the uploaded file's original filename.
+- `tags` is optional. Key-value pairs stored with `source: "user"`. After parsing completes, the system also auto-generates tags (with `source: "auto"`) from extracted invoice fields (invoice number, date, seller/buyer name and GSTIN, etc.).
 
 Response:
 
@@ -594,6 +601,7 @@ Response:
   "success": true,
   "data": {
     "id": "uuid",
+    "name": "Q4 Invoice from Acme",
     "file_id": "uuid",
     "collection_id": "uuid",
     "document_type": "invoice",
@@ -655,6 +663,49 @@ curl -X PUT http://localhost:8080/api/v1/documents/<document_id>/review \
 ```
 
 Valid statuses: `approved`, `rejected`.
+
+#### Document Tags
+
+Documents support key-value tags with two sources: `user` (manually provided) and `auto` (extracted from parsed invoice data). Auto-tags are generated after parsing completes and refreshed on retry.
+
+**Auto-generated tag keys**: `invoice_number`, `invoice_date`, `seller_name`, `seller_gstin`, `buyer_name`, `buyer_gstin`, `invoice_type`, `place_of_supply`, `total_amount`.
+
+##### List tags
+
+```bash
+curl http://localhost:8080/api/v1/documents/<document_id>/tags \
+  -H "Authorization: Bearer <access_token>"
+```
+
+##### Add tags (editor+)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/documents/<document_id>/tags \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tags": {
+      "vendor": "Acme Corp",
+      "category": "utilities"
+    }
+  }'
+```
+
+##### Delete a tag (editor+)
+
+```bash
+curl -X DELETE http://localhost:8080/api/v1/documents/<document_id>/tags/<tag_id> \
+  -H "Authorization: Bearer <access_token>"
+```
+
+##### Search documents by tag
+
+```bash
+curl "http://localhost:8080/api/v1/documents/search/tags?key=vendor&value=Acme+Corp&offset=0&limit=20" \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Returns a paginated list of documents matching the given tag key-value pair.
 
 #### Delete a document (admin only)
 

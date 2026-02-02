@@ -61,6 +61,7 @@ func run() error {
 
 	// Initialize document repositories
 	docRepo := postgres.NewDocumentRepo(db)
+	documentTagRepo := postgres.NewDocumentTagRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 
 	// Register parser providers
@@ -105,9 +106,9 @@ func run() error {
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
-		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, collectionPermRepo, documentParser, mergeDocParser, s3Client, validationEngine)
+		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine)
 	} else {
-		documentSvc = service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentParser, s3Client, validationEngine)
+		documentSvc = service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine)
 	}
 
 	// Initialize handlers

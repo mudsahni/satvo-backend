@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 50+ built-in GST invoice rules, and reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 50+ built-in GST invoice rules, reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -28,7 +28,8 @@ internal/
   config/config.go           Loads env vars (SATVOS_ prefix) via viper
   domain/
     models.go                Tenant, User, FileMeta, Collection, CollectionPermissionEntry,
-                             CollectionFile, Document, DocumentTag, DocumentValidationRule structs
+                             CollectionFile, Document (with Name field), DocumentTag (with Source field),
+                             DocumentValidationRule structs
     enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer), FileStatus,
                              CollectionPermission (owner/editor/viewer),
                              ParsingStatus (pending/processing/completed/failed),
@@ -48,7 +49,9 @@ internal/
     document_handler.go      POST /documents, GET /documents, GET /documents/:id,
                              POST /documents/:id/retry, PUT /documents/:id/review,
                              POST /documents/:id/validate, GET /documents/:id/validation,
-                             DELETE /documents/:id
+                             GET /documents/:id/tags, POST /documents/:id/tags,
+                             DELETE /documents/:id/tags/:tagId,
+                             GET /documents/search/tags, DELETE /documents/:id
     user_handler.go          CRUD /users, /users/:id
     tenant_handler.go        CRUD /admin/tenants, /admin/tenants/:id
     health_handler.go        GET /healthz, GET /readyz
@@ -63,14 +66,17 @@ internal/
     collection_service.go    Collection CRUD, batch upload, permission checking, file association
     document_service.go      Document CRUD, background LLM parsing, retry, review status,
                              validation orchestration (ValidateDocument, GetValidation),
-                             collection permission checks via collectionPermRepo
+                             collection permission checks via collectionPermRepo,
+                             tag management (ListTags, AddTags, DeleteTag, SearchByTag),
+                             auto-tag extraction from parsed invoice data
     user_service.go          User CRUD with tenant scoping
     tenant_service.go        Tenant CRUD
   port/
     repository.go            TenantRepository, UserRepository, FileMetaRepository interfaces
     collection_repository.go CollectionRepository, CollectionPermissionRepository, CollectionFileRepository interfaces
     document_repository.go   DocumentRepository (incl. UpdateValidationResults),
-                             DocumentTagRepository, DocumentValidationRuleRepository interfaces
+                             DocumentTagRepository (incl. DeleteByDocumentAndSource),
+                             DocumentValidationRuleRepository interfaces
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
     storage.go               ObjectStorage interface (Upload, Download, Delete, GetPresignedURL)
   repository/postgres/
@@ -115,9 +121,10 @@ internal/
   mocks/                     Generated mocks (uber/mock) for testing
 
 tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
-db/migrations/               9 SQL migrations: tenants -> users -> file_metadata -> collections
+db/migrations/               10 SQL migrations: tenants -> users -> file_metadata -> collections
                              -> documents -> validation columns -> consolidated validation results
                              -> reconciliation tiering -> multi-parser fields
+                             -> document name + tag source
 ```
 
 ## Data Flow
@@ -143,6 +150,7 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
                                                         │ 2. Send to Claude API    │
                                                         │ 3. Save structured_data  │
                                                         │ 4. Save confidence_scores│
+                                                        │ 5. Extract auto-tags     │
                                                         │ parsing: completed/failed│
                                                         └────────────┬─────────────┘
                                                                      │ auto-trigger
@@ -316,7 +324,9 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
-- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
+- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
+- **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
+- **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini stub in `parser/gemini/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`.
 - **Validation**: Runs automatically after parsing completes. 50 built-in GST invoice rules across 5 categories. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.

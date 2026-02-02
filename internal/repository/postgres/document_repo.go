@@ -30,7 +30,7 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 	doc.UpdatedAt = now
 
 	query := `INSERT INTO documents (
-		id, tenant_id, collection_id, file_id, document_type,
+		id, tenant_id, collection_id, file_id, name, document_type,
 		parser_model, parser_prompt, structured_data, confidence_scores,
 		parsing_status, parsing_error, parsed_at,
 		review_status, reviewed_by, reviewed_at, reviewer_notes,
@@ -38,17 +38,17 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		parse_mode, field_provenance,
 		created_by, created_at, updated_at
 	) VALUES (
-		$1, $2, $3, $4, $5,
-		$6, $7, $8, $9,
-		$10, $11, $12,
-		$13, $14, $15, $16,
-		$17, $18, $19,
-		$20, $21,
-		$22, $23, $24
+		$1, $2, $3, $4, $5, $6,
+		$7, $8, $9, $10,
+		$11, $12, $13,
+		$14, $15, $16, $17,
+		$18, $19, $20,
+		$21, $22,
+		$23, $24, $25
 	)`
 
 	_, err := r.db.ExecContext(ctx, query,
-		doc.ID, doc.TenantID, doc.CollectionID, doc.FileID, doc.DocumentType,
+		doc.ID, doc.TenantID, doc.CollectionID, doc.FileID, doc.Name, doc.DocumentType,
 		doc.ParserModel, doc.ParserPrompt, doc.StructuredData, doc.ConfidenceScores,
 		doc.ParsingStatus, doc.ParsingError, doc.ParsedAt,
 		doc.ReviewStatus, doc.ReviewedBy, doc.ReviewedAt, doc.ReviewerNotes,

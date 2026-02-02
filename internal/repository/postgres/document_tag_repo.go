@@ -29,18 +29,22 @@ func (r *documentTagRepo) CreateBatch(ctx context.Context, tags []domain.Documen
 
 	now := time.Now().UTC()
 	valueStrings := make([]string, 0, len(tags))
-	valueArgs := make([]interface{}, 0, len(tags)*5)
+	valueArgs := make([]interface{}, 0, len(tags)*6)
 
 	for i, tag := range tags {
 		tag.CreatedAt = now
-		base := i * 5
-		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)",
-			base+1, base+2, base+3, base+4, base+5))
-		valueArgs = append(valueArgs, tag.ID, tag.DocumentID, tag.TenantID, tag.Key, tag.Value)
+		base := i * 6
+		valueStrings = append(valueStrings, fmt.Sprintf("($%d, $%d, $%d, $%d, $%d, $%d)",
+			base+1, base+2, base+3, base+4, base+5, base+6))
+		source := tag.Source
+		if source == "" {
+			source = "user"
+		}
+		valueArgs = append(valueArgs, tag.ID, tag.DocumentID, tag.TenantID, tag.Key, tag.Value, source)
 	}
 
 	query := fmt.Sprintf(
-		`INSERT INTO document_tags (id, document_id, tenant_id, key, value) VALUES %s`,
+		`INSERT INTO document_tags (id, document_id, tenant_id, key, value, source) VALUES %s`,
 		strings.Join(valueStrings, ", "))
 
 	_, err := r.db.ExecContext(ctx, query, valueArgs...)
@@ -90,6 +94,15 @@ func (r *documentTagRepo) DeleteByDocument(ctx context.Context, documentID uuid.
 		"DELETE FROM document_tags WHERE document_id = $1", documentID)
 	if err != nil {
 		return fmt.Errorf("documentTagRepo.DeleteByDocument: %w", err)
+	}
+	return nil
+}
+
+func (r *documentTagRepo) DeleteByDocumentAndSource(ctx context.Context, documentID uuid.UUID, source string) error {
+	_, err := r.db.ExecContext(ctx,
+		"DELETE FROM document_tags WHERE document_id = $1 AND source = $2", documentID, source)
+	if err != nil {
+		return fmt.Errorf("documentTagRepo.DeleteByDocumentAndSource: %w", err)
 	}
 	return nil
 }
