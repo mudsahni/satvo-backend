@@ -26,6 +26,7 @@ A multi-tenant document processing service built in Go. Supports tenant-isolated
 - [Authentication & Authorization](#authentication--authorization)
 - [Error Codes](#error-codes)
 - [Docker](#docker)
+- [Additional Documentation](#additional-documentation)
 
 ## Architecture
 
@@ -907,3 +908,15 @@ docker build -t satvos:latest .
 ```
 
 Multi-stage build: `golang:1.24-alpine` (build) -> `alpine:3.20` (runtime). Produces a minimal image with the server binary, migrate binary, migration files, and a startup script that runs migrations before starting the server.
+
+---
+
+## Additional Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[API.md](API.md)** | Complete API reference with request/response examples, TypeScript types, and integration guide |
+| **[VALIDATION.md](VALIDATION.md)** | Detailed validation rules reference (50 built-in GST rules) |
+| **[ERROR_CODES.md](ERROR_CODES.md)** | Complete error codes reference organized by domain |
+| **[FRONTEND_GUIDE.md](FRONTEND_GUIDE.md)** | Comprehensive guide for building a frontend application |
+| **[CLAUDE.md](CLAUDE.md)** | Project context for AI assistants (architecture, conventions, gotchas)
