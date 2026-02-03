@@ -25,6 +25,7 @@ func Setup(
 	// Global middleware
 	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestID())
+	r.Use(middleware.CORS())
 	r.Use(middleware.Logger())
 
 	// Health checks
