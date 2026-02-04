@@ -1185,6 +1185,91 @@ func TestDocumentHandler_EditStructuredData_PermissionDenied(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
+// --- EditStructuredData via PUT /documents/:id (shorthand route) ---
+
+func TestDocumentHandler_EditStructuredData_ShorthandRoute_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	expected := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		ParsingStatus:    domain.ParsingStatusCompleted,
+		ReviewStatus:     domain.ReviewStatusPending,
+		ValidationStatus: domain.ValidationStatusValid,
+		StructuredData:   json.RawMessage(`{"invoice":{"invoice_number":"INV-002"}}`),
+	}
+
+	mockSvc.On("EditStructuredData", mock.Anything, mock.MatchedBy(func(input *service.EditStructuredDataInput) bool {
+		return input.TenantID == tenantID &&
+			input.DocumentID == docID &&
+			input.UserID == userID &&
+			input.Role == domain.UserRole("member")
+	})).Return(expected, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"structured_data": map[string]interface{}{
+			"invoice": map[string]string{"invoice_number": "INV-002"},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String(), bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.EditStructuredData(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_EditStructuredData_ShorthandRoute_MissingBody(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	body, _ := json.Marshal(map[string]interface{}{})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String(), bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.EditStructuredData(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDocumentHandler_EditStructuredData_ShorthandRoute_NoAuth(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	docID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String(), http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+
+	h.EditStructuredData(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 func TestDocumentHandler_EditStructuredData_InvalidStructuredData(t *testing.T) {
 	h, mockSvc := newDocumentHandler()
 

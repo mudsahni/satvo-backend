@@ -686,8 +686,12 @@ Valid statuses: `approved`, `rejected`.
 
 Replace the parsed invoice data with manually corrected data. Validates the JSON against the GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Requires editor+ permission.
 
+Both endpoints are equivalent:
+- `PUT /api/v1/documents/<document_id>` (preferred)
+- `PUT /api/v1/documents/<document_id>/structured-data` (alias)
+
 ```bash
-curl -X PUT http://localhost:8080/api/v1/documents/<document_id>/structured-data \
+curl -X PUT http://localhost:8080/api/v1/documents/<document_id> \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{

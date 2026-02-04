@@ -32,13 +32,14 @@ type User struct {
 
 // Collection represents a grouping of files within a tenant.
 type Collection struct {
-	ID          uuid.UUID `db:"id" json:"id"`
-	TenantID    uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Name        string    `db:"name" json:"name"`
-	Description string    `db:"description" json:"description"`
-	CreatedBy   uuid.UUID `db:"created_by" json:"created_by"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+	ID            uuid.UUID `db:"id" json:"id"`
+	TenantID      uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Name          string    `db:"name" json:"name"`
+	Description   string    `db:"description" json:"description"`
+	CreatedBy     uuid.UUID `db:"created_by" json:"created_by"`
+	DocumentCount int       `db:"document_count" json:"document_count"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // CollectionPermissionEntry represents a user's permission on a collection.

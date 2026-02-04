@@ -42,7 +42,8 @@ func (r *collectionRepo) Create(ctx context.Context, c *domain.Collection) error
 func (r *collectionRepo) GetByID(ctx context.Context, tenantID, collectionID uuid.UUID) (*domain.Collection, error) {
 	var c domain.Collection
 	err := r.db.GetContext(ctx, &c,
-		"SELECT * FROM collections WHERE id = $1 AND tenant_id = $2", collectionID, tenantID)
+		`SELECT c.*, (SELECT COUNT(*) FROM documents d WHERE d.collection_id = c.id) AS document_count
+		 FROM collections c WHERE c.id = $1 AND c.tenant_id = $2`, collectionID, tenantID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, domain.ErrCollectionNotFound
@@ -65,7 +66,8 @@ func (r *collectionRepo) ListByUser(ctx context.Context, tenantID, userID uuid.U
 
 	var collections []domain.Collection
 	err = r.db.SelectContext(ctx, &collections,
-		`SELECT c.* FROM collections c
+		`SELECT c.*, (SELECT COUNT(*) FROM documents d WHERE d.collection_id = c.id) AS document_count
+		 FROM collections c
 		 INNER JOIN collection_permissions cp ON cp.collection_id = c.id
 		 WHERE c.tenant_id = $1 AND cp.user_id = $2
 		 ORDER BY c.created_at DESC LIMIT $3 OFFSET $4`,
@@ -86,8 +88,9 @@ func (r *collectionRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, o
 
 	var collections []domain.Collection
 	err = r.db.SelectContext(ctx, &collections,
-		`SELECT * FROM collections WHERE tenant_id = $1
-		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+		`SELECT c.*, (SELECT COUNT(*) FROM documents d WHERE d.collection_id = c.id) AS document_count
+		 FROM collections c WHERE c.tenant_id = $1
+		 ORDER BY c.created_at DESC LIMIT $2 OFFSET $3`,
 		tenantID, limit, offset)
 	if err != nil {
 		return nil, 0, fmt.Errorf("collectionRepo.ListByTenant: %w", err)

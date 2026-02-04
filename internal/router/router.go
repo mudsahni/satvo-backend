@@ -76,6 +76,7 @@ func Setup(
 	documents.GET("", documentH.List)
 	documents.GET("/search/tags", documentH.SearchByTag)
 	documents.GET("/:id", documentH.GetByID)
+	documents.PUT("/:id", documentH.EditStructuredData)
 	documents.POST("/:id/retry", documentH.Retry)
 	documents.PUT("/:id/review", documentH.UpdateReview)
 	documents.PUT("/:id/structured-data", documentH.EditStructuredData)

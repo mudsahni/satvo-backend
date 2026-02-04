@@ -290,7 +290,7 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 	RespondOK(c, doc)
 }
 
-// EditStructuredData handles PUT /api/v1/documents/:id/structured-data
+// EditStructuredData handles PUT /api/v1/documents/:id and PUT /api/v1/documents/:id/structured-data
 // @Summary Edit structured data
 // @Description Manually edit the parsed structured data of a document, re-run validation and auto-tag extraction
 // @Tags documents
@@ -304,6 +304,7 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 // @Failure 403 {object} ErrorResponseBody "Insufficient permission"
 // @Failure 404 {object} ErrorResponseBody "Document not found"
 // @Security BearerAuth
+// @Router /documents/{id} [put]
 // @Router /documents/{id}/structured-data [put]
 func (h *DocumentHandler) EditStructuredData(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
