@@ -166,6 +166,9 @@ SATVOS_S3_ENDPOINT=http://localhost:4566  # omit for real AWS
 SATVOS_S3_MAX_FILE_SIZE_MB=50
 SATVOS_S3_PRESIGN_EXPIRY=3600            # seconds
 
+# CORS (comma-separated list of allowed origins)
+SATVOS_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000  # add your deployed frontend URL
+
 # Logging
 SATVOS_LOG_LEVEL=debug
 SATVOS_LOG_FORMAT=console

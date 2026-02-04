@@ -7,21 +7,17 @@ import (
 )
 
 // CORS returns a middleware that handles Cross-Origin Resource Sharing (CORS).
-// It allows requests from specified origins and handles preflight OPTIONS requests.
-func CORS() gin.HandlerFunc {
+// It allows requests from the specified origins and handles preflight OPTIONS requests.
+func CORS(allowedOrigins []string) gin.HandlerFunc {
+	originSet := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		originSet[o] = true
+	}
+
 	return func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 
-		// Allow localhost origins for development
-		allowedOrigins := map[string]bool{
-			"http://localhost:3000": true,
-			"http://127.0.0.1:3000": true,
-			"http://localhost:3001": true,
-			"http://127.0.0.1:3001": true,
-		}
-
-		// Check if origin is allowed
-		if allowedOrigins[origin] {
+		if originSet[origin] {
 			c.Header("Access-Control-Allow-Origin", origin)
 		}
 

@@ -61,6 +61,7 @@ internal/
     response.go              Standard envelope (success/data/error/meta) + error mapping
   middleware/
     auth.go                  JWT validation, injects tenant_id/user_id/role into context
+    cors.go                  CORS handling with configurable allowed origins (SATVOS_CORS_ALLOWED_ORIGINS)
     tenant.go                Tenant context guard
     logger.go                Request ID injection, logging, panic recovery
   service/

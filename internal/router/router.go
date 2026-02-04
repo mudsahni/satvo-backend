@@ -21,13 +21,14 @@ func Setup(
 	healthH *handler.HealthHandler,
 	collectionH *handler.CollectionHandler,
 	documentH *handler.DocumentHandler,
+	corsOrigins []string,
 ) *gin.Engine {
 	r := gin.New()
 
 	// Global middleware
 	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestID())
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(corsOrigins))
 	r.Use(middleware.Logger())
 
 	// Health checks
