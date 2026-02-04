@@ -379,6 +379,13 @@ definitions:
     - password
     - role
     type: object
+  handler.EditStructuredDataRequest:
+    properties:
+      structured_data:
+        $ref: '#/definitions/handler.GSTInvoice'
+    required:
+    - structured_data
+    type: object
   handler.ErrorResponseBody:
     properties:
       error:
@@ -405,6 +412,26 @@ definitions:
       file:
         $ref: '#/definitions/domain.FileMeta'
     type: object
+  handler.GSTInvoice:
+    properties:
+      buyer:
+        $ref: '#/definitions/handler.Party'
+      invoice:
+        $ref: '#/definitions/handler.InvoiceHeader'
+      line_items:
+        items:
+          $ref: '#/definitions/handler.LineItem'
+        type: array
+      notes:
+        example: Thank you for your business
+        type: string
+      payment:
+        $ref: '#/definitions/handler.Payment'
+      seller:
+        $ref: '#/definitions/handler.Party'
+      totals:
+        $ref: '#/definitions/handler.Totals'
+    type: object
   handler.HealthResponse:
     properties:
       error:
@@ -413,6 +440,75 @@ definitions:
       status:
         example: ok
         type: string
+    type: object
+  handler.InvoiceHeader:
+    properties:
+      currency:
+        example: INR
+        type: string
+      due_date:
+        example: "2025-01-15"
+        type: string
+      invoice_date:
+        example: "2024-12-15"
+        type: string
+      invoice_number:
+        example: INV-2024-001234
+        type: string
+      invoice_type:
+        example: tax_invoice
+        type: string
+      place_of_supply:
+        example: Karnataka
+        type: string
+      reverse_charge:
+        example: false
+        type: boolean
+    type: object
+  handler.LineItem:
+    properties:
+      cgst_amount:
+        example: 22050
+        type: number
+      cgst_rate:
+        example: 9
+        type: number
+      description:
+        example: Software Development Services
+        type: string
+      discount:
+        example: 5000
+        type: number
+      hsn_sac_code:
+        example: "998314"
+        type: string
+      igst_amount:
+        example: 0
+        type: number
+      igst_rate:
+        example: 0
+        type: number
+      quantity:
+        example: 100
+        type: number
+      sgst_amount:
+        example: 22050
+        type: number
+      sgst_rate:
+        example: 9
+        type: number
+      taxable_amount:
+        example: 245000
+        type: number
+      total:
+        example: 289100
+        type: number
+      unit:
+        example: hours
+        type: string
+      unit_price:
+        example: 2500
+        type: number
     type: object
   handler.LoginRequest:
     properties:
@@ -444,6 +540,42 @@ definitions:
         type: integer
       total:
         type: integer
+    type: object
+  handler.Party:
+    properties:
+      address:
+        example: 123 Tech Park, Bangalore
+        type: string
+      gstin:
+        example: 29AABCU9603R1ZM
+        type: string
+      name:
+        example: Acme Corporation Pvt Ltd
+        type: string
+      pan:
+        example: AABCU9603R
+        type: string
+      state:
+        example: Karnataka
+        type: string
+      state_code:
+        example: "29"
+        type: string
+    type: object
+  handler.Payment:
+    properties:
+      account_number:
+        example: "50100123456789"
+        type: string
+      bank_name:
+        example: HDFC Bank
+        type: string
+      ifsc_code:
+        example: HDFC0001234
+        type: string
+      payment_terms:
+        example: Net 30
+        type: string
     type: object
   handler.RefreshRequest:
     properties:
@@ -497,6 +629,39 @@ definitions:
       refresh_token:
         example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
         type: string
+    type: object
+  handler.Totals:
+    properties:
+      amount_in_words:
+        example: Two Lakh Eighty Nine Thousand One Hundred Rupees Only
+        type: string
+      cess:
+        example: 0
+        type: number
+      cgst:
+        example: 22050
+        type: number
+      igst:
+        example: 0
+        type: number
+      round_off:
+        example: 0
+        type: number
+      sgst:
+        example: 22050
+        type: number
+      subtotal:
+        example: 250000
+        type: number
+      taxable_amount:
+        example: 245000
+        type: number
+      total:
+        example: 289100
+        type: number
+      total_discount:
+        example: 5000
+        type: number
     type: object
   handler.UpdateCollectionRequest:
     properties:
@@ -1668,6 +1833,58 @@ paths:
       security:
       - BearerAuth: []
       summary: Review a document
+      tags:
+      - documents
+  /documents/{id}/structured-data:
+    put:
+      consumes:
+      - application/json
+      description: Manually edit the parsed structured data of a document, re-run
+        validation and auto-tag extraction
+      parameters:
+      - description: Document ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Structured data (GSTInvoice)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.EditStructuredDataRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Document updated with new structured data
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/domain.Document'
+              type: object
+        "400":
+          description: Invalid request, document not parsed, or invalid structured
+            data
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "403":
+          description: Insufficient permission
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "404":
+          description: Document not found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Edit structured data
       tags:
       - documents
   /documents/{id}/tags:

@@ -37,7 +37,7 @@ SATVOS includes an automated validation engine with **50 built-in rules** for GS
   validation_status: valid | warning | invalid
 ```
 
-Validation runs automatically after LLM parsing completes. It can also be re-triggered manually via `POST /documents/:id/validate`.
+Validation runs automatically after LLM parsing completes and after manual editing of structured data (`PUT /documents/:id/structured-data`). It can also be re-triggered manually via `POST /documents/:id/validate`.
 
 ## Validation Statuses
 

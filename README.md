@@ -574,13 +574,16 @@ Documents represent parsed and validated versions of uploaded files. When you cr
 
 ```
 Upload File ──> Create Document ──> Background LLM Parsing ──> Auto-Validation ──> Human Review
-                (parse_mode:             |                         |
-                 single/dual)      parsing_status:           validation_status:      reconciliation_status:
-                                   pending -> processing     pending -> valid        pending -> valid
-                                   -> completed/failed       -> warning/invalid      -> warning/invalid
+                (parse_mode:             |                         |                      |
+                 single/dual)      parsing_status:           validation_status:      Manual Edit
+                                   pending -> processing     pending -> valid        (resets review,
+                                   -> completed/failed       -> warning/invalid      re-validates)
+                                                                                    reconciliation_status:
+                                                                                    pending -> valid
+                                                                                    -> warning/invalid
 ```
 
-**Full workflow**: Upload a file -> Create a document (triggers parsing, optionally in dual-parse mode) -> Poll until `parsing_status=completed` -> Validation runs automatically (computing both `validation_status` and `reconciliation_status`) -> Check validation results -> Approve or reject.
+**Full workflow**: Upload a file -> Create a document (triggers parsing, optionally in dual-parse mode) -> Poll until `parsing_status=completed` -> Validation runs automatically (computing both `validation_status` and `reconciliation_status`) -> Optionally edit structured data manually (resets review, re-validates) -> Check validation results -> Approve or reject.
 
 All document endpoints require `Authorization: Bearer {access_token}`.
 
@@ -679,9 +682,29 @@ curl -X PUT http://localhost:8080/api/v1/documents/<document_id>/review \
 
 Valid statuses: `approved`, `rejected`.
 
+#### Edit structured data manually
+
+Replace the parsed invoice data with manually corrected data. Validates the JSON against the GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Requires editor+ permission.
+
+```bash
+curl -X PUT http://localhost:8080/api/v1/documents/<document_id>/structured-data \
+  -H "Authorization: Bearer <access_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "structured_data": {
+      "invoice": {"invoice_number": "INV-001", "invoice_date": "2025-01-15"},
+      "seller": {"name": "Acme Corp", "gstin": "29AABCU9603R1ZM"},
+      "buyer": {"name": "Buyer Inc"},
+      "line_items": [],
+      "totals": {"total": 1000},
+      "payment": {}
+    }
+  }'
+```
+
 #### Document Tags
 
-Documents support key-value tags with two sources: `user` (manually provided) and `auto` (extracted from parsed invoice data). Auto-tags are generated after parsing completes and refreshed on retry.
+Documents support key-value tags with two sources: `user` (manually provided) and `auto` (extracted from parsed invoice data). Auto-tags are generated after parsing completes and refreshed on retry or manual edit of structured data.
 
 **Auto-generated tag keys**: `invoice_number`, `invoice_date`, `seller_name`, `seller_gstin`, `buyer_name`, `buyer_gstin`, `invoice_type`, `place_of_supply`, `total_amount`.
 

@@ -28,6 +28,15 @@ type CreateDocumentInput struct {
 	Role         domain.UserRole
 }
 
+// EditStructuredDataInput is the DTO for manually editing a document's structured data.
+type EditStructuredDataInput struct {
+	TenantID       uuid.UUID
+	DocumentID     uuid.UUID
+	UserID         uuid.UUID
+	Role           domain.UserRole
+	StructuredData json.RawMessage
+}
+
 // UpdateReviewInput is the DTO for updating a document's review status.
 type UpdateReviewInput struct {
 	TenantID   uuid.UUID
@@ -46,6 +55,7 @@ type DocumentService interface {
 	ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error)
 	ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error)
 	UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error)
+	EditStructuredData(ctx context.Context, input *EditStructuredDataInput) (*domain.Document, error)
 	RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
 	ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error
 	GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error)
@@ -378,6 +388,151 @@ func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewI
 	}
 
 	return doc, nil
+}
+
+func (s *documentService) EditStructuredData(ctx context.Context, input *EditStructuredDataInput) (*domain.Document, error) {
+	doc, err := s.docRepo.GetByID(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check editor+ permission on the collection
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, input.UserID, input.Role, domain.CollectionPermEditor); err != nil {
+		return nil, err
+	}
+
+	if doc.ParsingStatus != domain.ParsingStatusCompleted {
+		return nil, domain.ErrDocumentNotParsed
+	}
+
+	// Validate that the structured data can be unmarshalled into GSTInvoice
+	var inv invoice.GSTInvoice
+	if err := json.Unmarshal(input.StructuredData, &inv); err != nil {
+		return nil, domain.ErrInvalidStructuredData
+	}
+
+	// Build all-1.0 confidence scores (human-verified data)
+	confidenceScores := buildFullConfidenceScores(&inv)
+	confidenceJSON, err := json.Marshal(confidenceScores)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling confidence scores: %w", err)
+	}
+
+	// Update document fields
+	doc.StructuredData = input.StructuredData
+	doc.ConfidenceScores = confidenceJSON
+	doc.FieldProvenance = json.RawMessage(`{"source":"manual_edit"}`)
+
+	// Reset validation and reconciliation status
+	doc.ValidationStatus = domain.ValidationStatusPending
+	doc.ValidationResults = json.RawMessage("[]")
+	doc.ReconciliationStatus = domain.ReconciliationStatusPending
+
+	// Persist structured data changes
+	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
+		return nil, fmt.Errorf("updating structured data: %w", err)
+	}
+
+	// Reset review status
+	doc.ReviewStatus = domain.ReviewStatusPending
+	doc.ReviewedBy = nil
+	doc.ReviewedAt = nil
+	doc.ReviewerNotes = ""
+
+	if err := s.docRepo.UpdateReviewStatus(ctx, doc); err != nil {
+		return nil, fmt.Errorf("resetting review status: %w", err)
+	}
+
+	// Re-extract auto-tags from the new structured data
+	if s.tagRepo != nil {
+		s.extractAndSaveAutoTags(ctx, doc.ID, doc.TenantID, doc.StructuredData)
+	}
+
+	// Run validation synchronously
+	if s.validator != nil {
+		if err := s.validator.ValidateDocument(ctx, input.TenantID, input.DocumentID); err != nil {
+			log.Printf("documentService.EditStructuredData: validation failed for %s: %v", input.DocumentID, err)
+		}
+	}
+
+	// Re-fetch to get updated validation results
+	updated, err := s.docRepo.GetByID(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return nil, fmt.Errorf("re-fetching document after edit: %w", err)
+	}
+
+	return updated, nil
+}
+
+// buildFullConfidenceScores creates confidence scores with all fields set to 1.0.
+func buildFullConfidenceScores(inv *invoice.GSTInvoice) invoice.ConfidenceScores {
+	scores := invoice.ConfidenceScores{
+		Invoice: invoice.InvoiceConfidence{
+			InvoiceNumber: 1.0,
+			InvoiceDate:   1.0,
+			DueDate:       1.0,
+			InvoiceType:   1.0,
+			Currency:      1.0,
+			PlaceOfSupply: 1.0,
+			ReverseCharge: 1.0,
+		},
+		Seller: invoice.PartyConfidence{
+			Name:      1.0,
+			Address:   1.0,
+			GSTIN:     1.0,
+			PAN:       1.0,
+			State:     1.0,
+			StateCode: 1.0,
+		},
+		Buyer: invoice.PartyConfidence{
+			Name:      1.0,
+			Address:   1.0,
+			GSTIN:     1.0,
+			PAN:       1.0,
+			State:     1.0,
+			StateCode: 1.0,
+		},
+		Totals: invoice.TotalsConfidence{
+			Subtotal:      1.0,
+			TotalDiscount: 1.0,
+			TaxableAmount: 1.0,
+			CGST:          1.0,
+			SGST:          1.0,
+			IGST:          1.0,
+			Cess:          1.0,
+			RoundOff:      1.0,
+			Total:         1.0,
+		},
+		Payment: invoice.PaymentConfidence{
+			BankName:      1.0,
+			AccountNumber: 1.0,
+			IFSCCode:      1.0,
+			PaymentTerms:  1.0,
+		},
+	}
+
+	lineItems := make([]invoice.LineItemConfidence, len(inv.LineItems))
+	for i := range lineItems {
+		lineItems[i] = invoice.LineItemConfidence{
+			Description:   1.0,
+			HSNSACCode:    1.0,
+			Quantity:      1.0,
+			Unit:          1.0,
+			UnitPrice:     1.0,
+			Discount:      1.0,
+			TaxableAmount: 1.0,
+			CGSTRate:      1.0,
+			CGSTAmount:    1.0,
+			SGSTRate:      1.0,
+			SGSTAmount:    1.0,
+			IGSTRate:      1.0,
+			IGSTAmount:    1.0,
+			Total:         1.0,
+		}
+	}
+	scores.LineItems = lineItems
+
+	return scores
 }
 
 func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error) {

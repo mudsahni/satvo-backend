@@ -64,6 +64,14 @@ func (m *MockDocumentService) UpdateReview(ctx context.Context, input *service.U
 	return args.Get(0).(*domain.Document), args.Error(1)
 }
 
+func (m *MockDocumentService) EditStructuredData(ctx context.Context, input *service.EditStructuredDataInput) (*domain.Document, error) {
+	args := m.Called(ctx, input)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Document), args.Error(1)
+}
+
 func (m *MockDocumentService) RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error) {
 	args := m.Called(ctx, tenantID, docID, userID, role)
 	if args.Get(0) == nil {

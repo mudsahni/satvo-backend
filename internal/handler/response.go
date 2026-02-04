@@ -97,6 +97,8 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusBadRequest, "DOCUMENT_NOT_PARSED", "document has not been parsed yet"
 	case errors.Is(err, domain.ErrInsufficientRole):
 		return http.StatusForbidden, "INSUFFICIENT_ROLE", "insufficient role for this action"
+	case errors.Is(err, domain.ErrInvalidStructuredData):
+		return http.StatusBadRequest, "INVALID_STRUCTURED_DATA", "structured data does not match expected format"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}

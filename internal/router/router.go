@@ -78,6 +78,7 @@ func Setup(
 	documents.GET("/:id", documentH.GetByID)
 	documents.POST("/:id/retry", documentH.Retry)
 	documents.PUT("/:id/review", documentH.UpdateReview)
+	documents.PUT("/:id/structured-data", documentH.EditStructuredData)
 	documents.POST("/:id/validate", documentH.Validate)
 	documents.GET("/:id/validation", documentH.GetValidation)
 	documents.GET("/:id/tags", documentH.ListTags)

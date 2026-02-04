@@ -41,13 +41,15 @@ internal/
                              ValidationRuleType (required_field/regex/sum_check/cross_field/custom),
                              FieldValidationStatus (valid/invalid/unsure)
     errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrInsufficientRole, ErrCollectionNotFound,
-                             ErrDocumentNotFound, ErrDocumentNotParsed, ErrValidationRuleNotFound, etc.)
+                             ErrDocumentNotFound, ErrDocumentNotParsed, ErrValidationRuleNotFound,
+                             ErrInvalidStructuredData, etc.)
   handler/
     auth_handler.go          POST /auth/login, POST /auth/refresh
     file_handler.go          POST /files/upload (optional collection_id), GET /files, GET /files/:id, DELETE /files/:id
     collection_handler.go    CRUD /collections, batch file upload, permission management
     document_handler.go      POST /documents, GET /documents, GET /documents/:id,
                              POST /documents/:id/retry, PUT /documents/:id/review,
+                             PUT /documents/:id/structured-data,
                              POST /documents/:id/validate, GET /documents/:id/validation,
                              GET /documents/:id/tags, POST /documents/:id/tags,
                              DELETE /documents/:id/tags/:tagId,
@@ -166,11 +168,20 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   PUT /documents/:id/review                             │ validation: valid/       │
   ┌──────────────┐                                      │   warning/invalid        │
   │ Approve or   │                                      └──────────────────────────┘
-  │ Reject       │
-  │ review:      │
-  │ approved/    │
-  │ rejected     │
-  └──────────────┘
+  │ Reject       │                                                 ^
+  │ review:      │                                                 │
+  │ approved/    │                                                 │ re-validate
+  │ rejected     │                                                 │
+  └──────────────┘           PUT /documents/:id/structured-data    │
+                             ┌──────────────────────────┐          │
+                             │ Manual Edit              │──────────┘
+                             │ 1. Validate JSON schema  │
+                             │ 2. Set confidence → 1.0  │
+                             │ 3. Reset review status   │
+                             │ 4. Re-extract auto-tags  │
+                             │ 5. Re-run validation     │
+                             │ provenance: manual_edit   │
+                             └──────────────────────────┘
 ```
 
 ## Validation Engine Architecture
@@ -326,7 +337,8 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
 - **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
 - **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
-- **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry. Tags support search via `GET /documents/search/tags?key=...&value=...`.
+- **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
+- **Manual editing**: `PUT /documents/:id/structured-data` allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
 - **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini stub in `parser/gemini/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`.
 - **Validation**: Runs automatically after parsing completes. 50 built-in GST invoice rules across 5 categories. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.

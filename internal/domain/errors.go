@@ -24,4 +24,5 @@ var (
 	ErrDocumentNotParsed       = errors.New("document has not been parsed yet")
 	ErrValidationRuleNotFound  = errors.New("validation rule not found")
 	ErrInsufficientRole        = errors.New("insufficient role for this action")
+	ErrInvalidStructuredData   = errors.New("invalid structured data format")
 )

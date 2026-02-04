@@ -1127,3 +1127,287 @@ func TestDocumentService_RetryParse_DeletesAutoTags(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	tagRepo.AssertCalled(t, "DeleteByDocumentAndSource", mock.Anything, docID, "auto")
 }
+
+// --- EditStructuredData ---
+
+func TestDocumentService_EditStructuredData_Success(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, tagRepo := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+	collectionID := uuid.New()
+
+	structuredData := json.RawMessage(`{"invoice":{"invoice_number":"INV-001","invoice_date":"2025-01-15"},"seller":{"name":"Acme"},"buyer":{"name":"Buyer"},"line_items":[],"totals":{"total":1000},"payment":{}}`)
+
+	existing := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		CollectionID:     collectionID,
+		ParsingStatus:    domain.ParsingStatusCompleted,
+		ReviewStatus:     domain.ReviewStatusApproved,
+		ValidationStatus: domain.ValidationStatusValid,
+		StructuredData:   json.RawMessage(`{"invoice":{}}`),
+		ConfidenceScores: json.RawMessage(`{}`),
+	}
+
+	updated := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		CollectionID:     collectionID,
+		ParsingStatus:    domain.ParsingStatusCompleted,
+		ReviewStatus:     domain.ReviewStatusPending,
+		ValidationStatus: domain.ValidationStatusPending,
+		StructuredData:   structuredData,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil).Once()
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil)
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	// Re-fetch after edit
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(updated, nil).Maybe()
+
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleAdmin,
+		StructuredData: structuredData,
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	docRepo.AssertCalled(t, "UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document"))
+	docRepo.AssertCalled(t, "UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document"))
+}
+
+func TestDocumentService_EditStructuredData_NotFound(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
+
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleAdmin,
+		StructuredData: json.RawMessage(`{}`),
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrDocumentNotFound)
+}
+
+func TestDocumentService_EditStructuredData_NotParsed(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParsingStatus: domain.ParsingStatusPending,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleAdmin,
+		StructuredData: json.RawMessage(`{}`),
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrDocumentNotParsed)
+}
+
+func TestDocumentService_EditStructuredData_PermissionDenied(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, userID).
+		Return(nil, errors.New("not found"))
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleViewer,
+		StructuredData: json.RawMessage(`{}`),
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
+}
+
+func TestDocumentService_EditStructuredData_InvalidJSON(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleAdmin,
+		StructuredData: json.RawMessage(`not valid json`),
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrInvalidStructuredData)
+}
+
+func TestDocumentService_EditStructuredData_ResetsReviewStatus(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, tagRepo := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+	reviewerID := uuid.New()
+	reviewedAt := time.Now().UTC()
+
+	existing := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		ParsingStatus:    domain.ParsingStatusCompleted,
+		ReviewStatus:     domain.ReviewStatusApproved,
+		ReviewedBy:       &reviewerID,
+		ReviewedAt:       &reviewedAt,
+		ReviewerNotes:    "Previously approved",
+		StructuredData:   json.RawMessage(`{}`),
+		ConfidenceScores: json.RawMessage(`{}`),
+	}
+
+	updated := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+		ReviewStatus:  domain.ReviewStatusPending,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil).Once()
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	docRepo.On("UpdateReviewStatus", mock.Anything, mock.MatchedBy(func(doc *domain.Document) bool {
+		return doc.ReviewStatus == domain.ReviewStatusPending &&
+			doc.ReviewedBy == nil &&
+			doc.ReviewedAt == nil &&
+			doc.ReviewerNotes == ""
+	})).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil)
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(updated, nil).Maybe()
+
+	structuredData := json.RawMessage(`{"invoice":{},"seller":{},"buyer":{},"line_items":[],"totals":{},"payment":{}}`)
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleAdmin,
+		StructuredData: structuredData,
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, domain.ReviewStatusPending, result.ReviewStatus)
+}
+
+func TestDocumentService_EditStructuredData_ReextractsAutoTags(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, tagRepo := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	existing := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		ParsingStatus:    domain.ParsingStatusCompleted,
+		StructuredData:   json.RawMessage(`{}`),
+		ConfidenceScores: json.RawMessage(`{}`),
+	}
+
+	updated := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil).Once()
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil).Once()
+	tagRepo.On("CreateBatch", mock.Anything, mock.MatchedBy(func(tags []domain.DocumentTag) bool {
+		// Should have auto-tags extracted from the invoice data
+		for i := range tags {
+			if tags[i].Source != "auto" {
+				return false
+			}
+		}
+		return true
+	})).Return(nil).Maybe()
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(updated, nil).Maybe()
+
+	structuredData := json.RawMessage(`{"invoice":{"invoice_number":"INV-999","invoice_date":"2025-06-01"},"seller":{"name":"Seller Corp","gstin":"29AABCU9603R1ZM"},"buyer":{"name":"Buyer Inc"},"line_items":[],"totals":{"total":5000},"payment":{}}`)
+
+	result, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           domain.RoleAdmin,
+		StructuredData: structuredData,
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	tagRepo.AssertCalled(t, "DeleteByDocumentAndSource", mock.Anything, docID, "auto")
+	tagRepo.AssertCalled(t, "CreateBatch", mock.Anything, mock.Anything)
+}

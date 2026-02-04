@@ -975,6 +975,123 @@ Content-Type: application/json
 **Errors**:
 - `DOCUMENT_NOT_PARSED` (400): Parsing not yet complete
 
+#### Edit Structured Data
+
+```http
+PUT /api/v1/documents/:id/structured-data
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+Replace the parsed invoice data with manually corrected data. The JSON body must conform to the `GSTInvoice` schema. After saving:
+- All confidence scores are set to 1.0 (human-verified)
+- Field provenance is set to `{"source": "manual_edit"}`
+- Review status is reset to `pending` (reviewed_by, reviewed_at, reviewer_notes cleared)
+- Auto-tags are deleted and re-extracted from the new data
+- Validation runs synchronously and results are returned with the updated document
+
+**Request**:
+```json
+{
+  "structured_data": {
+    "invoice": {
+      "invoice_number": "INV-2024-001234",
+      "invoice_date": "2024-12-15",
+      "due_date": "2025-01-15",
+      "invoice_type": "tax_invoice",
+      "currency": "INR",
+      "place_of_supply": "Karnataka",
+      "reverse_charge": false
+    },
+    "seller": {
+      "name": "Acme Corporation Pvt Ltd",
+      "address": "123 Tech Park, Bangalore",
+      "gstin": "29AABCU9603R1ZM",
+      "pan": "AABCU9603R",
+      "state": "Karnataka",
+      "state_code": "29"
+    },
+    "buyer": {
+      "name": "Buyer Industries Ltd",
+      "address": "456 Business Hub, Mumbai",
+      "gstin": "27BBBCD1234E1Z5",
+      "pan": "BBBCD1234E",
+      "state": "Maharashtra",
+      "state_code": "27"
+    },
+    "line_items": [
+      {
+        "description": "Software Development Services",
+        "hsn_sac_code": "998314",
+        "quantity": 100,
+        "unit": "hours",
+        "unit_price": 2500.00,
+        "discount": 5000.00,
+        "taxable_amount": 245000.00,
+        "cgst_rate": 0,
+        "cgst_amount": 0,
+        "sgst_rate": 0,
+        "sgst_amount": 0,
+        "igst_rate": 18,
+        "igst_amount": 44100.00,
+        "total": 289100.00
+      }
+    ],
+    "totals": {
+      "subtotal": 250000.00,
+      "total_discount": 5000.00,
+      "taxable_amount": 245000.00,
+      "cgst": 0,
+      "sgst": 0,
+      "igst": 44100.00,
+      "cess": 0,
+      "round_off": 0,
+      "total": 289100.00,
+      "amount_in_words": "Two Lakh Eighty Nine Thousand One Hundred Rupees Only"
+    },
+    "payment": {
+      "bank_name": "HDFC Bank",
+      "account_number": "50100123456789",
+      "ifsc_code": "HDFC0001234",
+      "payment_terms": "Net 30"
+    },
+    "notes": ""
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `structured_data` | GSTInvoice | Yes | The full invoice data conforming to the GSTInvoice schema |
+
+**Response** (200 OK):
+```json
+{
+  "success": true,
+  "data": {
+    "id": "880e8400-e29b-41d4-a716-446655440003",
+    "structured_data": { /* updated GSTInvoice */ },
+    "confidence_scores": { /* all fields set to 1.0 */ },
+    "field_provenance": { "source": "manual_edit" },
+    "review_status": "pending",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "reviewer_notes": "",
+    "validation_status": "valid",
+    "reconciliation_status": "valid",
+    ...
+  }
+}
+```
+
+**Errors**:
+- `DOCUMENT_NOT_FOUND` (404): Document not found
+- `DOCUMENT_NOT_PARSED` (400): Parsing not yet complete
+- `INVALID_STRUCTURED_DATA` (400): JSON doesn't match GSTInvoice schema
+- `COLLECTION_PERMISSION_DENIED` (403): Insufficient permission (requires editor+)
+
+**Required Permission**: `editor` or higher on collection
+
 #### Validate Document
 
 ```http
@@ -1674,6 +1791,10 @@ interface CreateDocumentRequest {
 interface ReviewDocumentRequest {
   status: "approved" | "rejected";
   notes?: string;
+}
+
+interface EditStructuredDataRequest {
+  structured_data: GSTInvoice;
 }
 
 // ============== Document Tags ==============
