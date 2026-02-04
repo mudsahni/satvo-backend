@@ -2,6 +2,8 @@ package router
 
 import (
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
 	"satvos/internal/domain"
 	"satvos/internal/handler"
@@ -31,6 +33,11 @@ func Setup(
 	// Health checks
 	r.GET("/healthz", healthH.Liveness)
 	r.GET("/readyz", healthH.Readiness)
+
+	// Swagger docs
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler,
+		ginSwagger.PersistAuthorization(true),
+	))
 
 	v1 := r.Group("/api/v1")
 

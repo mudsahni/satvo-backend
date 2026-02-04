@@ -19,7 +19,28 @@ import (
 	s3storage "satvos/internal/storage/s3"
 	"satvos/internal/validator"
 	"satvos/internal/validator/invoice"
+
+	_ "satvos/docs" // swagger docs
 )
+
+// @title SATVOS API
+// @version 1.0
+// @description Multi-tenant document processing service with AI-powered invoice parsing and GST validation.
+// @termsOfService http://swagger.io/terms/
+
+// @contact.name API Support
+// @contact.email support@satvos.io
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and the JWT token. Example: Bearer eyJhbGci...
 
 func main() {
 	if err := run(); err != nil {

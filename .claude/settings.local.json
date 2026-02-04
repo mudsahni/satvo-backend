@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "Bash(go mod init:*)"
+      "Bash(go mod init:*)",
+      "Bash(go install:*)",
+      "Bash(go get:*)",
+      "Bash(~/go/bin/swag init:*)",
+      "Bash(go mod tidy:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)"
     ]
   }
 }

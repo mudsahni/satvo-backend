@@ -26,6 +26,7 @@ A multi-tenant document processing service built in Go. Supports tenant-isolated
 - [Authentication & Authorization](#authentication--authorization)
 - [Error Codes](#error-codes)
 - [Docker](#docker)
+- [Additional Documentation](#additional-documentation)
 
 ## Architecture
 
@@ -127,6 +128,7 @@ This starts:
 | `make docker-build` | Build Docker image `satvos:latest` |
 | `make docker-up` | Start Docker Compose stack |
 | `make docker-down` | Stop and remove containers |
+| `make swagger` | Regenerate Swagger/OpenAPI docs |
 
 ## Configuration
 
@@ -198,6 +200,19 @@ Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenan
 ## API Reference
 
 **Base URL**: `/api/v1`
+
+**Interactive API Documentation**: Swagger UI is available at `/swagger/index.html` when the server is running:
+
+```bash
+# Start the server, then open in browser:
+http://localhost:8080/swagger/index.html
+```
+
+The Swagger UI provides:
+- Interactive API explorer with "Try it out" functionality
+- Complete request/response schemas
+- JWT Bearer authentication support
+- Auto-generated from code annotations
 
 All responses use a standard envelope:
 
@@ -907,3 +922,15 @@ docker build -t satvos:latest .
 ```
 
 Multi-stage build: `golang:1.24-alpine` (build) -> `alpine:3.20` (runtime). Produces a minimal image with the server binary, migrate binary, migration files, and a startup script that runs migrations before starting the server.
+
+---
+
+## Additional Documentation
+
+| Document | Description |
+|----------|-------------|
+| **[API.md](API.md)** | Complete API reference with request/response examples, TypeScript types, and integration guide |
+| **[VALIDATION.md](VALIDATION.md)** | Detailed validation rules reference (50 built-in GST rules) |
+| **[ERROR_CODES.md](ERROR_CODES.md)** | Complete error codes reference organized by domain |
+| **[FRONTEND_GUIDE.md](FRONTEND_GUIDE.md)** | Comprehensive guide for building a frontend application |
+| **[CLAUDE.md](CLAUDE.md)** | Project context for AI assistants (architecture, conventions, gotchas)

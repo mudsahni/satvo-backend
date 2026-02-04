@@ -25,6 +25,20 @@ func NewFileHandler(fileService service.FileService, collectionService service.C
 }
 
 // Upload handles POST /api/v1/files/upload
+// @Summary Upload a file
+// @Description Upload a file (PDF, JPG, PNG, max 50MB) with optional collection association
+// @Tags files
+// @Accept multipart/form-data
+// @Produce json
+// @Param file formData file true "File to upload (PDF, JPG, or PNG)"
+// @Param collection_id formData string false "Collection ID to add file to"
+// @Success 201 {object} Response{data=domain.FileMeta} "File uploaded successfully"
+// @Failure 400 {object} ErrorResponseBody "Missing file or unsupported type"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 413 {object} ErrorResponseBody "File too large"
+// @Failure 500 {object} ErrorResponseBody "Upload failed"
+// @Security BearerAuth
+// @Router /files/upload [post]
 func (h *FileHandler) Upload(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -90,6 +104,16 @@ func (h *FileHandler) Upload(c *gin.Context) {
 }
 
 // List handles GET /api/v1/files
+// @Summary List files
+// @Description List all files for the tenant with pagination
+// @Tags files
+// @Produce json
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param limit query int false "Limit for pagination (max 100)" default(20)
+// @Success 200 {object} Response{data=[]domain.FileMeta,meta=PagMeta} "List of files"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Security BearerAuth
+// @Router /files [get]
 func (h *FileHandler) List(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -116,6 +140,17 @@ func (h *FileHandler) List(c *gin.Context) {
 }
 
 // GetByID handles GET /api/v1/files/:id
+// @Summary Get file by ID
+// @Description Get file metadata and a presigned download URL
+// @Tags files
+// @Produce json
+// @Param id path string true "File ID (UUID)"
+// @Success 200 {object} Response{data=FileWithDownloadURL} "File metadata with download URL"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 404 {object} ErrorResponseBody "File not found"
+// @Security BearerAuth
+// @Router /files/{id} [get]
 func (h *FileHandler) GetByID(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -148,6 +183,18 @@ func (h *FileHandler) GetByID(c *gin.Context) {
 }
 
 // Delete handles DELETE /api/v1/files/:id
+// @Summary Delete a file
+// @Description Delete a file (admin only)
+// @Tags files
+// @Produce json
+// @Param id path string true "File ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "File deleted"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden - admin only"
+// @Failure 404 {object} ErrorResponseBody "File not found"
+// @Security BearerAuth
+// @Router /files/{id} [delete]
 func (h *FileHandler) Delete(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {

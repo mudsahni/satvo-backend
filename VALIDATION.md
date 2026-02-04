@@ -50,6 +50,19 @@ Validation runs automatically after LLM parsing completes. It can also be re-tri
 | `warning` | Some warning-severity rules failed, no errors |
 | `invalid` | One or more error-severity rules failed |
 
+### Reconciliation Status
+
+Computed independently from `validation_status` using only reconciliation-critical rules (21 of 50 rules). Used for GSTR-2A/2B matching readiness.
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Not yet validated |
+| `valid` | All reconciliation-critical rules passed |
+| `warning` | Only warning-severity reconciliation-critical rules failed |
+| `invalid` | One or more error-severity reconciliation-critical rules failed |
+
+A document can have `validation_status: warning` but `reconciliation_status: valid` if only non-critical rules failed.
+
 ### Field-Level Status
 
 | Status | Meaning |
@@ -210,6 +223,51 @@ Validates business logic constraints and data sanity.
 | `logic.totals.non_negative` | `totals.*` | Error | subtotal, taxable_amount, cgst, sgst, igst, and total must all be >= 0 |
 
 **Source**: `internal/validator/invoice/logical.go`
+
+---
+
+## Reconciliation-Critical Rules
+
+21 of the 50 validation rules are classified as **reconciliation-critical** for GSTR-2A/2B matching. These are the fields the GST portal uses for invoice matching. Only failures of these rules affect `reconciliation_status`; non-critical failures only affect `validation_status`.
+
+### Reconciliation-Critical Rule Keys
+
+| Rule Key | Category | Description |
+|----------|----------|-------------|
+| `req.invoice.number` | Required | Invoice number must be present |
+| `req.invoice.date` | Required | Invoice date must be present |
+| `req.invoice.place_of_supply` | Required | Place of supply must be present |
+| `req.seller.name` | Required | Seller name must be present |
+| `req.seller.gstin` | Required | Seller GSTIN must be present |
+| `req.buyer.gstin` | Required | Buyer GSTIN must be present |
+| `fmt.seller.gstin` | Format | Seller GSTIN must match valid format |
+| `fmt.buyer.gstin` | Format | Buyer GSTIN must match valid format |
+| `fmt.seller.state_code` | Format | Seller state code must be 01-38 |
+| `fmt.buyer.state_code` | Format | Buyer state code must be 01-38 |
+| `math.totals.taxable_amount` | Math | Total taxable amount must equal subtotal - discount |
+| `math.totals.cgst` | Math | Total CGST must equal sum of line item CGST |
+| `math.totals.sgst` | Math | Total SGST must equal sum of line item SGST |
+| `math.totals.igst` | Math | Total IGST must equal sum of line item IGST |
+| `math.totals.grand_total` | Math | Grand total must reconcile |
+| `xf.seller.gstin_state` | Cross-field | Seller GSTIN state code must match seller.state_code |
+| `xf.buyer.gstin_state` | Cross-field | Buyer GSTIN state code must match buyer.state_code |
+| `xf.tax_type.intrastate` | Cross-field | Intrastate must use CGST+SGST |
+| `xf.tax_type.interstate` | Cross-field | Interstate must use IGST |
+| `logic.line_items.at_least_one` | Logical | Invoice must have at least one line item |
+| `logic.line_item.exclusive_tax` | Logical | Line items cannot have both CGST/SGST and IGST |
+
+### Non-Critical Rules
+
+The remaining 29 rules are informational and don't block reconciliation:
+
+- Buyer name, seller PAN, buyer PAN (not used in GSTR matching)
+- HSN/SAC codes (optional in GST returns)
+- Payment details (IFSC, account number)
+- Due date validation
+- Line item descriptions
+- Currency format
+- Round-off limits
+- Date format validation (as long as date is present)
 
 ---
 
