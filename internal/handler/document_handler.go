@@ -22,6 +22,20 @@ func NewDocumentHandler(documentService service.DocumentService) *DocumentHandle
 }
 
 // Create handles POST /api/v1/documents
+// @Summary Create a document
+// @Description Create a document from an uploaded file and trigger AI parsing
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param request body CreateDocumentRequest true "Document creation details"
+// @Success 201 {object} Response{data=domain.Document} "Document created, parsing started"
+// @Failure 400 {object} ErrorResponseBody "Invalid request"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "File or collection not found"
+// @Failure 409 {object} ErrorResponseBody "Document already exists for this file"
+// @Security BearerAuth
+// @Router /documents [post]
 func (h *DocumentHandler) Create(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -77,6 +91,18 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 }
 
 // GetByID handles GET /api/v1/documents/:id
+// @Summary Get document by ID
+// @Description Get document details including parsed data and validation status
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Success 200 {object} Response{data=domain.Document} "Document details"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id} [get]
 func (h *DocumentHandler) GetByID(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -106,6 +132,18 @@ func (h *DocumentHandler) GetByID(c *gin.Context) {
 }
 
 // List handles GET /api/v1/documents
+// @Summary List documents
+// @Description List documents with optional collection filter
+// @Tags documents
+// @Produce json
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param limit query int false "Limit for pagination (max 100)" default(20)
+// @Param collection_id query string false "Filter by collection ID"
+// @Success 200 {object} Response{data=[]domain.Document,meta=PagMeta} "List of documents"
+// @Failure 400 {object} ErrorResponseBody "Invalid collection_id"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Security BearerAuth
+// @Router /documents [get]
 func (h *DocumentHandler) List(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -147,6 +185,18 @@ func (h *DocumentHandler) List(c *gin.Context) {
 }
 
 // Retry handles POST /api/v1/documents/:id/retry
+// @Summary Retry document parsing
+// @Description Re-trigger AI parsing for a failed document
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Success 200 {object} Response{data=domain.Document} "Parsing re-triggered"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/retry [post]
 func (h *DocumentHandler) Retry(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -176,6 +226,20 @@ func (h *DocumentHandler) Retry(c *gin.Context) {
 }
 
 // UpdateReview handles PUT /api/v1/documents/:id/review
+// @Summary Review a document
+// @Description Approve or reject a parsed document
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Param request body ReviewDocumentRequest true "Review decision"
+// @Success 200 {object} Response{data=domain.Document} "Document reviewed"
+// @Failure 400 {object} ErrorResponseBody "Invalid request or document not parsed"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/review [put]
 func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -226,6 +290,17 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 }
 
 // Validate handles POST /api/v1/documents/:id/validate
+// @Summary Re-run validation
+// @Description Re-run the validation engine on a parsed document
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "Validation completed"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID or document not parsed"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/validate [post]
 func (h *DocumentHandler) Validate(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -248,6 +323,17 @@ func (h *DocumentHandler) Validate(c *gin.Context) {
 }
 
 // GetValidation handles GET /api/v1/documents/:id/validation
+// @Summary Get validation results
+// @Description Get detailed validation results including per-rule and per-field status
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Success 200 {object} Response{data=ValidationResponse} "Validation results"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID or document not parsed"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/validation [get]
 func (h *DocumentHandler) GetValidation(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -271,6 +357,18 @@ func (h *DocumentHandler) GetValidation(c *gin.Context) {
 }
 
 // ListTags handles GET /api/v1/documents/:id/tags
+// @Summary List document tags
+// @Description List all tags (user and auto-generated) for a document
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Success 200 {object} Response{data=[]domain.DocumentTag} "List of tags"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/tags [get]
 func (h *DocumentHandler) ListTags(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -300,6 +398,20 @@ func (h *DocumentHandler) ListTags(c *gin.Context) {
 }
 
 // AddTags handles POST /api/v1/documents/:id/tags
+// @Summary Add tags to a document
+// @Description Add user tags to a document (requires editor+ permission)
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Param request body AddTagsRequest true "Tags to add"
+// @Success 201 {object} Response{data=[]domain.DocumentTag} "Tags added"
+// @Failure 400 {object} ErrorResponseBody "Invalid request"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/tags [post]
 func (h *DocumentHandler) AddTags(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -337,6 +449,19 @@ func (h *DocumentHandler) AddTags(c *gin.Context) {
 }
 
 // DeleteTag handles DELETE /api/v1/documents/:id/tags/:tagId
+// @Summary Delete a tag
+// @Description Delete a user tag from a document (requires editor+ permission)
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Param tagId path string true "Tag ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "Tag deleted"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document or tag not found"
+// @Security BearerAuth
+// @Router /documents/{id}/tags/{tagId} [delete]
 func (h *DocumentHandler) DeleteTag(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -371,6 +496,19 @@ func (h *DocumentHandler) DeleteTag(c *gin.Context) {
 }
 
 // SearchByTag handles GET /api/v1/documents/search/tags
+// @Summary Search documents by tag
+// @Description Search for documents with a specific tag key-value pair
+// @Tags documents
+// @Produce json
+// @Param key query string true "Tag key"
+// @Param value query string true "Tag value"
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param limit query int false "Limit for pagination (max 100)" default(20)
+// @Success 200 {object} Response{data=[]domain.Document,meta=PagMeta} "Matching documents"
+// @Failure 400 {object} ErrorResponseBody "Missing key or value"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Security BearerAuth
+// @Router /documents/search/tags [get]
 func (h *DocumentHandler) SearchByTag(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -397,6 +535,18 @@ func (h *DocumentHandler) SearchByTag(c *gin.Context) {
 }
 
 // Delete handles DELETE /api/v1/documents/:id
+// @Summary Delete a document
+// @Description Delete a document (admin only)
+// @Tags documents
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "Document deleted"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden - admin only"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id} [delete]
 func (h *DocumentHandler) Delete(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {

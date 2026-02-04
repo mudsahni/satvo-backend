@@ -128,6 +128,7 @@ This starts:
 | `make docker-build` | Build Docker image `satvos:latest` |
 | `make docker-up` | Start Docker Compose stack |
 | `make docker-down` | Stop and remove containers |
+| `make swagger` | Regenerate Swagger/OpenAPI docs |
 
 ## Configuration
 
@@ -199,6 +200,19 @@ Schema: `tenants` -> `users` (per-tenant, cascade) -> `file_metadata` (per-tenan
 ## API Reference
 
 **Base URL**: `/api/v1`
+
+**Interactive API Documentation**: Swagger UI is available at `/swagger/index.html` when the server is running:
+
+```bash
+# Start the server, then open in browser:
+http://localhost:8080/swagger/index.html
+```
+
+The Swagger UI provides:
+- Interactive API explorer with "Try it out" functionality
+- Complete request/response schemas
+- JWT Bearer authentication support
+- Auto-generated from code annotations
 
 All responses use a standard envelope:
 

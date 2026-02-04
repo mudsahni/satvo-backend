@@ -71,8 +71,8 @@ type Document struct {
 	DocumentType     string             `db:"document_type" json:"document_type"`
 	ParserModel      string             `db:"parser_model" json:"parser_model"`
 	ParserPrompt     string             `db:"parser_prompt" json:"parser_prompt"`
-	StructuredData   json.RawMessage    `db:"structured_data" json:"structured_data"`
-	ConfidenceScores json.RawMessage    `db:"confidence_scores" json:"confidence_scores"`
+	StructuredData   json.RawMessage    `db:"structured_data" json:"structured_data" swaggertype:"object"`
+	ConfidenceScores json.RawMessage    `db:"confidence_scores" json:"confidence_scores" swaggertype:"object"`
 	ParsingStatus    ParsingStatus      `db:"parsing_status" json:"parsing_status"`
 	ParsingError     string             `db:"parsing_error" json:"parsing_error"`
 	ParsedAt         *time.Time         `db:"parsed_at" json:"parsed_at"`
@@ -81,10 +81,10 @@ type Document struct {
 	ReviewedAt       *time.Time         `db:"reviewed_at" json:"reviewed_at"`
 	ReviewerNotes    string             `db:"reviewer_notes" json:"reviewer_notes"`
 	ValidationStatus      ValidationStatus     `db:"validation_status" json:"validation_status"`
-	ValidationResults     json.RawMessage      `db:"validation_results" json:"validation_results"`
+	ValidationResults     json.RawMessage      `db:"validation_results" json:"validation_results" swaggertype:"object"`
 	ReconciliationStatus  ReconciliationStatus `db:"reconciliation_status" json:"reconciliation_status"`
 	ParseMode             ParseMode            `db:"parse_mode" json:"parse_mode"`
-	FieldProvenance       json.RawMessage      `db:"field_provenance" json:"field_provenance"`
+	FieldProvenance       json.RawMessage      `db:"field_provenance" json:"field_provenance" swaggertype:"object"`
 	CreatedBy             uuid.UUID            `db:"created_by" json:"created_by"`
 	CreatedAt             time.Time            `db:"created_at" json:"created_at"`
 	UpdatedAt             time.Time            `db:"updated_at" json:"updated_at"`
@@ -109,7 +109,7 @@ type DocumentValidationRule struct {
 	DocumentType           string             `db:"document_type" json:"document_type"`
 	RuleName               string             `db:"rule_name" json:"rule_name"`
 	RuleType               ValidationRuleType `db:"rule_type" json:"rule_type"`
-	RuleConfig             json.RawMessage    `db:"rule_config" json:"rule_config"`
+	RuleConfig             json.RawMessage    `db:"rule_config" json:"rule_config" swaggertype:"object"`
 	Severity               ValidationSeverity `db:"severity" json:"severity"`
 	IsActive               bool               `db:"is_active" json:"is_active"`
 	IsBuiltin              bool               `db:"is_builtin" json:"is_builtin"`

@@ -22,6 +22,19 @@ func NewUserHandler(userService service.UserService) *UserHandler {
 }
 
 // Create handles POST /api/v1/users
+// @Summary Create a user
+// @Description Create a new user in the tenant (admin only)
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param request body CreateUserRequest true "User details"
+// @Success 201 {object} Response{data=domain.User} "User created"
+// @Failure 400 {object} ErrorResponseBody "Validation error"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden - admin only"
+// @Failure 409 {object} ErrorResponseBody "Email already exists"
+// @Security BearerAuth
+// @Router /users [post]
 func (h *UserHandler) Create(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -45,6 +58,17 @@ func (h *UserHandler) Create(c *gin.Context) {
 }
 
 // List handles GET /api/v1/users
+// @Summary List users
+// @Description List all users in the tenant (admin only)
+// @Tags users
+// @Produce json
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param limit query int false "Limit for pagination (max 100)" default(20)
+// @Success 200 {object} Response{data=[]domain.User,meta=PagMeta} "List of users"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden - admin only"
+// @Security BearerAuth
+// @Router /users [get]
 func (h *UserHandler) List(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -71,6 +95,18 @@ func (h *UserHandler) List(c *gin.Context) {
 }
 
 // GetByID handles GET /api/v1/users/:id
+// @Summary Get user by ID
+// @Description Get user details (self or admin access)
+// @Tags users
+// @Produce json
+// @Param id path string true "User ID (UUID)"
+// @Success 200 {object} Response{data=domain.User} "User details"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden"
+// @Failure 404 {object} ErrorResponseBody "User not found"
+// @Security BearerAuth
+// @Router /users/{id} [get]
 func (h *UserHandler) GetByID(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -102,6 +138,20 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 }
 
 // Update handles PUT /api/v1/users/:id
+// @Summary Update a user
+// @Description Update user details (self can update name/email, admin can update role/active status)
+// @Tags users
+// @Accept json
+// @Produce json
+// @Param id path string true "User ID (UUID)"
+// @Param request body UpdateUserRequest true "Fields to update"
+// @Success 200 {object} Response{data=domain.User} "User updated"
+// @Failure 400 {object} ErrorResponseBody "Validation error"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden"
+// @Failure 404 {object} ErrorResponseBody "User not found"
+// @Security BearerAuth
+// @Router /users/{id} [put]
 func (h *UserHandler) Update(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -145,6 +195,18 @@ func (h *UserHandler) Update(c *gin.Context) {
 }
 
 // Delete handles DELETE /api/v1/users/:id
+// @Summary Delete a user
+// @Description Delete a user from the tenant (admin only)
+// @Tags users
+// @Produce json
+// @Param id path string true "User ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "User deleted"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Forbidden - admin only"
+// @Failure 404 {object} ErrorResponseBody "User not found"
+// @Security BearerAuth
+// @Router /users/{id} [delete]
 func (h *UserHandler) Delete(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {

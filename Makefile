@@ -1,4 +1,4 @@
-.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down
+.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down swagger
 
 include .env
 export $(shell sed 's/=.*//' .env)
@@ -38,3 +38,6 @@ docker-up:
 
 docker-down:
 	docker compose down -v
+
+swagger:
+	swag init -g cmd/server/main.go -o docs

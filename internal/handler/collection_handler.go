@@ -24,6 +24,18 @@ func NewCollectionHandler(collectionService service.CollectionService) *Collecti
 }
 
 // Create handles POST /api/v1/collections
+// @Summary Create a collection
+// @Description Create a new collection for grouping files
+// @Tags collections
+// @Accept json
+// @Produce json
+// @Param request body CreateCollectionRequest true "Collection details"
+// @Success 201 {object} Response{data=domain.Collection} "Collection created"
+// @Failure 400 {object} ErrorResponseBody "Invalid request"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient role"
+// @Security BearerAuth
+// @Router /collections [post]
 func (h *CollectionHandler) Create(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -62,6 +74,16 @@ func (h *CollectionHandler) Create(c *gin.Context) {
 }
 
 // List handles GET /api/v1/collections
+// @Summary List collections
+// @Description List collections the user has access to
+// @Tags collections
+// @Produce json
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param limit query int false "Limit for pagination (max 100)" default(20)
+// @Success 200 {object} Response{data=[]domain.Collection,meta=PagMeta} "List of collections"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Security BearerAuth
+// @Router /collections [get]
 func (h *CollectionHandler) List(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -87,6 +109,20 @@ func (h *CollectionHandler) List(c *gin.Context) {
 }
 
 // GetByID handles GET /api/v1/collections/:id
+// @Summary Get collection by ID
+// @Description Get collection details with paginated files
+// @Tags collections
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param offset query int false "Offset for files pagination" default(0)
+// @Param limit query int false "Limit for files pagination (max 100)" default(20)
+// @Success 200 {object} Response{data=CollectionWithFiles} "Collection with files"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id} [get]
 func (h *CollectionHandler) GetByID(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -128,6 +164,20 @@ func (h *CollectionHandler) GetByID(c *gin.Context) {
 }
 
 // Update handles PUT /api/v1/collections/:id
+// @Summary Update a collection
+// @Description Update collection metadata (requires editor+ permission)
+// @Tags collections
+// @Accept json
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param request body UpdateCollectionRequest true "Updated collection details"
+// @Success 200 {object} Response{data=domain.Collection} "Collection updated"
+// @Failure 400 {object} ErrorResponseBody "Invalid request"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id} [put]
 func (h *CollectionHandler) Update(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -173,6 +223,18 @@ func (h *CollectionHandler) Update(c *gin.Context) {
 }
 
 // Delete handles DELETE /api/v1/collections/:id
+// @Summary Delete a collection
+// @Description Delete a collection (requires owner permission or admin role). Files are preserved.
+// @Tags collections
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "Collection deleted"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id} [delete]
 func (h *CollectionHandler) Delete(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -201,6 +263,21 @@ func (h *CollectionHandler) Delete(c *gin.Context) {
 }
 
 // BatchUploadFiles handles POST /api/v1/collections/:id/files
+// @Summary Batch upload files to a collection
+// @Description Upload multiple files to a collection. Returns 201 if all succeed, 207 on partial success.
+// @Tags collections
+// @Accept multipart/form-data
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param files formData file true "Files to upload (multiple)"
+// @Success 201 {object} Response{data=[]BatchUploadResult} "All files uploaded successfully"
+// @Success 207 {object} Response{data=[]BatchUploadResult} "Partial success"
+// @Failure 400 {object} ErrorResponseBody "Invalid request"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id}/files [post]
 func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -276,6 +353,19 @@ func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 }
 
 // RemoveFile handles DELETE /api/v1/collections/:id/files/:fileId
+// @Summary Remove a file from a collection
+// @Description Remove file association from collection (file itself is not deleted)
+// @Tags collections
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param fileId path string true "File ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "File removed from collection"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection or file not found"
+// @Security BearerAuth
+// @Router /collections/{id}/files/{fileId} [delete]
 func (h *CollectionHandler) RemoveFile(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -310,6 +400,20 @@ func (h *CollectionHandler) RemoveFile(c *gin.Context) {
 }
 
 // SetPermission handles POST /api/v1/collections/:id/permissions
+// @Summary Set user permission on a collection
+// @Description Grant or update a user's permission on a collection (requires owner permission)
+// @Tags collections
+// @Accept json
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param request body SetPermissionRequest true "Permission details"
+// @Success 200 {object} Response{data=MessageResponse} "Permission set"
+// @Failure 400 {object} ErrorResponseBody "Invalid request"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id}/permissions [post]
 func (h *CollectionHandler) SetPermission(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -354,6 +458,20 @@ func (h *CollectionHandler) SetPermission(c *gin.Context) {
 }
 
 // ListPermissions handles GET /api/v1/collections/:id/permissions
+// @Summary List collection permissions
+// @Description List all permission entries for a collection (requires owner permission)
+// @Tags collections
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param offset query int false "Offset for pagination" default(0)
+// @Param limit query int false "Limit for pagination (max 100)" default(20)
+// @Success 200 {object} Response{data=[]domain.CollectionPermissionEntry,meta=PagMeta} "List of permissions"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id}/permissions [get]
 func (h *CollectionHandler) ListPermissions(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
@@ -385,6 +503,19 @@ func (h *CollectionHandler) ListPermissions(c *gin.Context) {
 }
 
 // RemovePermission handles DELETE /api/v1/collections/:id/permissions/:userId
+// @Summary Remove user permission from a collection
+// @Description Remove a user's permission from a collection (requires owner permission, cannot remove self)
+// @Tags collections
+// @Produce json
+// @Param id path string true "Collection ID (UUID)"
+// @Param userId path string true "User ID (UUID)"
+// @Success 200 {object} Response{data=MessageResponse} "Permission removed"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID or self-removal attempt"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id}/permissions/{userId} [delete]
 func (h *CollectionHandler) RemovePermission(c *gin.Context) {
 	tenantID, err := middleware.GetTenantID(c)
 	if err != nil {
