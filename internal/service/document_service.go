@@ -415,7 +415,7 @@ func (s *documentService) EditStructuredData(ctx context.Context, input *EditStr
 	confidenceScores := buildFullConfidenceScores(&inv)
 	confidenceJSON, err := json.Marshal(confidenceScores)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling confidence scores: %w", err)
+		return nil, fmt.Errorf("marshaling confidence scores: %w", err)
 	}
 
 	// Update document fields
