@@ -101,7 +101,8 @@ Effective permission = `max(implicit_from_tenant_role, explicit_collection_permi
 |------|-------------|---------|------|
 | `DOCUMENT_NOT_FOUND` | 404 | document not found | Document ID does not exist within the tenant |
 | `DOCUMENT_ALREADY_EXISTS` | 409 | document already exists for this file | Creating a document for a file that already has one |
-| `DOCUMENT_NOT_PARSED` | 400 | document has not been parsed yet | Attempting to review, validate, or retrieve validation results before parsing completes |
+| `DOCUMENT_NOT_PARSED` | 400 | document has not been parsed yet | Attempting to review, validate, edit structured data, or retrieve validation results before parsing completes |
+| `INVALID_STRUCTURED_DATA` | 400 | structured data does not match expected format | Editing structured data with JSON that doesn't match the GSTInvoice schema |
 
 ### Document Status Values
 

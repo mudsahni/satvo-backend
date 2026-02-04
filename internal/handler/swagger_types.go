@@ -59,6 +59,11 @@ type ReviewDocumentRequest struct {
 	Notes  string `json:"notes" example:"Verified against source PDF. All data correct."`
 }
 
+// EditStructuredDataRequest represents the edit structured data request body.
+type EditStructuredDataRequest struct {
+	StructuredData GSTInvoice `json:"structured_data" binding:"required"`
+}
+
 // AddTagsRequest represents the add tags request body.
 type AddTagsRequest struct {
 	Tags map[string]string `json:"tags" binding:"required" example:"department:Engineering,cost_center:CC-1234"`

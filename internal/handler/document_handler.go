@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -280,6 +281,63 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 		Role:       role,
 		Status:     req.Status,
 		Notes:      req.Notes,
+	})
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, doc)
+}
+
+// EditStructuredData handles PUT /api/v1/documents/:id/structured-data
+// @Summary Edit structured data
+// @Description Manually edit the parsed structured data of a document, re-run validation and auto-tag extraction
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Param request body EditStructuredDataRequest true "Structured data (GSTInvoice)"
+// @Success 200 {object} Response{data=domain.Document} "Document updated with new structured data"
+// @Failure 400 {object} ErrorResponseBody "Invalid request, document not parsed, or invalid structured data"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document not found"
+// @Security BearerAuth
+// @Router /documents/{id}/structured-data [put]
+func (h *DocumentHandler) EditStructuredData(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	var req struct {
+		StructuredData json.RawMessage `json:"structured_data" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "structured_data is required")
+		return
+	}
+
+	doc, err := h.documentService.EditStructuredData(c.Request.Context(), &service.EditStructuredDataInput{
+		TenantID:       tenantID,
+		DocumentID:     docID,
+		UserID:         userID,
+		Role:           role,
+		StructuredData: req.StructuredData,
 	})
 	if err != nil {
 		HandleError(c, err)

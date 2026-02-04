@@ -1824,6 +1824,88 @@
                 }
             }
         },
+        "/documents/{id}/structured-data": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Manually edit the parsed structured data of a document, re-run validation and auto-tag extraction",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "summary": "Edit structured data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Document ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Structured data (GSTInvoice)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.EditStructuredDataRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Document updated with new structured data",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/domain.Document"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request, document not parsed, or invalid structured data",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Insufficient permission",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Document not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
         "/documents/{id}/tags": {
             "get": {
                 "security": [
@@ -3419,6 +3501,17 @@
                 }
             }
         },
+        "handler.EditStructuredDataRequest": {
+            "type": "object",
+            "required": [
+                "structured_data"
+            ],
+            "properties": {
+                "structured_data": {
+                    "$ref": "#/definitions/handler.GSTInvoice"
+                }
+            }
+        },
         "handler.ErrorResponseBody": {
             "type": "object",
             "properties": {
@@ -3458,6 +3551,36 @@
                 }
             }
         },
+        "handler.GSTInvoice": {
+            "type": "object",
+            "properties": {
+                "buyer": {
+                    "$ref": "#/definitions/handler.Party"
+                },
+                "invoice": {
+                    "$ref": "#/definitions/handler.InvoiceHeader"
+                },
+                "line_items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.LineItem"
+                    }
+                },
+                "notes": {
+                    "type": "string",
+                    "example": "Thank you for your business"
+                },
+                "payment": {
+                    "$ref": "#/definitions/handler.Payment"
+                },
+                "seller": {
+                    "$ref": "#/definitions/handler.Party"
+                },
+                "totals": {
+                    "$ref": "#/definitions/handler.Totals"
+                }
+            }
+        },
         "handler.HealthResponse": {
             "type": "object",
             "properties": {
@@ -3468,6 +3591,100 @@
                 "status": {
                     "type": "string",
                     "example": "ok"
+                }
+            }
+        },
+        "handler.InvoiceHeader": {
+            "type": "object",
+            "properties": {
+                "currency": {
+                    "type": "string",
+                    "example": "INR"
+                },
+                "due_date": {
+                    "type": "string",
+                    "example": "2025-01-15"
+                },
+                "invoice_date": {
+                    "type": "string",
+                    "example": "2024-12-15"
+                },
+                "invoice_number": {
+                    "type": "string",
+                    "example": "INV-2024-001234"
+                },
+                "invoice_type": {
+                    "type": "string",
+                    "example": "tax_invoice"
+                },
+                "place_of_supply": {
+                    "type": "string",
+                    "example": "Karnataka"
+                },
+                "reverse_charge": {
+                    "type": "boolean",
+                    "example": false
+                }
+            }
+        },
+        "handler.LineItem": {
+            "type": "object",
+            "properties": {
+                "cgst_amount": {
+                    "type": "number",
+                    "example": 22050
+                },
+                "cgst_rate": {
+                    "type": "number",
+                    "example": 9
+                },
+                "description": {
+                    "type": "string",
+                    "example": "Software Development Services"
+                },
+                "discount": {
+                    "type": "number",
+                    "example": 5000
+                },
+                "hsn_sac_code": {
+                    "type": "string",
+                    "example": "998314"
+                },
+                "igst_amount": {
+                    "type": "number",
+                    "example": 0
+                },
+                "igst_rate": {
+                    "type": "number",
+                    "example": 0
+                },
+                "quantity": {
+                    "type": "number",
+                    "example": 100
+                },
+                "sgst_amount": {
+                    "type": "number",
+                    "example": 22050
+                },
+                "sgst_rate": {
+                    "type": "number",
+                    "example": 9
+                },
+                "taxable_amount": {
+                    "type": "number",
+                    "example": 245000
+                },
+                "total": {
+                    "type": "number",
+                    "example": 289100
+                },
+                "unit": {
+                    "type": "string",
+                    "example": "hours"
+                },
+                "unit_price": {
+                    "type": "number",
+                    "example": 2500
                 }
             }
         },
@@ -3513,6 +3730,56 @@
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "handler.Party": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string",
+                    "example": "123 Tech Park, Bangalore"
+                },
+                "gstin": {
+                    "type": "string",
+                    "example": "29AABCU9603R1ZM"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "Acme Corporation Pvt Ltd"
+                },
+                "pan": {
+                    "type": "string",
+                    "example": "AABCU9603R"
+                },
+                "state": {
+                    "type": "string",
+                    "example": "Karnataka"
+                },
+                "state_code": {
+                    "type": "string",
+                    "example": "29"
+                }
+            }
+        },
+        "handler.Payment": {
+            "type": "object",
+            "properties": {
+                "account_number": {
+                    "type": "string",
+                    "example": "50100123456789"
+                },
+                "bank_name": {
+                    "type": "string",
+                    "example": "HDFC Bank"
+                },
+                "ifsc_code": {
+                    "type": "string",
+                    "example": "HDFC0001234"
+                },
+                "payment_terms": {
+                    "type": "string",
+                    "example": "Net 30"
                 }
             }
         },
@@ -3592,6 +3859,51 @@
                 "refresh_token": {
                     "type": "string",
                     "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                }
+            }
+        },
+        "handler.Totals": {
+            "type": "object",
+            "properties": {
+                "amount_in_words": {
+                    "type": "string",
+                    "example": "Two Lakh Eighty Nine Thousand One Hundred Rupees Only"
+                },
+                "cess": {
+                    "type": "number",
+                    "example": 0
+                },
+                "cgst": {
+                    "type": "number",
+                    "example": 22050
+                },
+                "igst": {
+                    "type": "number",
+                    "example": 0
+                },
+                "round_off": {
+                    "type": "number",
+                    "example": 0
+                },
+                "sgst": {
+                    "type": "number",
+                    "example": 22050
+                },
+                "subtotal": {
+                    "type": "number",
+                    "example": 250000
+                },
+                "taxable_amount": {
+                    "type": "number",
+                    "example": 245000
+                },
+                "total": {
+                    "type": "number",
+                    "example": 289100
+                },
+                "total_discount": {
+                    "type": "number",
+                    "example": 5000
                 }
             }
         },

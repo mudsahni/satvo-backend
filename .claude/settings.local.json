@@ -8,7 +8,12 @@
       "Bash(~/go/bin/swag init:*)",
       "Bash(go mod tidy:*)",
       "Bash(go build:*)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(find:*)",
+      "Bash(go vet:*)",
+      "Bash(swag init:*)",
+      "Bash(for f in /home/muditsahni/Documents/Projects/satvos/bruno/Documents/*.bru:*)",
+      "Bash(done)"
     ]
   }
 }

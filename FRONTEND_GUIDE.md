@@ -684,6 +684,11 @@ export const documentsApi = {
   review: (id: string, data: ReviewDocumentRequest) =>
     apiClient.put<APIResponse<Document>>(`/documents/${id}/review`, data),
 
+  editStructuredData: (id: string, structuredData: GSTInvoice) =>
+    apiClient.put<APIResponse<Document>>(`/documents/${id}/structured-data`, {
+      structured_data: structuredData,
+    }),
+
   validate: (id: string) =>
     apiClient.post<APIResponse<{ message: string }>>(`/documents/${id}/validate`),
 
@@ -943,6 +948,7 @@ const errorMessages: Record<string, string> = {
   DOCUMENT_NOT_FOUND: "Document not found",
   DOCUMENT_NOT_PARSED: "Document hasn't finished parsing yet",
   DOCUMENT_ALREADY_EXISTS: "A document already exists for this file",
+  INVALID_STRUCTURED_DATA: "The structured data doesn't match the expected invoice format",
   UNSUPPORTED_FILE_TYPE: "File type not supported. Use PDF, JPG, or PNG",
   FILE_TOO_LARGE: "File exceeds the 50MB size limit",
   DUPLICATE_EMAIL: "This email is already registered",
