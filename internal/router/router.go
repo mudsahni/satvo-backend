@@ -21,13 +21,14 @@ func Setup(
 	healthH *handler.HealthHandler,
 	collectionH *handler.CollectionHandler,
 	documentH *handler.DocumentHandler,
+	corsOrigins []string,
 ) *gin.Engine {
 	r := gin.New()
 
 	// Global middleware
 	r.Use(middleware.Recovery())
 	r.Use(middleware.RequestID())
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(corsOrigins))
 	r.Use(middleware.Logger())
 
 	// Health checks
@@ -76,6 +77,7 @@ func Setup(
 	documents.GET("", documentH.List)
 	documents.GET("/search/tags", documentH.SearchByTag)
 	documents.GET("/:id", documentH.GetByID)
+	documents.PUT("/:id", documentH.EditStructuredData)
 	documents.POST("/:id/retry", documentH.Retry)
 	documents.PUT("/:id/review", documentH.UpdateReview)
 	documents.PUT("/:id/structured-data", documentH.EditStructuredData)

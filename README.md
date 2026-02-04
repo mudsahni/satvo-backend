@@ -166,6 +166,9 @@ SATVOS_S3_ENDPOINT=http://localhost:4566  # omit for real AWS
 SATVOS_S3_MAX_FILE_SIZE_MB=50
 SATVOS_S3_PRESIGN_EXPIRY=3600            # seconds
 
+# CORS (comma-separated list of allowed origins)
+SATVOS_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000  # add your deployed frontend URL
+
 # Logging
 SATVOS_LOG_LEVEL=debug
 SATVOS_LOG_FORMAT=console
@@ -686,8 +689,12 @@ Valid statuses: `approved`, `rejected`.
 
 Replace the parsed invoice data with manually corrected data. Validates the JSON against the GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Requires editor+ permission.
 
+Both endpoints are equivalent:
+- `PUT /api/v1/documents/<document_id>` (preferred)
+- `PUT /api/v1/documents/<document_id>/structured-data` (alias)
+
 ```bash
-curl -X PUT http://localhost:8080/api/v1/documents/<document_id>/structured-data \
+curl -X PUT http://localhost:8080/api/v1/documents/<document_id> \
   -H "Authorization: Bearer <access_token>" \
   -H "Content-Type: application/json" \
   -d '{

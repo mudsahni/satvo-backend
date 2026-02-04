@@ -16,6 +16,12 @@ type Config struct {
 	S3     S3Config
 	Log    LogConfig
 	Parser ParserConfig
+	CORS   CORSConfig
+}
+
+// CORSConfig holds CORS settings.
+type CORSConfig struct {
+	AllowedOrigins []string `mapstructure:"allowed_origins"`
 }
 
 // ParserProviderConfig holds settings for a single LLM parser provider.
@@ -156,6 +162,9 @@ func Load() (*Config, error) {
 	v.SetDefault("log.level", "debug")
 	v.SetDefault("log.format", "console")
 
+	// CORS defaults (localhost origins for development)
+	v.SetDefault("cors.allowed_origins", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001")
+
 	// Parser defaults (legacy flat)
 	v.SetDefault("parser.provider", "claude")
 	v.SetDefault("parser.api_key", "")
@@ -202,6 +211,7 @@ func Load() (*Config, error) {
 		"s3.presign_expiry":    "SATVOS_S3_PRESIGN_EXPIRY",
 		"log.level":            "SATVOS_LOG_LEVEL",
 		"log.format":           "SATVOS_LOG_FORMAT",
+		"cors.allowed_origins":           "SATVOS_CORS_ALLOWED_ORIGINS",
 		"parser.provider":                "SATVOS_PARSER_PROVIDER",
 		"parser.api_key":                 "SATVOS_PARSER_API_KEY",
 		"parser.default_model":           "SATVOS_PARSER_DEFAULT_MODEL",
@@ -258,6 +268,18 @@ func Load() (*Config, error) {
 		Level:  v.GetString("log.level"),
 		Format: v.GetString("log.format"),
 	}
+	// Parse CORS allowed origins from comma-separated string
+	var corsOrigins []string
+	for _, o := range strings.Split(v.GetString("cors.allowed_origins"), ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			corsOrigins = append(corsOrigins, o)
+		}
+	}
+	cfg.CORS = CORSConfig{
+		AllowedOrigins: corsOrigins,
+	}
+
 	cfg.Parser = ParserConfig{
 		Provider:     v.GetString("parser.provider"),
 		APIKey:       v.GetString("parser.api_key"),

@@ -144,7 +144,7 @@ func TestCollectionService_GetByID_Success(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Test"}
+	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Test", DocumentCount: 5}
 
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(viewerPerm(collectionID, userID), nil)
@@ -154,6 +154,7 @@ func TestCollectionService_GetByID_Success(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, result)
+	assert.Equal(t, 5, result.DocumentCount)
 }
 
 func TestCollectionService_GetByID_NoPermission(t *testing.T) {
@@ -178,7 +179,7 @@ func TestCollectionService_GetByID_AdminBypassesPermission(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Admin Access"}
+	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Admin Access", DocumentCount: 10}
 
 	// Admin has no explicit permission, but GetByCollectionAndUser is still called
 	// internally by effectivePermission; it returns an error (no explicit perm).
@@ -190,6 +191,7 @@ func TestCollectionService_GetByID_AdminBypassesPermission(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, expected, result)
+	assert.Equal(t, 10, result.DocumentCount)
 }
 
 func TestCollectionService_GetByID_ViewerNeedsExplicitPerm(t *testing.T) {
@@ -217,8 +219,8 @@ func TestCollectionService_List_Success(t *testing.T) {
 	userID := uuid.New()
 
 	expected := []domain.Collection{
-		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1"},
-		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 2"},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1", DocumentCount: 3},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 2", DocumentCount: 7},
 	}
 
 	collRepo.On("ListByTenant", mock.Anything, tenantID, 0, 20).Return(expected, 2, nil)
@@ -228,6 +230,8 @@ func TestCollectionService_List_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, collections, 2)
 	assert.Equal(t, 2, total)
+	assert.Equal(t, 3, collections[0].DocumentCount)
+	assert.Equal(t, 7, collections[1].DocumentCount)
 }
 
 func TestCollectionService_List_AdminSeesAll(t *testing.T) {
@@ -237,9 +241,9 @@ func TestCollectionService_List_AdminSeesAll(t *testing.T) {
 	userID := uuid.New()
 
 	expected := []domain.Collection{
-		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1"},
-		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 2"},
-		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 3"},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1", DocumentCount: 2},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 2", DocumentCount: 4},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 3", DocumentCount: 0},
 	}
 
 	collRepo.On("ListByTenant", mock.Anything, tenantID, 0, 20).Return(expected, 3, nil)
@@ -259,7 +263,7 @@ func TestCollectionService_List_ViewerSeesOnlyPermitted(t *testing.T) {
 	userID := uuid.New()
 
 	expected := []domain.Collection{
-		{ID: uuid.New(), TenantID: tenantID, Name: "Permitted Collection"},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Permitted Collection", DocumentCount: 1},
 	}
 
 	collRepo.On("ListByUser", mock.Anything, tenantID, userID, 0, 20).Return(expected, 1, nil)
@@ -281,7 +285,7 @@ func TestCollectionService_Update_Success(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	existing := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Old Name"}
+	existing := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Old Name", DocumentCount: 12}
 
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(ownerPerm(collectionID, userID), nil)
@@ -300,6 +304,7 @@ func TestCollectionService_Update_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "New Name", result.Name)
 	assert.Equal(t, "New Desc", result.Description)
+	assert.Equal(t, 12, result.DocumentCount)
 }
 
 func TestCollectionService_Update_NotOwner(t *testing.T) {
@@ -331,7 +336,7 @@ func TestCollectionService_Update_ManagerCanEdit(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	existing := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Old Name"}
+	existing := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Old Name", DocumentCount: 4}
 
 	// Manager has no explicit perm, but implicit editor >= editor required
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
@@ -351,6 +356,7 @@ func TestCollectionService_Update_ManagerCanEdit(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "Manager Updated", result.Name)
 	assert.Equal(t, "Updated by manager", result.Description)
+	assert.Equal(t, 4, result.DocumentCount)
 }
 
 func TestCollectionService_Update_MemberWithoutPermDenied(t *testing.T) {

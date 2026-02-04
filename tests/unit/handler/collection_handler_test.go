@@ -34,9 +34,10 @@ func TestCollectionHandler_Create_Success(t *testing.T) {
 	collectionID := uuid.New()
 
 	expected := &domain.Collection{
-		ID:       collectionID,
-		TenantID: tenantID,
-		Name:     "Test Collection",
+		ID:            collectionID,
+		TenantID:      tenantID,
+		Name:          "Test Collection",
+		DocumentCount: 0,
 	}
 
 	mockSvc.On("Create", mock.Anything, mock.AnythingOfType("*service.CreateCollectionInput")).
@@ -106,7 +107,7 @@ func TestCollectionHandler_List_Success(t *testing.T) {
 	userID := uuid.New()
 
 	collections := []domain.Collection{
-		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1"},
+		{ID: uuid.New(), TenantID: tenantID, Name: "Collection 1", DocumentCount: 5},
 	}
 
 	mockSvc.On("List", mock.Anything, tenantID, userID, domain.UserRole("member"), 0, 20).
@@ -138,7 +139,7 @@ func TestCollectionHandler_GetByID_Success(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Test"}
+	expected := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Test", DocumentCount: 3}
 	files := []domain.FileMeta{
 		{ID: uuid.New(), TenantID: tenantID, Status: domain.FileStatusUploaded},
 	}
@@ -227,7 +228,7 @@ func TestCollectionHandler_Update_Success(t *testing.T) {
 	userID := uuid.New()
 	collectionID := uuid.New()
 
-	updated := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Updated"}
+	updated := &domain.Collection{ID: collectionID, TenantID: tenantID, Name: "Updated", DocumentCount: 7}
 
 	mockSvc.On("Update", mock.Anything, mock.AnythingOfType("*service.UpdateCollectionInput")).
 		Return(updated, nil)

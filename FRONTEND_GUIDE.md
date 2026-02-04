@@ -685,7 +685,7 @@ export const documentsApi = {
     apiClient.put<APIResponse<Document>>(`/documents/${id}/review`, data),
 
   editStructuredData: (id: string, structuredData: GSTInvoice) =>
-    apiClient.put<APIResponse<Document>>(`/documents/${id}/structured-data`, {
+    apiClient.put<APIResponse<Document>>(`/documents/${id}`, {
       structured_data: structuredData,
     }),
 

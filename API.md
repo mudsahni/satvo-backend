@@ -407,6 +407,7 @@ Content-Type: application/json
     "name": "Q4 2024 Invoices",
     "description": "Invoices from Q4 2024 fiscal quarter",
     "created_by": "987fcdeb-51a2-3bc4-d567-890123456789",
+    "document_count": 0,
     "created_at": "2025-01-15T10:00:00Z",
     "updated_at": "2025-01-15T10:00:00Z"
   }
@@ -433,6 +434,7 @@ Returns only collections the user has access to (through explicit permissions or
       "id": "660e8400-e29b-41d4-a716-446655440001",
       "name": "Q4 2024 Invoices",
       "description": "...",
+      "document_count": 12,
       "created_at": "2025-01-15T10:00:00Z"
     }
   ],
@@ -461,6 +463,7 @@ Authorization: Bearer <token>
       "name": "Q4 2024 Invoices",
       "description": "...",
       "created_by": "987fcdeb-51a2-3bc4-d567-890123456789",
+      "document_count": 12,
       "created_at": "2025-01-15T10:00:00Z",
       "updated_at": "2025-01-15T10:00:00Z"
     },
@@ -508,6 +511,7 @@ Content-Type: application/json
   "data": {
     "id": "660e8400-e29b-41d4-a716-446655440001",
     "name": "Q4 2024 Invoices - Final",
+    "document_count": 12,
     ...
   }
 }
@@ -978,10 +982,12 @@ Content-Type: application/json
 #### Edit Structured Data
 
 ```http
-PUT /api/v1/documents/:id/structured-data
+PUT /api/v1/documents/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
+
+Also available at the alias path `PUT /api/v1/documents/:id/structured-data`.
 
 Replace the parsed invoice data with manually corrected data. The JSON body must conform to the `GSTInvoice` schema. After saving:
 - All confidence scores are set to 1.0 (human-verified)
@@ -1708,6 +1714,7 @@ interface Collection {
   name: string;
   description: string;
   created_by: UUID;
+  document_count: number;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
