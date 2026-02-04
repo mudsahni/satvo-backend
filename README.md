@@ -45,7 +45,7 @@ internal/
   port/           Interface definitions (repository, storage, parser)
   parser/         LLM parser implementations (factory, shared prompt, merge parser)
     claude/       Anthropic Claude parser (Messages API)
-    gemini/       Google Gemini parser (stub)
+    gemini/       Google Gemini parser (Gemini REST API)
   validator/      Document validation engine
     invoice/      GST invoice validators (required, format, math, crossfield, logical)
   repository/     PostgreSQL implementations (sqlx + pgx)
@@ -65,7 +65,7 @@ db/migrations/    SQL migration files (10 migrations)
 | Database | PostgreSQL 16 |
 | Object Storage | AWS S3 (LocalStack for dev) |
 | Auth | JWT (HS256) + bcrypt |
-| Document Parsing | Anthropic Claude API, Google Gemini (stub); multi-provider with dual-parse merge |
+| Document Parsing | Anthropic Claude API, Google Gemini API; multi-provider with dual-parse merge |
 | Validation | Pluggable rule engine (50+ built-in GST rules) with reconciliation tiering |
 | Config | Viper (env vars) |
 | Migrations | golang-migrate |
