@@ -3,13 +3,17 @@ package parser_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"satvos/internal/config"
+	"satvos/internal/parser"
 	claude "satvos/internal/parser/claude"
 	"satvos/internal/port"
 )
@@ -71,9 +75,9 @@ func TestClaudeParser_Parse_PDF_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("%PDF-1.4 test content"),
 		ContentType:  "application/pdf",
 		DocumentType: "invoice",
@@ -133,9 +137,9 @@ func TestClaudeParser_Parse_Image_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte{0xFF, 0xD8, 0xFF, 0xE0},
 		ContentType:  "image/jpeg",
 		DocumentType: "invoice",
@@ -179,9 +183,9 @@ func TestClaudeParser_Parse_PNG_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte{0x89, 0x50, 0x4E, 0x47},
 		ContentType:  "image/png",
 		DocumentType: "invoice",
@@ -191,8 +195,9 @@ func TestClaudeParser_Parse_PNG_Success(t *testing.T) {
 	assert.NotNil(t, result)
 }
 
-func TestClaudeParser_Parse_APIError(t *testing.T) {
+func TestClaudeParser_Parse_RateLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, err := w.Write([]byte(`{"error":{"type":"rate_limit_error","message":"rate limited"}}`))
 		if err != nil {
@@ -201,9 +206,9 @@ func TestClaudeParser_Parse_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("%PDF-1.4 test"),
 		ContentType:  "application/pdf",
 		DocumentType: "invoice",
@@ -211,7 +216,12 @@ func TestClaudeParser_Parse_APIError(t *testing.T) {
 
 	assert.Nil(t, result)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "anthropic API error (status 429)")
+
+	var rlErr *parser.RateLimitError
+	require.True(t, errors.As(err, &rlErr))
+	assert.Equal(t, "claude", rlErr.Provider)
+	assert.Equal(t, 30*time.Second, rlErr.RetryAfter)
+	assert.Contains(t, rlErr.Err.Error(), "anthropic API error (status 429)")
 }
 
 func TestClaudeParser_Parse_ServerError(t *testing.T) {
@@ -224,9 +234,9 @@ func TestClaudeParser_Parse_ServerError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("%PDF-1.4 test"),
 		ContentType:  "application/pdf",
 		DocumentType: "invoice",
@@ -251,9 +261,9 @@ func TestClaudeParser_Parse_EmptyResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("%PDF-1.4 test"),
 		ContentType:  "application/pdf",
 		DocumentType: "invoice",
@@ -283,9 +293,9 @@ func TestClaudeParser_Parse_InvalidJSONResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	parser := newTestParser(server.URL)
+	p := newTestParser(server.URL)
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("%PDF-1.4 test"),
 		ContentType:  "application/pdf",
 		DocumentType: "invoice",
@@ -297,9 +307,9 @@ func TestClaudeParser_Parse_InvalidJSONResponse(t *testing.T) {
 }
 
 func TestClaudeParser_Parse_UnsupportedContentType(t *testing.T) {
-	parser := newTestParser("http://unused")
+	p := newTestParser("http://unused")
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("text content"),
 		ContentType:  "text/plain",
 		DocumentType: "invoice",
@@ -311,9 +321,9 @@ func TestClaudeParser_Parse_UnsupportedContentType(t *testing.T) {
 }
 
 func TestClaudeParser_Parse_ConnectionRefused(t *testing.T) {
-	parser := newTestParser("http://localhost:1")
+	p := newTestParser("http://localhost:1")
 
-	result, err := parser.Parse(context.Background(), port.ParseInput{
+	result, err := p.Parse(context.Background(), port.ParseInput{
 		FileBytes:    []byte("%PDF-1.4 test"),
 		ContentType:  "application/pdf",
 		DocumentType: "invoice",
