@@ -120,6 +120,7 @@ const (
 	ParsingStatusProcessing ParsingStatus = "processing"
 	ParsingStatusCompleted  ParsingStatus = "completed"
 	ParsingStatusFailed     ParsingStatus = "failed"
+	ParsingStatusQueued     ParsingStatus = "queued"
 )
 
 // ReviewStatus represents the human review state of a document.

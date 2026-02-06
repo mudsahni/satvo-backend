@@ -36,7 +36,7 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		review_status, reviewed_by, reviewed_at, reviewer_notes,
 		validation_status, validation_results, reconciliation_status,
 		parse_mode, field_provenance,
-		secondary_parser_model, parse_attempts,
+		secondary_parser_model, parse_attempts, retry_after,
 		created_by, created_at, updated_at
 	) VALUES (
 		$1, $2, $3, $4, $5, $6,
@@ -45,8 +45,8 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		$14, $15, $16, $17,
 		$18, $19, $20,
 		$21, $22,
-		$23, $24,
-		$25, $26, $27
+		$23, $24, $25,
+		$26, $27, $28
 	)`
 
 	_, err := r.db.ExecContext(ctx, query,
@@ -56,7 +56,7 @@ func (r *documentRepo) Create(ctx context.Context, doc *domain.Document) error {
 		doc.ReviewStatus, doc.ReviewedBy, doc.ReviewedAt, doc.ReviewerNotes,
 		doc.ValidationStatus, doc.ValidationResults, doc.ReconciliationStatus,
 		doc.ParseMode, doc.FieldProvenance,
-		doc.SecondaryParserModel, doc.ParseAttempts,
+		doc.SecondaryParserModel, doc.ParseAttempts, doc.RetryAfter,
 		doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") && strings.Contains(err.Error(), "file_id") {
@@ -165,13 +165,15 @@ func (r *documentRepo) UpdateStructuredData(ctx context.Context, doc *domain.Doc
 			parser_model = $6, parser_prompt = $7,
 			field_provenance = $8,
 			secondary_parser_model = $9, parse_attempts = $10,
-			updated_at = $11
-		 WHERE id = $12 AND tenant_id = $13`,
+			retry_after = $11,
+			updated_at = $12
+		 WHERE id = $13 AND tenant_id = $14`,
 		doc.StructuredData, doc.ConfidenceScores,
 		doc.ParsingStatus, doc.ParsingError, doc.ParsedAt,
 		doc.ParserModel, doc.ParserPrompt,
 		doc.FieldProvenance,
 		doc.SecondaryParserModel, doc.ParseAttempts,
+		doc.RetryAfter,
 		doc.UpdatedAt,
 		doc.ID, doc.TenantID)
 	if err != nil {
@@ -218,6 +220,26 @@ func (r *documentRepo) UpdateValidationResults(ctx context.Context, doc *domain.
 		return domain.ErrDocumentNotFound
 	}
 	return nil
+}
+
+func (r *documentRepo) ClaimQueued(ctx context.Context, limit int) ([]domain.Document, error) {
+	var docs []domain.Document
+	err := r.db.SelectContext(ctx, &docs,
+		`UPDATE documents
+		 SET parsing_status = 'processing', updated_at = NOW()
+		 WHERE id IN (
+		     SELECT id FROM documents
+		     WHERE parsing_status = 'queued' AND retry_after <= NOW()
+		     ORDER BY retry_after ASC
+		     LIMIT $1
+		     FOR UPDATE SKIP LOCKED
+		 )
+		 RETURNING *`,
+		limit)
+	if err != nil {
+		return nil, fmt.Errorf("documentRepo.ClaimQueued: %w", err)
+	}
+	return docs, nil
 }
 
 func (r *documentRepo) Delete(ctx context.Context, tenantID, docID uuid.UUID) error {

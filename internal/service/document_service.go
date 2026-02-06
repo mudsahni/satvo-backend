@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -10,10 +11,13 @@ import (
 	"github.com/google/uuid"
 
 	"satvos/internal/domain"
+	"satvos/internal/parser"
 	"satvos/internal/port"
 	"satvos/internal/validator"
 	"satvos/internal/validator/invoice"
 )
+
+const defaultMaxParseAttempts = 5
 
 // CreateDocumentInput is the DTO for creating a document and triggering parsing.
 type CreateDocumentInput struct {
@@ -64,6 +68,7 @@ type DocumentService interface {
 	AddTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tags map[string]string) ([]domain.DocumentTag, error)
 	DeleteTag(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tagID uuid.UUID) error
 	SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error)
+	ParseDocument(ctx context.Context, doc *domain.Document, maxAttempts int)
 }
 
 type documentService struct {
@@ -83,7 +88,7 @@ func NewDocumentService(
 	fileRepo port.FileMetaRepository,
 	permRepo port.CollectionPermissionRepository,
 	tagRepo port.DocumentTagRepository,
-	parser port.DocumentParser,
+	docParser port.DocumentParser,
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
 ) DocumentService {
@@ -92,7 +97,7 @@ func NewDocumentService(
 		fileRepo:  fileRepo,
 		permRepo:  permRepo,
 		tagRepo:   tagRepo,
-		parser:    parser,
+		parser:    docParser,
 		storage:   storage,
 		validator: validationEngine,
 	}
@@ -104,8 +109,8 @@ func NewDocumentServiceWithMerge(
 	fileRepo port.FileMetaRepository,
 	permRepo port.CollectionPermissionRepository,
 	tagRepo port.DocumentTagRepository,
-	parser port.DocumentParser,
-	mergeParser port.DocumentParser,
+	docParser port.DocumentParser,
+	mergeDocParser port.DocumentParser,
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
 ) DocumentService {
@@ -114,8 +119,8 @@ func NewDocumentServiceWithMerge(
 		fileRepo:    fileRepo,
 		permRepo:    permRepo,
 		tagRepo:     tagRepo,
-		parser:      parser,
-		mergeParser: mergeParser,
+		parser:      docParser,
+		mergeParser: mergeDocParser,
 		storage:     storage,
 		validator:   validationEngine,
 	}
@@ -227,7 +232,7 @@ func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocum
 	result := *doc
 
 	// Launch background parsing
-	go s.parseInBackground(doc.ID, doc.TenantID, file.S3Bucket, file.S3Key, file.ContentType, doc.DocumentType)
+	go s.parseInBackground(doc.ID, doc.TenantID)
 
 	return &result, nil
 }
@@ -239,7 +244,7 @@ func (s *documentService) selectParser(mode domain.ParseMode) port.DocumentParse
 	return s.parser
 }
 
-func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, key, contentType, documentType string) {
+func (s *documentService) parseInBackground(docID, tenantID uuid.UUID) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -258,8 +263,23 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 		return
 	}
 
+	s.ParseDocument(ctx, doc, defaultMaxParseAttempts)
+}
+
+// ParseDocument performs the core parse logic: file lookup, S3 download, LLM parse,
+// error handling (with rate-limit queueing), result saving, auto-tags, and validation.
+// It is called by both parseInBackground and the queue worker.
+// The doc must already be in processing status with ParseAttempts incremented.
+func (s *documentService) ParseDocument(ctx context.Context, doc *domain.Document, maxAttempts int) {
+	// Look up file for S3 coordinates
+	file, err := s.fileRepo.GetByID(ctx, doc.TenantID, doc.FileID)
+	if err != nil {
+		s.failParsing(ctx, doc, fmt.Sprintf("downloading file: %v", err))
+		return
+	}
+
 	// Download file bytes from S3
-	fileBytes, err := s.storage.Download(ctx, bucket, key)
+	fileBytes, err := s.storage.Download(ctx, file.S3Bucket, file.S3Key)
 	if err != nil {
 		s.failParsing(ctx, doc, fmt.Sprintf("downloading file: %v", err))
 		return
@@ -271,11 +291,11 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	// Call parser
 	output, err := activeParser.Parse(ctx, port.ParseInput{
 		FileBytes:    fileBytes,
-		ContentType:  contentType,
-		DocumentType: documentType,
+		ContentType:  file.ContentType,
+		DocumentType: doc.DocumentType,
 	})
 	if err != nil {
-		s.failParsing(ctx, doc, fmt.Sprintf("parsing document: %v", err))
+		s.handleParseError(ctx, doc, err, maxAttempts)
 		return
 	}
 
@@ -289,6 +309,7 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	doc.ParsingStatus = domain.ParsingStatusCompleted
 	doc.ParsingError = ""
 	doc.ParsedAt = &now
+	doc.RetryAfter = nil
 
 	// Save field provenance if present
 	if len(output.FieldProvenance) > 0 {
@@ -298,29 +319,49 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	}
 
 	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
-		log.Printf("documentService.parseInBackground: failed to save results for %s: %v", docID, err)
+		log.Printf("documentService.ParseDocument: failed to save results for %s: %v", doc.ID, err)
 		return
 	}
 
-	log.Printf("documentService.parseInBackground: document %s parsed successfully", docID)
+	log.Printf("documentService.ParseDocument: document %s parsed successfully", doc.ID)
 
 	// Extract auto-tags from parsed data
 	if s.tagRepo != nil {
-		s.extractAndSaveAutoTags(ctx, docID, tenantID, doc.StructuredData)
+		s.extractAndSaveAutoTags(ctx, doc.ID, doc.TenantID, doc.StructuredData)
 	}
 
 	// Run validation after successful parsing
 	if s.validator != nil {
-		if err := s.validator.ValidateDocument(ctx, tenantID, docID); err != nil {
-			log.Printf("documentService.parseInBackground: validation failed for %s: %v", docID, err)
+		if err := s.validator.ValidateDocument(ctx, doc.TenantID, doc.ID); err != nil {
+			log.Printf("documentService.ParseDocument: validation failed for %s: %v", doc.ID, err)
 		}
 	}
 }
 
+// handleParseError checks if the error is a rate limit and queues the document for retry
+// if under the max attempts threshold. Otherwise, marks parsing as permanently failed.
+func (s *documentService) handleParseError(ctx context.Context, doc *domain.Document, parseErr error, maxAttempts int) {
+	var rlErr *parser.RateLimitError
+	if errors.As(parseErr, &rlErr) && doc.ParseAttempts < maxAttempts {
+		retryAt := time.Now().Add(rlErr.RetryAfter)
+		doc.ParsingStatus = domain.ParsingStatusQueued
+		doc.ParsingError = fmt.Sprintf("rate limited by %s, queued for retry", rlErr.Provider)
+		doc.RetryAfter = &retryAt
+		if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
+			log.Printf("documentService.handleParseError: failed to queue document %s: %v", doc.ID, err)
+		} else {
+			log.Printf("documentService.handleParseError: document %s queued for retry after %s", doc.ID, retryAt.Format(time.RFC3339))
+		}
+		return
+	}
+	s.failParsing(ctx, doc, fmt.Sprintf("parsing document: %v", parseErr))
+}
+
 func (s *documentService) failParsing(ctx context.Context, doc *domain.Document, errMsg string) {
-	log.Printf("documentService.parseInBackground: document %s failed: %s", doc.ID, errMsg)
+	log.Printf("documentService.failParsing: document %s failed: %s", doc.ID, errMsg)
 	doc.ParsingStatus = domain.ParsingStatusFailed
 	doc.ParsingError = errMsg
+	doc.RetryAfter = nil
 	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
 		log.Printf("documentService.failParsing: failed to update status for %s: %v", doc.ID, err)
 	}
@@ -548,9 +589,8 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userI
 		return nil, err
 	}
 
-	// Get the file info for S3 coordinates
-	file, err := s.fileRepo.GetByID(ctx, tenantID, doc.FileID)
-	if err != nil {
+	// Verify the file still exists
+	if _, err := s.fileRepo.GetByID(ctx, tenantID, doc.FileID); err != nil {
 		return nil, fmt.Errorf("looking up file for retry: %w", err)
 	}
 
@@ -575,7 +615,7 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userI
 	// Copy before launching goroutine so the caller's value is independent of background work
 	result := *doc
 
-	go s.parseInBackground(doc.ID, doc.TenantID, file.S3Bucket, file.S3Key, file.ContentType, doc.DocumentType)
+	go s.parseInBackground(doc.ID, doc.TenantID)
 
 	return &result, nil
 }

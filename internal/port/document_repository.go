@@ -19,6 +19,7 @@ type DocumentRepository interface {
 	UpdateStructuredData(ctx context.Context, doc *domain.Document) error
 	UpdateReviewStatus(ctx context.Context, doc *domain.Document) error
 	UpdateValidationResults(ctx context.Context, doc *domain.Document) error
+	ClaimQueued(ctx context.Context, limit int) ([]domain.Document, error)
 	Delete(ctx context.Context, tenantID, docID uuid.UUID) error
 }
 

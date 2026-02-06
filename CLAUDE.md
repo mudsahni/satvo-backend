@@ -28,11 +28,11 @@ internal/
   config/config.go           Loads env vars (SATVOS_ prefix) via viper
   domain/
     models.go                Tenant, User, FileMeta, Collection (with DocumentCount, computed via SQL subquery),
-                             CollectionPermissionEntry, CollectionFile, Document (with Name, SecondaryParserModel, ParseAttempts fields),
+                             CollectionPermissionEntry, CollectionFile, Document (with Name, SecondaryParserModel, ParseAttempts, RetryAfter fields),
                              DocumentTag (with Source field), DocumentValidationRule structs
     enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer), FileStatus,
                              CollectionPermission (owner/editor/viewer),
-                             ParsingStatus (pending/processing/completed/failed),
+                             ParsingStatus (pending/processing/completed/failed/queued),
                              ReviewStatus (pending/approved/rejected),
                              ValidationStatus (pending/valid/warning/invalid),
                              ReconciliationStatus (pending/valid/warning/invalid),
@@ -72,13 +72,17 @@ internal/
                              validation orchestration (ValidateDocument, GetValidation),
                              collection permission checks via collectionPermRepo,
                              tag management (ListTags, AddTags, DeleteTag, SearchByTag),
-                             auto-tag extraction from parsed invoice data
+                             auto-tag extraction from parsed invoice data,
+                             ParseDocument (core parse logic used by background and queue worker),
+                             handleParseError (rate-limit detection → queued status)
+    parse_queue_worker.go    Background worker that polls for queued documents and dispatches parsing
+                             with bounded concurrency (semaphore) and clean shutdown (WaitGroup)
     user_service.go          User CRUD with tenant scoping
     tenant_service.go        Tenant CRUD
   port/
     repository.go            TenantRepository, UserRepository, FileMetaRepository interfaces
     collection_repository.go CollectionRepository, CollectionPermissionRepository, CollectionFileRepository interfaces
-    document_repository.go   DocumentRepository (incl. UpdateValidationResults),
+    document_repository.go   DocumentRepository (incl. UpdateValidationResults, ClaimQueued),
                              DocumentTagRepository (incl. DeleteByDocumentAndSource),
                              DocumentValidationRuleRepository interfaces
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
@@ -91,7 +95,7 @@ internal/
     collection_repo.go       Collection SQL queries (ListByUser joins permissions, ListByTenant for admin/manager/member)
     collection_permission_repo.go  Collection permission queries (upsert via ON CONFLICT)
     collection_file_repo.go  Collection-file association queries (joins file_metadata)
-    document_repo.go         Document CRUD queries (incl. UpdateValidationResults)
+    document_repo.go         Document CRUD queries (incl. UpdateValidationResults, ClaimQueued)
     document_tag_repo.go     Document tag queries (batch create, search by tag)
     document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
   storage/s3/
@@ -129,11 +133,12 @@ internal/
   mocks/                     Generated mocks (uber/mock) for testing
 
 tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
-db/migrations/               10 SQL migrations: tenants -> users -> file_metadata -> collections
+db/migrations/               12 SQL migrations: tenants -> users -> file_metadata -> collections
                              -> documents -> validation columns -> consolidated validation results
                              -> reconciliation tiering -> multi-parser fields
                              -> document name + tag source
                              -> secondary_parser_model + parse_attempts
+                             -> parse queue (retry_after column + partial index)
 ```
 
 ## Data Flow
@@ -156,25 +161,46 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   │ to S3        │           │ parsing:     │  go func  │ parsing: processing      │
   │              │           │ pending      │           │                          │
   └──────────────┘           └──────────────┘           │ 1. Download from S3      │
-                                                        │ 2. Send to Claude API    │
+                                                        │ 2. Send to LLM parser    │
                                                         │ 3. Save structured_data  │
                                                         │ 4. Save confidence_scores│
                                                         │ 5. Extract auto-tags     │
-                                                        │ parsing: completed/failed│
-                                                        └────────────┬─────────────┘
-                                                                     │ auto-trigger
-                                                        ┌────────────v─────────────┐
-  GET /documents/:id/validation                         │ Validate                 │
-  ┌──────────────┐                                      │ validation: pending      │
-  │ View Results │<─────────────────────────────────────│                          │
-  │ per-rule     │                                      │ 1. Ensure builtin rules  │
-  │ per-field    │                                      │ 2. Load active rules     │
-  │ summary      │                                      │ 3. Run 50+ validators    │
-  └──────────────┘                                      │ 4. Compute field status  │
-                                                        │ 5. Save JSONB results    │
-  PUT /documents/:id/review                             │ validation: valid/       │
-  ┌──────────────┐                                      │   warning/invalid        │
-  │ Approve or   │                                      └──────────────────────────┘
+                                                        │ parsing: completed       │
+                                                        │         /failed/queued   │
+                                                        └──────┬──────────┬────────┘
+                                                               │          │
+                                                   on success  │          │ on RateLimitError
+                                                               │          │ (all parsers 429)
+                                                               │          v
+                                                               │  ┌──────────────────┐
+                                                               │  │ Queue for Retry   │
+                                                               │  │ parsing: queued   │
+                                                               │  │ retry_after: T+Ns │
+                                                               │  └────────┬─────────┘
+                                                               │           │
+                                                               │  ParseQueueWorker    │
+                                                               │  (polls every 10s)   │
+                                                               │           │
+                                                               │           v
+                                                               │  ┌──────────────────┐
+                                                               │  │ Re-dispatch Parse │
+                                                               │  │ (bounded concurr.)│
+                                                               │  │ max 5 attempts    │
+                                                               │  └──────────────────┘
+                                                               │
+                                                     auto-trigger
+                                                        ┌──────v──────────────────┐
+  GET /documents/:id/validation                         │ Validate                │
+  ┌──────────────┐                                      │ validation: pending     │
+  │ View Results │<─────────────────────────────────────│                         │
+  │ per-rule     │                                      │ 1. Ensure builtin rules │
+  │ per-field    │                                      │ 2. Load active rules    │
+  │ summary      │                                      │ 3. Run 50+ validators   │
+  └──────────────┘                                      │ 4. Compute field status │
+                                                        │ 5. Save JSONB results   │
+  PUT /documents/:id/review                             │ validation: valid/      │
+  ┌──────────────┐                                      │   warning/invalid       │
+  │ Approve or   │                                      └─────────────────────────┘
   │ Reject       │                                                 ^
   │ review:      │                                                 │
   │ approved/    │                                                 │ re-validate
@@ -353,7 +379,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ## Key Conventions
 
-- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`.
+- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`. Queue worker config: `SATVOS_QUEUE_POLL_INTERVAL_SECS` (default 10), `SATVOS_QUEUE_MAX_RETRIES` (default 5), `SATVOS_QUEUE_CONCURRENCY` (default 5).
 - **Response envelope**: All HTTP responses use `{"success": bool, "data": ..., "error": ..., "meta": ...}` defined in `handler/response.go`.
 - **Tenant isolation**: Every DB query includes `tenant_id` from JWT claims. Users authenticate with tenant slug + email + password.
 - **Error handling**: Domain errors in `domain/errors.go` are mapped to HTTP status codes in `handler/response.go`.
@@ -362,7 +388,8 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
-- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). `parse_attempts` is incremented on each parse/retry attempt (in `parseInBackground`). `secondary_parser_model` records the secondary model name in dual-parse mode (from `ParseOutput.SecondaryModel`). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
+- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed/queued. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). `parse_attempts` is incremented on each parse/retry attempt. `secondary_parser_model` records the secondary model name in dual-parse mode (from `ParseOutput.SecondaryModel`). Core parse logic lives in `ParseDocument` (called by both `parseInBackground` and `ParseQueueWorker`). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
+- **Parse queue (rate-limit retry)**: When all LLM parsers return `RateLimitError` (HTTP 429), `handleParseError` sets `parsing_status=queued` and `retry_after` to the earliest retry time (instead of permanently failing). A `ParseQueueWorker` polls the DB every 10s via `ClaimQueued` (atomic `UPDATE ... FOR UPDATE SKIP LOCKED`), re-dispatches queued documents with bounded concurrency (semaphore, default 5). Each document gets up to `max_retries` (default 5) parse attempts before permanent failure. Each worker goroutine uses `context.WithTimeout(context.Background(), 5min)` so in-flight parses complete even during shutdown. Config: `SATVOS_QUEUE_POLL_INTERVAL_SECS`, `SATVOS_QUEUE_MAX_RETRIES`, `SATVOS_QUEUE_CONCURRENCY`. **Known limitation**: If the server crashes mid-parse, a document may stay in `processing` indefinitely (staleness detector is a future enhancement).
 - **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
 - **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
@@ -399,3 +426,5 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Builtin shadowing**: Avoid naming parameters `max`, `min`, `len`, `cap`, etc. — Go's `gocritic.builtinShadow` catches these.
 - **CI runs tests with `-race`**: The GitHub Actions CI enables the Go race detector. Tests that pass locally without `-race` may fail in CI.
 - **Validation results are JSONB, not a separate table**: Migration 007 consolidated results from a separate `document_validation_results` table into `documents.validation_results` JSONB column.
+- **Import shadow lint (`importShadow`)**: In `document_service.go`, constructor params for parsers must not be named `parser` since it shadows the imported `satvos/internal/parser` package — use `docParser`/`mergeDocParser`. Similarly, test files importing `parser` must use `p` for mock parser variables.
+- **Stale processing documents (known limitation)**: If the server crashes mid-parse, a document stays in `processing` status indefinitely. A staleness detector (timeout-based requeue) is a planned future enhancement.

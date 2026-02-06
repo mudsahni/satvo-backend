@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"satvos/internal/domain"
+	"satvos/internal/parser"
 	"satvos/internal/port"
 	"satvos/internal/service"
 	"satvos/mocks"
@@ -30,16 +32,16 @@ func setupDocumentService() ( //nolint:gocritic // test helper benefits from mul
 	fileRepo := new(mocks.MockFileMetaRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
 	tagRepo := new(mocks.MockDocumentTagRepo)
-	parser := new(mocks.MockDocumentParser)
+	p := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
-	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, parser, storage, nil)
-	return svc, docRepo, fileRepo, permRepo, parser, storage, tagRepo
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
+	return svc, docRepo, fileRepo, permRepo, p, storage, tagRepo
 }
 
 // --- CreateAndParse ---
 
 func TestDocumentService_CreateAndParse_Success(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, parser, storage, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -65,6 +67,8 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 	docRepo.On("GetByID", mock.Anything, mock.Anything, mock.Anything).Return(&domain.Document{
 		ID:               uuid.New(),
 		TenantID:         tenantID,
+		FileID:           fileID,
+		DocumentType:     "invoice",
 		ParsingStatus:    domain.ParsingStatusPending,
 		StructuredData:   json.RawMessage("{}"),
 		ConfidenceScores: json.RawMessage("{}"),
@@ -72,7 +76,7 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
 	storage.On("Download", mock.Anything, "test-bucket", "tenants/test/files/test.pdf").
 		Return([]byte("%PDF-1.4 test content"), nil).Maybe()
-	parser.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
 		StructuredData:   json.RawMessage(`{"invoice":{}}`),
 		ConfidenceScores: json.RawMessage(`{"invoice":{}}`),
 		ModelUsed:        "test-model",
@@ -571,7 +575,7 @@ func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
 // --- RetryParse ---
 
 func TestDocumentService_RetryParse_Success(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, parser, storage, tagRepo := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -608,7 +612,7 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
 	storage.On("Download", mock.Anything, "test-bucket", "test-key").
 		Return([]byte("%PDF-1.4 test content"), nil).Maybe()
-	parser.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
 		StructuredData:   json.RawMessage(`{"invoice":{}}`),
 		ConfidenceScores: json.RawMessage(`{"invoice":{}}`),
 		ModelUsed:        "test-model",
@@ -710,12 +714,12 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
-	parser := new(mocks.MockDocumentParser)
+	p := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
 	tagRepo := new(mocks.MockDocumentTagRepo)
 	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, mock.Anything, "auto").Return(nil).Maybe()
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, parser, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -744,6 +748,8 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 		Return(&domain.Document{
 			ID:               uuid.New(),
 			TenantID:         tenantID,
+			FileID:           fileID,
+			DocumentType:     "invoice",
 			ParsingStatus:    domain.ParsingStatusPending,
 			StructuredData:   json.RawMessage("{}"),
 			ConfidenceScores: json.RawMessage("{}"),
@@ -752,7 +758,7 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	storage.On("Download", mock.Anything, "test-bucket", "tenants/test/files/test.pdf").
 		Return([]byte("%PDF-1.4 test content"), nil)
 
-	parser.On("Parse", mock.Anything, mock.MatchedBy(func(input port.ParseInput) bool {
+	p.On("Parse", mock.Anything, mock.MatchedBy(func(input port.ParseInput) bool {
 		return input.ContentType == "application/pdf" && input.DocumentType == "invoice"
 	})).Return(&port.ParseOutput{
 		StructuredData:   parsedData,
@@ -779,19 +785,19 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	storage.AssertExpectations(t)
-	parser.AssertExpectations(t)
+	p.AssertExpectations(t)
 }
 
 func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
-	parser := new(mocks.MockDocumentParser)
+	p := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
 	tagRepo := new(mocks.MockDocumentTagRepo)
 	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, mock.Anything, "auto").Return(nil).Maybe()
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, parser, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -814,6 +820,8 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 		Return(&domain.Document{
 			ID:               uuid.New(),
 			TenantID:         tenantID,
+			FileID:           fileID,
+			DocumentType:     "invoice",
 			ParsingStatus:    domain.ParsingStatusPending,
 			StructuredData:   json.RawMessage("{}"),
 			ConfidenceScores: json.RawMessage("{}"),
@@ -847,12 +855,12 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
-	parser := new(mocks.MockDocumentParser)
+	p := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
 	tagRepo := new(mocks.MockDocumentTagRepo)
 	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, mock.Anything, "auto").Return(nil).Maybe()
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, parser, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -875,6 +883,8 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 		Return(&domain.Document{
 			ID:               uuid.New(),
 			TenantID:         tenantID,
+			FileID:           fileID,
+			DocumentType:     "invoice",
 			ParsingStatus:    domain.ParsingStatusPending,
 			StructuredData:   json.RawMessage("{}"),
 			ConfidenceScores: json.RawMessage("{}"),
@@ -885,7 +895,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	storage.On("Download", mock.Anything, "test-bucket", "test-key").
 		Return([]byte("%PDF-1.4 content"), nil)
 
-	parser.On("Parse", mock.Anything, mock.Anything).
+	p.On("Parse", mock.Anything, mock.Anything).
 		Return(nil, errors.New("API rate limit exceeded"))
 
 	result, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
@@ -903,13 +913,13 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	// Wait for background goroutine to fail
 	time.Sleep(200 * time.Millisecond)
 
-	parser.AssertExpectations(t)
+	p.AssertExpectations(t)
 }
 
 // --- CreateAndParse with name and tags ---
 
 func TestDocumentService_CreateAndParse_WithNameAndTags(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, parser, storage, tagRepo := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo := setupDocumentService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -937,13 +947,15 @@ func TestDocumentService_CreateAndParse_WithNameAndTags(t *testing.T) {
 	})).Return(nil)
 	// Background goroutine expectations
 	docRepo.On("GetByID", mock.Anything, mock.Anything, mock.Anything).Return(&domain.Document{
-		ID: uuid.New(), TenantID: tenantID,
-		ParsingStatus: domain.ParsingStatusPending, StructuredData: json.RawMessage("{}"),
+		ID: uuid.New(), TenantID: tenantID, FileID: fileID,
+		DocumentType:     "invoice",
+		ParsingStatus:    domain.ParsingStatusPending,
+		StructuredData:   json.RawMessage("{}"),
 		ConfidenceScores: json.RawMessage("{}"),
 	}, nil).Maybe()
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
 	storage.On("Download", mock.Anything, mock.Anything, mock.Anything).Return([]byte("test"), nil).Maybe()
-	parser.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
 		StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"),
 		ModelUsed: "m", PromptUsed: "p",
 	}, nil).Maybe()
@@ -969,7 +981,7 @@ func TestDocumentService_CreateAndParse_WithNameAndTags(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_DefaultName(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, parser, storage, tagRepo := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -991,13 +1003,15 @@ func TestDocumentService_CreateAndParse_DefaultName(t *testing.T) {
 	})).Return(nil)
 	// Background goroutine expectations
 	docRepo.On("GetByID", mock.Anything, mock.Anything, mock.Anything).Return(&domain.Document{
-		ID: uuid.New(), TenantID: tenantID,
-		ParsingStatus: domain.ParsingStatusPending, StructuredData: json.RawMessage("{}"),
+		ID: uuid.New(), TenantID: tenantID, FileID: fileID,
+		DocumentType:     "invoice",
+		ParsingStatus:    domain.ParsingStatusPending,
+		StructuredData:   json.RawMessage("{}"),
 		ConfidenceScores: json.RawMessage("{}"),
 	}, nil).Maybe()
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
 	storage.On("Download", mock.Anything, mock.Anything, mock.Anything).Return([]byte("test"), nil).Maybe()
-	parser.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
 		StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"),
 		ModelUsed: "m", PromptUsed: "p",
 	}, nil).Maybe()
@@ -1092,7 +1106,7 @@ func TestDocumentService_SearchByTag_Success(t *testing.T) {
 // --- RetryParse deletes auto-tags ---
 
 func TestDocumentService_RetryParse_DeletesAutoTags(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, parser, storage, tagRepo := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1117,7 +1131,7 @@ func TestDocumentService_RetryParse_DeletesAutoTags(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
 	storage.On("Download", mock.Anything, "b", "k").Return([]byte("test"), nil).Maybe()
-	parser.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
 		StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"),
 		ModelUsed: "m", PromptUsed: "p",
 	}, nil).Maybe()
@@ -1413,4 +1427,239 @@ func TestDocumentService_EditStructuredData_ReextractsAutoTags(t *testing.T) {
 	assert.NotNil(t, result)
 	tagRepo.AssertCalled(t, "DeleteByDocumentAndSource", mock.Anything, docID, "auto")
 	tagRepo.AssertCalled(t, "CreateBatch", mock.Anything, mock.Anything)
+}
+
+// --- Rate limit → queued tests ---
+
+func TestDocumentService_BackgroundParsing_RateLimitQueuesDocument(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, mock.Anything, "auto").Return(nil).Maybe()
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
+
+	tenantID := uuid.New()
+	fileID := uuid.New()
+	docID := uuid.New()
+
+	fileMeta := &domain.FileMeta{
+		ID: fileID, TenantID: tenantID,
+		S3Bucket: "test-bucket", S3Key: "test-key", ContentType: "application/pdf",
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil).Maybe()
+	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+
+	// Background: GetByID returns doc with 0 attempts
+	docRepo.On("GetByID", mock.Anything, tenantID, mock.AnythingOfType("uuid.UUID")).
+		Return(&domain.Document{
+			ID: docID, TenantID: tenantID, FileID: fileID,
+			DocumentType:     "invoice",
+			ParsingStatus:    domain.ParsingStatusPending,
+			StructuredData:   json.RawMessage("{}"),
+			ConfidenceScores: json.RawMessage("{}"),
+		}, nil).Maybe()
+
+	storage.On("Download", mock.Anything, "test-bucket", "test-key").
+		Return([]byte("%PDF-1.4 content"), nil).Maybe()
+
+	// Parser returns RateLimitError
+	rlErr := parser.NewRateLimitError("claude", fmt.Errorf("429 Too Many Requests"), 30)
+	p.On("Parse", mock.Anything, mock.Anything).Return(nil, rlErr).Maybe()
+
+	// Capture the final doc state via Run callback (thread-safe channel)
+	finalStatus := make(chan domain.ParsingStatus, 2)
+	finalRetryAfter := make(chan bool, 2) // true if non-nil
+	finalError := make(chan string, 2)
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			doc := args.Get(1).(*domain.Document)
+			finalStatus <- doc.ParsingStatus
+			finalRetryAfter <- (doc.RetryAfter != nil)
+			finalError <- doc.ParsingError
+		}).Return(nil).Maybe()
+
+	_, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
+		TenantID:     tenantID,
+		CollectionID: uuid.New(),
+		FileID:       fileID,
+		DocumentType: "invoice",
+		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
+	})
+	assert.NoError(t, err)
+
+	// Wait for background goroutine — two UpdateStructuredData calls expected
+	// 1st: set processing, 2nd: set queued
+	var lastStatus domain.ParsingStatus
+	var lastHasRetry bool
+	var lastErrMsg string
+	for i := 0; i < 2; i++ {
+		select {
+		case lastStatus = <-finalStatus:
+			lastHasRetry = <-finalRetryAfter
+			lastErrMsg = <-finalError
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for UpdateStructuredData call")
+		}
+	}
+	assert.Equal(t, domain.ParsingStatusQueued, lastStatus)
+	assert.True(t, lastHasRetry)
+	assert.Contains(t, lastErrMsg, "rate limited")
+}
+
+func TestDocumentService_BackgroundParsing_RateLimitExceedsMaxAttempts(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, mock.Anything, "auto").Return(nil).Maybe()
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
+
+	tenantID := uuid.New()
+	fileID := uuid.New()
+	docID := uuid.New()
+
+	fileMeta := &domain.FileMeta{
+		ID: fileID, TenantID: tenantID,
+		S3Bucket: "test-bucket", S3Key: "test-key", ContentType: "application/pdf",
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil).Maybe()
+	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+
+	// Background: GetByID returns doc with 4 attempts (will become 5 after increment = max)
+	docRepo.On("GetByID", mock.Anything, tenantID, mock.AnythingOfType("uuid.UUID")).
+		Return(&domain.Document{
+			ID: docID, TenantID: tenantID, FileID: fileID,
+			DocumentType:     "invoice",
+			ParseAttempts:    4,
+			ParsingStatus:    domain.ParsingStatusPending,
+			StructuredData:   json.RawMessage("{}"),
+			ConfidenceScores: json.RawMessage("{}"),
+		}, nil).Maybe()
+
+	storage.On("Download", mock.Anything, "test-bucket", "test-key").
+		Return([]byte("%PDF-1.4 content"), nil).Maybe()
+
+	rlErr := parser.NewRateLimitError("claude", fmt.Errorf("429 Too Many Requests"), 30)
+	p.On("Parse", mock.Anything, mock.Anything).Return(nil, rlErr).Maybe()
+
+	finalStatus := make(chan domain.ParsingStatus, 2)
+	finalRetryAfter := make(chan bool, 2)
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			doc := args.Get(1).(*domain.Document)
+			finalStatus <- doc.ParsingStatus
+			finalRetryAfter <- (doc.RetryAfter != nil)
+		}).Return(nil).Maybe()
+
+	_, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
+		TenantID:     tenantID,
+		CollectionID: uuid.New(),
+		FileID:       fileID,
+		DocumentType: "invoice",
+		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
+	})
+	assert.NoError(t, err)
+
+	// Wait for two UpdateStructuredData calls: 1) processing, 2) failed
+	var lastStatus domain.ParsingStatus
+	var lastHasRetry bool
+	for i := 0; i < 2; i++ {
+		select {
+		case lastStatus = <-finalStatus:
+			lastHasRetry = <-finalRetryAfter
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for UpdateStructuredData call")
+		}
+	}
+	assert.Equal(t, domain.ParsingStatusFailed, lastStatus)
+	assert.False(t, lastHasRetry)
+}
+
+func TestDocumentService_BackgroundParsing_NonRateLimitErrorStillFails(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, mock.Anything, "auto").Return(nil).Maybe()
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	svc := service.NewDocumentService(docRepo, fileRepo, permRepo, tagRepo, p, storage, nil)
+
+	tenantID := uuid.New()
+	fileID := uuid.New()
+	docID := uuid.New()
+
+	fileMeta := &domain.FileMeta{
+		ID: fileID, TenantID: tenantID,
+		S3Bucket: "test-bucket", S3Key: "test-key", ContentType: "application/pdf",
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil).Maybe()
+	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+
+	docRepo.On("GetByID", mock.Anything, tenantID, mock.AnythingOfType("uuid.UUID")).
+		Return(&domain.Document{
+			ID: docID, TenantID: tenantID, FileID: fileID,
+			DocumentType:     "invoice",
+			ParsingStatus:    domain.ParsingStatusPending,
+			StructuredData:   json.RawMessage("{}"),
+			ConfidenceScores: json.RawMessage("{}"),
+		}, nil).Maybe()
+
+	storage.On("Download", mock.Anything, "test-bucket", "test-key").
+		Return([]byte("%PDF-1.4 content"), nil).Maybe()
+
+	// Regular error (not RateLimitError)
+	p.On("Parse", mock.Anything, mock.Anything).Return(nil, errors.New("invalid API key")).Maybe()
+
+	finalStatus := make(chan domain.ParsingStatus, 2)
+	finalRetryAfter := make(chan bool, 2)
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).
+		Run(func(args mock.Arguments) {
+			doc := args.Get(1).(*domain.Document)
+			finalStatus <- doc.ParsingStatus
+			finalRetryAfter <- (doc.RetryAfter != nil)
+		}).Return(nil).Maybe()
+
+	_, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
+		TenantID:     tenantID,
+		CollectionID: uuid.New(),
+		FileID:       fileID,
+		DocumentType: "invoice",
+		CreatedBy:    uuid.New(),
+		Role:         domain.RoleAdmin,
+	})
+	assert.NoError(t, err)
+
+	// Wait for two UpdateStructuredData calls: 1) processing, 2) failed
+	var lastStatus domain.ParsingStatus
+	var lastHasRetry bool
+	for i := 0; i < 2; i++ {
+		select {
+		case lastStatus = <-finalStatus:
+			lastHasRetry = <-finalRetryAfter
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for UpdateStructuredData call")
+		}
+	}
+	assert.Equal(t, domain.ParsingStatusFailed, lastStatus)
+	assert.False(t, lastHasRetry)
 }

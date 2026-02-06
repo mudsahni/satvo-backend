@@ -88,6 +88,7 @@ type Document struct {
 	FieldProvenance       json.RawMessage      `db:"field_provenance" json:"field_provenance" swaggertype:"object"`
 	SecondaryParserModel  string               `db:"secondary_parser_model" json:"secondary_parser_model"`
 	ParseAttempts         int                  `db:"parse_attempts" json:"parse_attempts"`
+	RetryAfter            *time.Time           `db:"retry_after" json:"retry_after,omitempty"`
 	CreatedBy             uuid.UUID            `db:"created_by" json:"created_by"`
 	CreatedAt             time.Time            `db:"created_at" json:"created_at"`
 	UpdatedAt             time.Time            `db:"updated_at" json:"updated_at"`
