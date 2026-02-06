@@ -65,9 +65,12 @@ func TestOpenAIParser_Parse_PDF_Success(t *testing.T) {
 		content := msg["content"].([]interface{})
 		assert.Len(t, content, 2)
 
-		// First block: image_url
-		imgBlock := content[0].(map[string]interface{})
-		assert.Equal(t, "image_url", imgBlock["type"])
+		// First block: file (PDFs use file content type, not image_url)
+		fileBlock := content[0].(map[string]interface{})
+		assert.Equal(t, "file", fileBlock["type"])
+		fileData := fileBlock["file"].(map[string]interface{})
+		assert.Equal(t, "document.pdf", fileData["filename"])
+		assert.Contains(t, fileData["file_data"], "data:application/pdf;base64,")
 
 		// Second block: text prompt
 		textBlock := content[1].(map[string]interface{})
@@ -334,12 +337,12 @@ func TestOpenAIParser_Parse_VerifyRequestFormat(t *testing.T) {
 	content := msg["content"].([]interface{})
 	assert.Len(t, content, 2)
 
-	// Verify image_url part
-	imgBlock := content[0].(map[string]interface{})
-	assert.Equal(t, "image_url", imgBlock["type"])
-	assert.Contains(t, imgBlock, "image_url")
-	imgURL := imgBlock["image_url"].(map[string]interface{})
-	assert.Contains(t, imgURL["url"], "data:application/pdf;base64,")
+	// Verify file part (PDFs use file content type, not image_url)
+	fileBlock := content[0].(map[string]interface{})
+	assert.Equal(t, "file", fileBlock["type"])
+	assert.Contains(t, fileBlock, "file")
+	fileData := fileBlock["file"].(map[string]interface{})
+	assert.Contains(t, fileData["file_data"], "data:application/pdf;base64,")
 
 	// Verify text part
 	textBlock := content[1].(map[string]interface{})
