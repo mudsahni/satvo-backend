@@ -86,7 +86,7 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 		},
 		"generationConfig": map[string]interface{}{
 			"responseMimeType": "application/json",
-			"maxOutputTokens":  16384,
+			"maxOutputTokens":  65536,
 		},
 	}
 
@@ -158,6 +158,10 @@ func parseResponse(body []byte, model, prompt string) (*port.ParseOutput, error)
 
 	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("empty response from API: no candidates")
+	}
+
+	if resp.Candidates[0].FinishReason == "MAX_TOKENS" {
+		return nil, fmt.Errorf("output truncated (finishReason: MAX_TOKENS): response exceeded output token limit")
 	}
 
 	if len(resp.Candidates[0].Content.Parts) == 0 {

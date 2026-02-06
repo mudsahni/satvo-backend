@@ -160,6 +160,7 @@ type apiResponse struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
+	StopReason string `json:"stop_reason"`
 }
 
 func parseResponse(body []byte, model, prompt string) (*port.ParseOutput, error) {
@@ -170,6 +171,10 @@ func parseResponse(body []byte, model, prompt string) (*port.ParseOutput, error)
 
 	if len(resp.Content) == 0 {
 		return nil, fmt.Errorf("empty response from API")
+	}
+
+	if resp.StopReason == "max_tokens" {
+		return nil, fmt.Errorf("output truncated (stop_reason: max_tokens): response exceeded output token limit")
 	}
 
 	text := resp.Content[0].Text

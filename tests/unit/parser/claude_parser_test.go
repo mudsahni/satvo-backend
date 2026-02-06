@@ -320,6 +320,40 @@ func TestClaudeParser_Parse_UnsupportedContentType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported content type")
 }
 
+func TestClaudeParser_Parse_Truncated(t *testing.T) {
+	responseBody := map[string]interface{}{
+		"content": []map[string]interface{}{
+			{
+				"type": "text",
+				"text": `{"data":{"invoice":{"invoice_number":"INV-001"`,
+			},
+		},
+		"stop_reason": "max_tokens",
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		err := json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := newTestParser(server.URL)
+
+	result, err := p.Parse(context.Background(), port.ParseInput{
+		FileBytes:    []byte("%PDF-1.4 test"),
+		ContentType:  "application/pdf",
+		DocumentType: "invoice",
+	})
+
+	assert.Nil(t, result)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "output truncated")
+	assert.Contains(t, err.Error(), "stop_reason: max_tokens")
+}
+
 func TestClaudeParser_Parse_ConnectionRefused(t *testing.T) {
 	p := newTestParser("http://localhost:1")
 

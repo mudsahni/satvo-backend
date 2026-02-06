@@ -64,7 +64,7 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 
 	reqBody := map[string]interface{}{
 		"model":      p.model,
-		"max_tokens": 16384,
+		"max_completion_tokens": 16384,
 		"messages": []map[string]interface{}{
 			{
 				"role":    "user",
@@ -151,6 +151,7 @@ type apiResponse struct {
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 }
 
@@ -162,6 +163,10 @@ func parseResponse(body []byte, model, prompt string) (*port.ParseOutput, error)
 
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("empty response from API: no choices")
+	}
+
+	if resp.Choices[0].FinishReason == "length" {
+		return nil, fmt.Errorf("output truncated (finish_reason: length): response exceeded output token limit")
 	}
 
 	text := resp.Choices[0].Message.Content
