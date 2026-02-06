@@ -104,7 +104,12 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(respBody))
+		baseErr := fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode == http.StatusTooManyRequests {
+			retryAfter := parser.ParseRetryAfterHeader(resp.Header.Get("Retry-After"))
+			return nil, parser.NewRateLimitError("claude", baseErr, retryAfter)
+		}
+		return nil, baseErr
 	}
 
 	return parseResponse(respBody, p.model, prompt)

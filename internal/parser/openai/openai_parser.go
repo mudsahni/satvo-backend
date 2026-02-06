@@ -1,4 +1,4 @@
-package gemini
+package openai
 
 import (
 	"bytes"
@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	apiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
+	apiURL = "https://api.openai.com/v1/chat/completions"
 )
 
-// Parser implements port.DocumentParser using Google's Gemini API.
+// Parser implements port.DocumentParser using the OpenAI Chat Completions API.
 type Parser struct {
 	apiKey   string
 	model    string
@@ -27,9 +27,9 @@ type Parser struct {
 	client   *http.Client
 }
 
-// NewParser creates a Gemini-based document parser.
+// NewParser creates an OpenAI-based document parser from a provider config.
 func NewParser(cfg *config.ParserProviderConfig) *Parser {
-	return newParser(cfg, "")
+	return newParser(cfg, apiURL)
 }
 
 // NewParserWithEndpoint creates a parser pointing at a custom API endpoint (for testing).
@@ -40,14 +40,11 @@ func NewParserWithEndpoint(cfg *config.ParserProviderConfig, endpoint string) *P
 func newParser(cfg *config.ParserProviderConfig, endpoint string) *Parser {
 	model := cfg.DefaultModel
 	if model == "" {
-		model = "gemini-2.0-flash"
+		model = "gpt-4o"
 	}
 	timeout := time.Duration(cfg.TimeoutSecs) * time.Second
 	if timeout == 0 {
 		timeout = 120 * time.Second
-	}
-	if endpoint == "" {
-		endpoint = fmt.Sprintf("%s/%s:generateContent", apiBaseURL, model)
 	}
 	return &Parser{
 		apiKey:   cfg.APIKey,
@@ -60,33 +57,22 @@ func newParser(cfg *config.ParserProviderConfig, endpoint string) *Parser {
 func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseOutput, error) {
 	prompt := parser.BuildGSTInvoicePrompt(input.DocumentType)
 
-	mimeType, err := toGeminiMimeType(input.ContentType)
+	contentBlocks, err := buildContentBlocks(input, prompt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("building content blocks: %w", err)
 	}
 
-	encoded := base64.StdEncoding.EncodeToString(input.FileBytes)
-
 	reqBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
+		"model":      p.model,
+		"max_tokens": 16384,
+		"messages": []map[string]interface{}{
 			{
-				"role": "user",
-				"parts": []map[string]interface{}{
-					{
-						"inline_data": map[string]interface{}{
-							"mime_type": mimeType,
-							"data":     encoded,
-						},
-					},
-					{
-						"text": prompt,
-					},
-				},
+				"role":    "user",
+				"content": contentBlocks,
 			},
 		},
-		"generationConfig": map[string]interface{}{
-			"responseMimeType": "application/json",
-			"maxOutputTokens":  16384,
+		"response_format": map[string]interface{}{
+			"type": "json_object",
 		},
 	}
 
@@ -100,11 +86,11 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-goog-api-key", p.apiKey)
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("calling gemini API: %w", err)
+		return nil, fmt.Errorf("calling openai API: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -114,10 +100,10 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		baseErr := fmt.Errorf("gemini API error (status %d): %s", resp.StatusCode, string(respBody))
+		baseErr := fmt.Errorf("openai API error (status %d): %s", resp.StatusCode, string(respBody))
 		if resp.StatusCode == http.StatusTooManyRequests {
 			retryAfter := parser.ParseRetryAfterHeader(resp.Header.Get("Retry-After"))
-			return nil, parser.NewRateLimitError("gemini", baseErr, retryAfter)
+			return nil, parser.NewRateLimitError("openai", baseErr, retryAfter)
 		}
 		return nil, baseErr
 	}
@@ -125,46 +111,51 @@ func (p *Parser) Parse(ctx context.Context, input port.ParseInput) (*port.ParseO
 	return parseResponse(respBody, p.model, prompt)
 }
 
-func toGeminiMimeType(contentType string) (string, error) {
-	switch contentType {
-	case "application/pdf":
-		return "application/pdf", nil
-	case "image/jpeg":
-		return "image/jpeg", nil
-	case "image/png":
-		return "image/png", nil
+func buildContentBlocks(input port.ParseInput, prompt string) ([]map[string]interface{}, error) {
+	encoded := base64.StdEncoding.EncodeToString(input.FileBytes)
+	var blocks []map[string]interface{}
+
+	switch input.ContentType {
+	case "application/pdf", "image/jpeg", "image/png":
+		dataURI := fmt.Sprintf("data:%s;base64,%s", input.ContentType, encoded)
+		blocks = append(blocks, map[string]interface{}{
+			"type": "image_url",
+			"image_url": map[string]interface{}{
+				"url": dataURI,
+			},
+		})
 	default:
-		return "", fmt.Errorf("unsupported content type for parsing: %s", contentType)
+		return nil, fmt.Errorf("unsupported content type for parsing: %s", input.ContentType)
 	}
+
+	blocks = append(blocks, map[string]interface{}{
+		"type": "text",
+		"text": prompt,
+	})
+
+	return blocks, nil
 }
 
-// geminiResponse models the Gemini API response.
-type geminiResponse struct {
-	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"content"`
-		FinishReason string `json:"finishReason"`
-	} `json:"candidates"`
+// apiResponse models the OpenAI Chat Completions API response.
+type apiResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
 }
 
 func parseResponse(body []byte, model, prompt string) (*port.ParseOutput, error) {
-	var resp geminiResponse
+	var resp apiResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("unmarshaling response: %w", err)
 	}
 
-	if len(resp.Candidates) == 0 {
-		return nil, fmt.Errorf("empty response from API: no candidates")
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("empty response from API: no choices")
 	}
 
-	if len(resp.Candidates[0].Content.Parts) == 0 {
-		return nil, fmt.Errorf("empty response from API: no parts")
-	}
-
-	text := resp.Candidates[0].Content.Parts[0].Text
+	text := resp.Choices[0].Message.Content
 
 	var parsed struct {
 		Data             json.RawMessage `json:"data"`

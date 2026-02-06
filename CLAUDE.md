@@ -100,10 +100,14 @@ internal/
     factory.go               Parser provider registry and factory (RegisterProvider, NewParser)
     prompt.go                Shared GST invoice extraction prompt (BuildGSTInvoicePrompt)
     merge.go                 MergeParser — wraps two DocumentParsers, runs in parallel, merges results
+    fallback.go              FallbackParser — tries parsers in order with per-parser circuit breaker
+    errors.go                RateLimitError type + ParseRetryAfterHeader helper
     claude/
       claude_parser.go       Anthropic Messages API parser (PDF as document blocks, images as image blocks)
     gemini/
       gemini_parser.go       Google Gemini parser (Gemini REST API)
+    openai/
+      openai_parser.go       OpenAI Chat Completions API parser (images as data URI, JSON mode)
   validator/
     engine.go                Validation orchestrator — loads rules, runs validators, computes
                              validation_status + reconciliation_status, auto-seeds builtin rules,
@@ -294,7 +298,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ```
   ParserConfig (config.go)
-    Primary + Secondary
+    Primary + Secondary + Tertiary
          │
   Parser Factory (factory.go)
     RegisterProvider() / NewParser()
@@ -302,17 +306,22 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
     ┌────┼────┐
     │    │    │
   Claude Gemini OpenAI
-  (live) (stub) (future)
+  (live) (live) (live)
+         │
+  FallbackParser (fallback.go)
+    tries parsers in order
+    per-parser circuit breaker
+    skips rate-limited parsers
          │
   MergeParser (merge.go)
-    wraps 2 parsers
+    wraps 2 FallbackParsers
     runs both in parallel
     merges field-by-field
 ```
 
 **Parse modes** (`parse_mode` field on documents):
-- `single` (default): Uses primary parser only
-- `dual`: Uses MergeParser which runs primary + secondary in parallel
+- `single` (default): Uses FallbackParser wrapping [primary, secondary, tertiary]
+- `dual`: Uses MergeParser wrapping two FallbackParsers: [primary, tertiary] + [secondary, tertiary]
 
 **Merge strategy** (in `internal/parser/merge.go`):
 - **Agreement**: Both extract same value → use it, confidence boosted by 20%
@@ -322,9 +331,23 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 **Field provenance** (`field_provenance` JSONB on documents): Records which model provided each field — `"agree"`, `"primary"`, `"secondary"`, `"primary_format"`, `"secondary_format"`, or `"disagreement"`.
 
+**FallbackParser** (in `internal/parser/fallback.go`):
+- Tries parsers in order; on any error, falls back to the next parser
+- On `RateLimitError` (HTTP 429), opens a per-parser circuit breaker with `RetryAfter` duration
+- Open circuits are automatically skipped until `time.Now()` passes `resetAt`
+- If all parsers are rate-limited, returns a `RateLimitError` with the earliest retry time
+- If all parsers fail with non-rate-limit errors, returns `"all parsers failed: <last error>"`
+- Thread-safe via `sync.RWMutex` per circuit; in-memory state (no DB persistence)
+
+**RateLimitError** (in `internal/parser/errors.go`):
+- Wraps underlying error with `Provider`, `RetryAfter`, and `Unwrap()` support
+- `ParseRetryAfterHeader()` parses `Retry-After` response headers (shared across providers)
+- Defaults to 60s retry if header is missing or unparseable
+
 **Config** (`ParserConfig` in `config.go`):
 - Legacy flat fields (`SATVOS_PARSER_PROVIDER`, etc.) still work via `PrimaryConfig()` fallback
-- Multi-provider: `SATVOS_PARSER_PRIMARY_PROVIDER`, `SATVOS_PARSER_PRIMARY_API_KEY`, `SATVOS_PARSER_SECONDARY_PROVIDER`, etc.
+- Multi-provider: `SATVOS_PARSER_PRIMARY_PROVIDER`, `SATVOS_PARSER_PRIMARY_API_KEY`, `SATVOS_PARSER_SECONDARY_PROVIDER`, `SATVOS_PARSER_TERTIARY_PROVIDER`, etc.
+- `TertiaryConfig()` returns nil if `SATVOS_PARSER_TERTIARY_PROVIDER` is not set
 - If no secondary configured, dual parse mode falls back to single with log warning
 
 ## Key Conventions
@@ -342,7 +365,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
 - **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
-- **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini implementation in `parser/gemini/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`.
+- **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini implementation in `parser/gemini/`, OpenAI implementation in `parser/openai/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`. `FallbackParser` in `parser/fallback.go` provides rate-limit-aware failover across providers.
 - **Validation**: Runs automatically after parsing completes. 50 built-in GST invoice rules across 5 categories. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.
 - **Pagination**: `offset` and `limit` query params on list endpoints.
@@ -354,7 +377,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ## Tech Stack
 
-- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing), Google Gemini API (document parsing)
+- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing), Google Gemini API (document parsing), OpenAI API (document parsing)
 
 ## Important Files for Common Tasks
 

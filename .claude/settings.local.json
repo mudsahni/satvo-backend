@@ -13,7 +13,8 @@
       "Bash(go vet:*)",
       "Bash(swag init:*)",
       "Bash(for f in /home/muditsahni/Documents/Projects/satvos/bruno/Documents/*.bru:*)",
-      "Bash(done)"
+      "Bash(done)",
+      "Bash(grep:*)"
     ]
   }
 }

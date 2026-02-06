@@ -74,3 +74,35 @@ func TestParserConfig_SecondaryConfig_Configured(t *testing.T) {
 	assert.Equal(t, "gk-secondary", secondary.APIKey)
 	assert.Equal(t, "gemini-2.0-flash", secondary.DefaultModel)
 }
+
+func TestParserConfig_TertiaryConfig_NotConfigured(t *testing.T) {
+	cfg := config.ParserConfig{
+		Provider: "claude",
+		APIKey:   "sk-test",
+	}
+
+	tertiary := cfg.TertiaryConfig()
+
+	assert.Nil(t, tertiary)
+}
+
+func TestParserConfig_TertiaryConfig_Configured(t *testing.T) {
+	cfg := config.ParserConfig{
+		Primary: config.ParserProviderConfig{
+			Provider: "claude",
+			APIKey:   "sk-primary",
+		},
+		Tertiary: config.ParserProviderConfig{
+			Provider:     "openai",
+			APIKey:       "sk-tertiary",
+			DefaultModel: "gpt-4o",
+		},
+	}
+
+	tertiary := cfg.TertiaryConfig()
+
+	assert.NotNil(t, tertiary)
+	assert.Equal(t, "openai", tertiary.Provider)
+	assert.Equal(t, "sk-tertiary", tertiary.APIKey)
+	assert.Equal(t, "gpt-4o", tertiary.DefaultModel)
+}

@@ -3,14 +3,17 @@ package parser_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"satvos/internal/config"
+	"satvos/internal/parser"
 	gemini "satvos/internal/parser/gemini"
 	"satvos/internal/port"
 )
@@ -191,8 +194,9 @@ func TestGeminiParser_Parse_PNG_Success(t *testing.T) {
 	assert.NotNil(t, result)
 }
 
-func TestGeminiParser_Parse_APIError(t *testing.T) {
+func TestGeminiParser_Parse_RateLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, err := w.Write([]byte(`{"error":{"code":429,"message":"Resource has been exhausted","status":"RESOURCE_EXHAUSTED"}}`))
 		if err != nil {
@@ -211,8 +215,13 @@ func TestGeminiParser_Parse_APIError(t *testing.T) {
 
 	assert.Nil(t, result)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "gemini API error (status 429)")
-	assert.Contains(t, err.Error(), "RESOURCE_EXHAUSTED")
+
+	var rlErr *parser.RateLimitError
+	require.True(t, errors.As(err, &rlErr))
+	assert.Equal(t, "gemini", rlErr.Provider)
+	assert.Equal(t, 30*time.Second, rlErr.RetryAfter)
+	assert.Contains(t, rlErr.Err.Error(), "gemini API error (status 429)")
+	assert.Contains(t, rlErr.Err.Error(), "RESOURCE_EXHAUSTED")
 }
 
 func TestGeminiParser_Parse_EmptyResponse(t *testing.T) {

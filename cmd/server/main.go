@@ -12,6 +12,7 @@ import (
 	"satvos/internal/parser"
 	claudeparser "satvos/internal/parser/claude"
 	geminiparser "satvos/internal/parser/gemini"
+	openaiparser "satvos/internal/parser/openai"
 	"satvos/internal/port"
 	"satvos/internal/repository/postgres"
 	"satvos/internal/router"
@@ -92,24 +93,50 @@ func run() error {
 	parser.RegisterProvider("gemini", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
 		return geminiparser.NewParser(provCfg), nil
 	})
+	parser.RegisterProvider("openai", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
+		return openaiparser.NewParser(provCfg), nil
+	})
 
 	// Initialize primary parser
 	primaryCfg := cfg.Parser.PrimaryConfig()
-	documentParser, err := parser.NewParser(primaryCfg)
+	primaryParser, err := parser.NewParser(primaryCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create primary parser: %w", err)
 	}
 
+	// Build optional secondary and tertiary parsers
+	var secondaryParser port.DocumentParser
+	secondaryCfg := cfg.Parser.SecondaryConfig()
+	if secondaryCfg != nil {
+		sp, secErr := parser.NewParser(secondaryCfg)
+		if secErr != nil {
+			log.Printf("WARNING: failed to create secondary parser (%v)", secErr)
+		} else {
+			secondaryParser = sp
+		}
+	}
+
+	var tertiaryParser port.DocumentParser
+	tertiaryCfg := cfg.Parser.TertiaryConfig()
+	if tertiaryCfg != nil {
+		tp, terErr := parser.NewParser(tertiaryCfg)
+		if terErr != nil {
+			log.Printf("WARNING: failed to create tertiary parser (%v)", terErr)
+		} else {
+			tertiaryParser = tp
+		}
+	}
+
+	// Wrap single-parse path in FallbackParser if extra parsers are available
+	documentParser := buildFallbackParser(primaryParser, primaryCfg.Provider, secondaryParser, secondaryCfg, tertiaryParser, tertiaryCfg)
+
 	// Initialize optional merge parser for dual-parse mode
 	var mergeDocParser port.DocumentParser
-	if secondaryCfg := cfg.Parser.SecondaryConfig(); secondaryCfg != nil {
-		secondaryParser, secErr := parser.NewParser(secondaryCfg)
-		if secErr != nil {
-			log.Printf("WARNING: failed to create secondary parser (%v), dual-parse mode will be unavailable", secErr)
-		} else {
-			mergeDocParser = parser.NewMergeParser(documentParser, secondaryParser)
-			log.Printf("Multi-parser mode enabled: primary=%s, secondary=%s", primaryCfg.Provider, secondaryCfg.Provider)
-		}
+	if secondaryParser != nil {
+		primarySide := buildFallbackParser(primaryParser, primaryCfg.Provider, tertiaryParser, tertiaryCfg, nil, nil)
+		secondarySide := buildFallbackParser(secondaryParser, secondaryCfg.Provider, tertiaryParser, tertiaryCfg, nil, nil)
+		mergeDocParser = parser.NewMergeParser(primarySide, secondarySide)
+		log.Printf("Multi-parser mode enabled: primary=%s, secondary=%s", primaryCfg.Provider, secondaryCfg.Provider)
 	}
 
 	// Initialize validation engine
@@ -150,4 +177,25 @@ func run() error {
 	}
 
 	return nil
+}
+
+// buildFallbackParser wraps a primary parser with optional fallback parsers.
+// If no fallbacks are available, returns the primary parser directly.
+func buildFallbackParser(p1 port.DocumentParser, p1Name string, p2 port.DocumentParser, p2Cfg *config.ParserProviderConfig, p3 port.DocumentParser, p3Cfg *config.ParserProviderConfig) port.DocumentParser {
+	parsers := []port.DocumentParser{p1}
+	names := []string{p1Name}
+
+	if p2 != nil {
+		parsers = append(parsers, p2)
+		names = append(names, p2Cfg.Provider)
+	}
+	if p3 != nil {
+		parsers = append(parsers, p3)
+		names = append(names, p3Cfg.Provider)
+	}
+
+	if len(parsers) == 1 {
+		return p1
+	}
+	return parser.NewFallbackParser(parsers, names)
 }

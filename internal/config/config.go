@@ -46,6 +46,7 @@ type ParserConfig struct {
 	// Multi-provider fields
 	Primary   ParserProviderConfig `mapstructure:"primary"`
 	Secondary ParserProviderConfig `mapstructure:"secondary"`
+	Tertiary  ParserProviderConfig `mapstructure:"tertiary"`
 }
 
 // PrimaryConfig returns the primary parser provider config, falling back to legacy flat fields.
@@ -66,6 +67,14 @@ func (p *ParserConfig) PrimaryConfig() *ParserProviderConfig {
 func (p *ParserConfig) SecondaryConfig() *ParserProviderConfig {
 	if p.Secondary.Provider != "" {
 		return &p.Secondary
+	}
+	return nil
+}
+
+// TertiaryConfig returns the tertiary parser provider config, or nil if not configured.
+func (p *ParserConfig) TertiaryConfig() *ParserProviderConfig {
+	if p.Tertiary.Provider != "" {
+		return &p.Tertiary
 	}
 	return nil
 }
@@ -184,6 +193,11 @@ func Load() (*Config, error) {
 	v.SetDefault("parser.secondary.default_model", "")
 	v.SetDefault("parser.secondary.max_retries", 2)
 	v.SetDefault("parser.secondary.timeout_secs", 120)
+	v.SetDefault("parser.tertiary.provider", "")
+	v.SetDefault("parser.tertiary.api_key", "")
+	v.SetDefault("parser.tertiary.default_model", "")
+	v.SetDefault("parser.tertiary.max_retries", 2)
+	v.SetDefault("parser.tertiary.timeout_secs", 120)
 
 	// Bind environment variables explicitly for nested keys
 	envBindings := map[string]string{
@@ -228,6 +242,11 @@ func Load() (*Config, error) {
 		"parser.secondary.default_model": "SATVOS_PARSER_SECONDARY_DEFAULT_MODEL",
 		"parser.secondary.max_retries":   "SATVOS_PARSER_SECONDARY_MAX_RETRIES",
 		"parser.secondary.timeout_secs":  "SATVOS_PARSER_SECONDARY_TIMEOUT_SECS",
+		"parser.tertiary.provider":       "SATVOS_PARSER_TERTIARY_PROVIDER",
+		"parser.tertiary.api_key":        "SATVOS_PARSER_TERTIARY_API_KEY",
+		"parser.tertiary.default_model":  "SATVOS_PARSER_TERTIARY_DEFAULT_MODEL",
+		"parser.tertiary.max_retries":    "SATVOS_PARSER_TERTIARY_MAX_RETRIES",
+		"parser.tertiary.timeout_secs":   "SATVOS_PARSER_TERTIARY_TIMEOUT_SECS",
 	}
 	for key, env := range envBindings {
 		_ = v.BindEnv(key, env)
@@ -307,6 +326,13 @@ func Load() (*Config, error) {
 			DefaultModel: v.GetString("parser.secondary.default_model"),
 			MaxRetries:   v.GetInt("parser.secondary.max_retries"),
 			TimeoutSecs:  v.GetInt("parser.secondary.timeout_secs"),
+		},
+		Tertiary: ParserProviderConfig{
+			Provider:     v.GetString("parser.tertiary.provider"),
+			APIKey:       v.GetString("parser.tertiary.api_key"),
+			DefaultModel: v.GetString("parser.tertiary.default_model"),
+			MaxRetries:   v.GetInt("parser.tertiary.max_retries"),
+			TimeoutSecs:  v.GetInt("parser.tertiary.timeout_secs"),
 		},
 	}
 
