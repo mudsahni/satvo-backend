@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -233,8 +234,15 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{}
+
+	// Railway/Heroku/Render set a PORT env var. Use it if SATVOS_SERVER_PORT is not explicitly set.
+	serverPort := v.GetString("server.port")
+	if port := os.Getenv("PORT"); port != "" && os.Getenv("SATVOS_SERVER_PORT") == "" {
+		serverPort = ":" + port
+	}
+
 	cfg.Server = ServerConfig{
-		Port:         v.GetString("server.port"),
+		Port:         serverPort,
 		ReadTimeout:  v.GetDuration("server.read_timeout"),
 		WriteTimeout: v.GetDuration("server.write_timeout"),
 		Environment:  v.GetString("server.environment"),
