@@ -116,7 +116,16 @@ func buildContentBlocks(input port.ParseInput, prompt string) ([]map[string]inte
 	var blocks []map[string]interface{}
 
 	switch input.ContentType {
-	case "application/pdf", "image/jpeg", "image/png":
+	case "application/pdf":
+		dataURI := fmt.Sprintf("data:%s;base64,%s", input.ContentType, encoded)
+		blocks = append(blocks, map[string]interface{}{
+			"type": "file",
+			"file": map[string]interface{}{
+				"filename":  "document.pdf",
+				"file_data": dataURI,
+			},
+		})
+	case "image/jpeg", "image/png":
 		dataURI := fmt.Sprintf("data:%s;base64,%s", input.ContentType, encoded)
 		blocks = append(blocks, map[string]interface{}{
 			"type": "image_url",
