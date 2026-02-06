@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -158,6 +162,17 @@ func run() error {
 	} else {
 		documentSvc = service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine)
 	}
+
+	// Start parse queue worker
+	queueCfg := service.ParseQueueConfig{
+		PollInterval: time.Duration(cfg.Queue.PollIntervalSecs) * time.Second,
+		MaxRetries:   cfg.Queue.MaxRetries,
+		Concurrency:  cfg.Queue.Concurrency,
+	}
+	queueWorker := service.NewParseQueueWorker(docRepo, documentSvc, queueCfg)
+	queueCtx, queueStop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer queueStop()
+	go queueWorker.Start(queueCtx)
 
 	// Initialize handlers
 	authH := handler.NewAuthHandler(authSvc)

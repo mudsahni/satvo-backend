@@ -74,6 +74,14 @@ func (m *MockDocumentRepo) UpdateValidationResults(ctx context.Context, doc *dom
 	return args.Error(0)
 }
 
+func (m *MockDocumentRepo) ClaimQueued(ctx context.Context, limit int) ([]domain.Document, error) {
+	args := m.Called(ctx, limit)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]domain.Document), args.Error(1)
+}
+
 func (m *MockDocumentRepo) Delete(ctx context.Context, tenantID, docID uuid.UUID) error {
 	args := m.Called(ctx, tenantID, docID)
 	return args.Error(0)

@@ -18,6 +18,14 @@ type Config struct {
 	Log    LogConfig
 	Parser ParserConfig
 	CORS   CORSConfig
+	Queue  QueueConfig
+}
+
+// QueueConfig holds parse queue worker settings.
+type QueueConfig struct {
+	PollIntervalSecs int `mapstructure:"poll_interval_secs"`
+	MaxRetries       int `mapstructure:"max_retries"`
+	Concurrency      int `mapstructure:"concurrency"`
 }
 
 // CORSConfig holds CORS settings.
@@ -175,6 +183,11 @@ func Load() (*Config, error) {
 	// CORS defaults (localhost origins for development)
 	v.SetDefault("cors.allowed_origins", "http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001")
 
+	// Queue defaults
+	v.SetDefault("queue.poll_interval_secs", 10)
+	v.SetDefault("queue.max_retries", 5)
+	v.SetDefault("queue.concurrency", 5)
+
 	// Parser defaults (legacy flat)
 	v.SetDefault("parser.provider", "claude")
 	v.SetDefault("parser.api_key", "")
@@ -227,6 +240,9 @@ func Load() (*Config, error) {
 		"log.level":            "SATVOS_LOG_LEVEL",
 		"log.format":           "SATVOS_LOG_FORMAT",
 		"cors.allowed_origins":           "SATVOS_CORS_ALLOWED_ORIGINS",
+		"queue.poll_interval_secs":       "SATVOS_QUEUE_POLL_INTERVAL_SECS",
+		"queue.max_retries":              "SATVOS_QUEUE_MAX_RETRIES",
+		"queue.concurrency":              "SATVOS_QUEUE_CONCURRENCY",
 		"parser.provider":                "SATVOS_PARSER_PROVIDER",
 		"parser.api_key":                 "SATVOS_PARSER_API_KEY",
 		"parser.default_model":           "SATVOS_PARSER_DEFAULT_MODEL",
@@ -334,6 +350,12 @@ func Load() (*Config, error) {
 			MaxRetries:   v.GetInt("parser.tertiary.max_retries"),
 			TimeoutSecs:  v.GetInt("parser.tertiary.timeout_secs"),
 		},
+	}
+
+	cfg.Queue = QueueConfig{
+		PollIntervalSecs: v.GetInt("queue.poll_interval_secs"),
+		MaxRetries:       v.GetInt("queue.max_retries"),
+		Concurrency:      v.GetInt("queue.concurrency"),
 	}
 
 	return cfg, nil

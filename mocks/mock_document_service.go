@@ -119,6 +119,10 @@ func (m *MockDocumentService) DeleteTag(ctx context.Context, tenantID, docID, us
 	return args.Error(0)
 }
 
+func (m *MockDocumentService) ParseDocument(ctx context.Context, doc *domain.Document, maxAttempts int) {
+	m.Called(ctx, doc, maxAttempts)
+}
+
 func (m *MockDocumentService) SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error) {
 	args := m.Called(ctx, tenantID, key, value, offset, limit)
 	if args.Get(0) == nil {
