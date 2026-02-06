@@ -251,6 +251,7 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 		log.Printf("documentService.parseInBackground: failed to get document %s: %v", docID, err)
 		return
 	}
+	doc.ParseAttempts++
 	doc.ParsingStatus = domain.ParsingStatusProcessing
 	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
 		log.Printf("documentService.parseInBackground: failed to set processing status for %s: %v", docID, err)
@@ -283,6 +284,7 @@ func (s *documentService) parseInBackground(docID, tenantID uuid.UUID, bucket, k
 	doc.StructuredData = output.StructuredData
 	doc.ConfidenceScores = output.ConfidenceScores
 	doc.ParserModel = output.ModelUsed
+	doc.SecondaryParserModel = output.SecondaryModel
 	doc.ParserPrompt = output.PromptUsed
 	doc.ParsingStatus = domain.ParsingStatusCompleted
 	doc.ParsingError = ""
