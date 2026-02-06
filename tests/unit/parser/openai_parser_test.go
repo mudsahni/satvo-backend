@@ -55,7 +55,7 @@ func TestOpenAIParser_Parse_PDF_Success(t *testing.T) {
 		err := json.NewDecoder(r.Body).Decode(&reqBody)
 		assert.NoError(t, err)
 		assert.Equal(t, "gpt-4o", reqBody["model"])
-		assert.Equal(t, float64(16384), reqBody["max_tokens"])
+		assert.Equal(t, float64(16384), reqBody["max_completion_tokens"])
 
 		messages := reqBody["messages"].([]interface{})
 		assert.Len(t, messages, 1)
@@ -320,7 +320,7 @@ func TestOpenAIParser_Parse_VerifyRequestFormat(t *testing.T) {
 
 	// Verify top-level structure
 	assert.Equal(t, "gpt-4o", capturedReq["model"])
-	assert.Equal(t, float64(16384), capturedReq["max_tokens"])
+	assert.Equal(t, float64(16384), capturedReq["max_completion_tokens"])
 	assert.Contains(t, capturedReq, "messages")
 	assert.Contains(t, capturedReq, "response_format")
 
@@ -348,4 +348,37 @@ func TestOpenAIParser_Parse_VerifyRequestFormat(t *testing.T) {
 	textBlock := content[1].(map[string]interface{})
 	assert.Equal(t, "text", textBlock["type"])
 	assert.NotEmpty(t, textBlock["text"])
+}
+
+func TestOpenAIParser_Parse_Truncated(t *testing.T) {
+	responseBody := map[string]interface{}{
+		"choices": []map[string]interface{}{
+			{
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": `{"data":{"invoice":{"invoice_number":"INV-001"`,
+				},
+				"finish_reason": "length",
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(responseBody)
+	}))
+	defer server.Close()
+
+	p := newOpenAITestParser(server.URL)
+
+	result, err := p.Parse(context.Background(), port.ParseInput{
+		FileBytes:    []byte("%PDF-1.4 test"),
+		ContentType:  "application/pdf",
+		DocumentType: "invoice",
+	})
+
+	assert.Nil(t, result)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "output truncated")
+	assert.Contains(t, err.Error(), "finish_reason: length")
 }

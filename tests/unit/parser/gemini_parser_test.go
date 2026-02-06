@@ -79,7 +79,7 @@ func TestGeminiParser_Parse_PDF_Success(t *testing.T) {
 		// Verify generationConfig
 		genConfig := reqBody["generationConfig"].(map[string]interface{})
 		assert.Equal(t, "application/json", genConfig["responseMimeType"])
-		assert.Equal(t, float64(16384), genConfig["maxOutputTokens"])
+		assert.Equal(t, float64(65536), genConfig["maxOutputTokens"])
 
 		w.WriteHeader(http.StatusOK)
 		err = json.NewEncoder(w).Encode(responseBody)
@@ -410,7 +410,45 @@ func TestGeminiParser_Parse_VerifyRequestFormat(t *testing.T) {
 	// Verify generationConfig
 	genConfig := capturedReq["generationConfig"].(map[string]interface{})
 	assert.Equal(t, "application/json", genConfig["responseMimeType"])
-	assert.Equal(t, float64(16384), genConfig["maxOutputTokens"])
+	assert.Equal(t, float64(65536), genConfig["maxOutputTokens"])
+}
+
+func TestGeminiParser_Parse_Truncated(t *testing.T) {
+	responseBody := map[string]interface{}{
+		"candidates": []map[string]interface{}{
+			{
+				"content": map[string]interface{}{
+					"role": "model",
+					"parts": []map[string]interface{}{
+						{"text": `{"data":{"invoice":{"invoice_number":"INV-001"`},
+					},
+				},
+				"finishReason": "MAX_TOKENS",
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		err := json.NewEncoder(w).Encode(responseBody)
+		if err != nil {
+			return
+		}
+	}))
+	defer server.Close()
+
+	p := newGeminiTestParser(server.URL)
+
+	result, err := p.Parse(context.Background(), port.ParseInput{
+		FileBytes:    []byte("%PDF-1.4 test"),
+		ContentType:  "application/pdf",
+		DocumentType: "invoice",
+	})
+
+	assert.Nil(t, result)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "output truncated")
+	assert.Contains(t, err.Error(), "finishReason: MAX_TOKENS")
 }
 
 func TestGeminiParser_Parse_ConnectionRefused(t *testing.T) {
