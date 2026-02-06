@@ -86,6 +86,8 @@ type Document struct {
 	ReconciliationStatus  ReconciliationStatus `db:"reconciliation_status" json:"reconciliation_status"`
 	ParseMode             ParseMode            `db:"parse_mode" json:"parse_mode"`
 	FieldProvenance       json.RawMessage      `db:"field_provenance" json:"field_provenance" swaggertype:"object"`
+	SecondaryParserModel  string               `db:"secondary_parser_model" json:"secondary_parser_model"`
+	ParseAttempts         int                  `db:"parse_attempts" json:"parse_attempts"`
 	CreatedBy             uuid.UUID            `db:"created_by" json:"created_by"`
 	CreatedAt             time.Time            `db:"created_at" json:"created_at"`
 	UpdatedAt             time.Time            `db:"updated_at" json:"updated_at"`

@@ -97,6 +97,7 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 	assert.Equal(t, domain.ParsingStatusPending, result.ParsingStatus)
 	assert.Equal(t, domain.ReviewStatusPending, result.ReviewStatus)
 	assert.Equal(t, userID, result.CreatedBy)
+	assert.Equal(t, 0, result.ParseAttempts)
 
 	// Wait briefly for goroutine to start (not for completion)
 	time.Sleep(50 * time.Millisecond)
@@ -584,6 +585,7 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 		DocumentType:     "invoice",
 		ParsingStatus:    domain.ParsingStatusFailed,
 		ParsingError:     "previous error",
+		ParseAttempts:    2,
 		StructuredData:   json.RawMessage("{}"),
 		ConfidenceScores: json.RawMessage("{}"),
 	}
@@ -619,6 +621,7 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.Equal(t, domain.ParsingStatusPending, result.ParsingStatus)
 	assert.Empty(t, result.ParsingError)
+	assert.Equal(t, 2, result.ParseAttempts) // Not reset during retry
 
 	// Wait briefly for goroutine to start
 	time.Sleep(50 * time.Millisecond)

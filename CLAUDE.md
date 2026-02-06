@@ -28,7 +28,7 @@ internal/
   config/config.go           Loads env vars (SATVOS_ prefix) via viper
   domain/
     models.go                Tenant, User, FileMeta, Collection (with DocumentCount, computed via SQL subquery),
-                             CollectionPermissionEntry, CollectionFile, Document (with Name field),
+                             CollectionPermissionEntry, CollectionFile, Document (with Name, SecondaryParserModel, ParseAttempts fields),
                              DocumentTag (with Source field), DocumentValidationRule structs
     enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer), FileStatus,
                              CollectionPermission (owner/editor/viewer),
@@ -133,6 +133,7 @@ db/migrations/               10 SQL migrations: tenants -> users -> file_metadat
                              -> documents -> validation columns -> consolidated validation results
                              -> reconciliation tiering -> multi-parser fields
                              -> document name + tag source
+                             -> secondary_parser_model + parse_attempts
 ```
 
 ## Data Flow
@@ -361,7 +362,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
-- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
+- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). `parse_attempts` is incremented on each parse/retry attempt (in `parseInBackground`). `secondary_parser_model` records the secondary model name in dual-parse mode (from `ParseOutput.SecondaryModel`). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
 - **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
 - **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
