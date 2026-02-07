@@ -1609,6 +1609,86 @@ const docTemplate = `{
                     }
                 }
             },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Manually edit the parsed structured data of a document, re-run validation and auto-tag extraction",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "summary": "Edit structured data",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Document ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Structured data (GSTInvoice)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.EditStructuredDataRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Document updated with new structured data",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/domain.Document"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request, document not parsed, or invalid structured data",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Insufficient permission",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Document not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {
@@ -2595,6 +2675,49 @@ const docTemplate = `{
                 }
             }
         },
+        "/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get aggregate counts for documents, collections, and their statuses. Admin/manager/member see tenant-wide stats, viewers see only stats from collections they have permission on.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stats"
+                ],
+                "summary": "Get tenant statistics",
+                "responses": {
+                    "200": {
+                        "description": "Aggregate statistics",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/domain.Stats"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "security": [
@@ -2971,6 +3094,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "document_count": {
+                    "type": "integer"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -3054,6 +3180,9 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "parse_attempts": {
+                    "type": "integer"
+                },
                 "parse_mode": {
                     "$ref": "#/definitions/domain.ParseMode"
                 },
@@ -3075,6 +3204,9 @@ const docTemplate = `{
                 "reconciliation_status": {
                     "$ref": "#/definitions/domain.ReconciliationStatus"
                 },
+                "retry_after": {
+                    "type": "string"
+                },
                 "review_status": {
                     "$ref": "#/definitions/domain.ReviewStatus"
                 },
@@ -3085,6 +3217,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reviewer_notes": {
+                    "type": "string"
+                },
+                "secondary_parser_model": {
                     "type": "string"
                 },
                 "structured_data": {
@@ -3219,13 +3354,15 @@ const docTemplate = `{
                 "pending",
                 "processing",
                 "completed",
-                "failed"
+                "failed",
+                "queued"
             ],
             "x-enum-varnames": [
                 "ParsingStatusPending",
                 "ParsingStatusProcessing",
                 "ParsingStatusCompleted",
-                "ParsingStatusFailed"
+                "ParsingStatusFailed",
+                "ParsingStatusQueued"
             ]
         },
         "domain.ReconciliationStatus": {
@@ -3255,6 +3392,59 @@ const docTemplate = `{
                 "ReviewStatusApproved",
                 "ReviewStatusRejected"
             ]
+        },
+        "domain.Stats": {
+            "type": "object",
+            "properties": {
+                "parsing_completed": {
+                    "type": "integer"
+                },
+                "parsing_failed": {
+                    "type": "integer"
+                },
+                "parsing_pending": {
+                    "type": "integer"
+                },
+                "parsing_processing": {
+                    "type": "integer"
+                },
+                "parsing_queued": {
+                    "type": "integer"
+                },
+                "reconciliation_invalid": {
+                    "type": "integer"
+                },
+                "reconciliation_valid": {
+                    "type": "integer"
+                },
+                "reconciliation_warning": {
+                    "type": "integer"
+                },
+                "review_approved": {
+                    "type": "integer"
+                },
+                "review_pending": {
+                    "type": "integer"
+                },
+                "review_rejected": {
+                    "type": "integer"
+                },
+                "total_collections": {
+                    "type": "integer"
+                },
+                "total_documents": {
+                    "type": "integer"
+                },
+                "validation_invalid": {
+                    "type": "integer"
+                },
+                "validation_valid": {
+                    "type": "integer"
+                },
+                "validation_warning": {
+                    "type": "integer"
+                }
+            }
         },
         "domain.Tenant": {
             "type": "object",

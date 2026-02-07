@@ -57,6 +57,7 @@ internal/
                              GET /documents/search/tags, DELETE /documents/:id
     user_handler.go          CRUD /users, /users/:id
     tenant_handler.go        CRUD /admin/tenants, /admin/tenants/:id
+    stats_handler.go         GET /stats (tenant-scoped aggregate counts, role-filtered)
     health_handler.go        GET /healthz, GET /readyz
     response.go              Standard envelope (success/data/error/meta) + error mapping
   middleware/
@@ -77,6 +78,7 @@ internal/
                              handleParseError (rate-limit detection → queued status)
     parse_queue_worker.go    Background worker that polls for queued documents and dispatches parsing
                              with bounded concurrency (semaphore) and clean shutdown (WaitGroup)
+    stats_service.go         Aggregate stats (role-branching: tenant-wide vs user-scoped)
     user_service.go          User CRUD with tenant scoping
     tenant_service.go        Tenant CRUD
   port/
@@ -85,6 +87,7 @@ internal/
     document_repository.go   DocumentRepository (incl. UpdateValidationResults, ClaimQueued),
                              DocumentTagRepository (incl. DeleteByDocumentAndSource),
                              DocumentValidationRuleRepository interfaces
+    stats_repository.go      StatsRepository interface (GetTenantStats, GetUserStats)
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
     storage.go               ObjectStorage interface (Upload, Download, Delete, GetPresignedURL)
   repository/postgres/
@@ -98,6 +101,7 @@ internal/
     document_repo.go         Document CRUD queries (incl. UpdateValidationResults, ClaimQueued)
     document_tag_repo.go     Document tag queries (batch create, search by tag)
     document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
+    stats_repo.go            Aggregate stats queries (conditional COUNTs on documents + collections)
   storage/s3/
     s3_client.go             S3 implementation (supports LocalStack endpoint)
   parser/

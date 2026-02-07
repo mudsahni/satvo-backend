@@ -21,6 +21,7 @@ func Setup(
 	healthH *handler.HealthHandler,
 	collectionH *handler.CollectionHandler,
 	documentH *handler.DocumentHandler,
+	statsH *handler.StatsHandler,
 	corsOrigins []string,
 ) *gin.Engine {
 	r := gin.New()
@@ -87,6 +88,9 @@ func Setup(
 	documents.POST("/:id/tags", documentH.AddTags)
 	documents.DELETE("/:id/tags/:tagId", documentH.DeleteTag)
 	documents.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), documentH.Delete)
+
+	// Stats
+	protected.GET("/stats", statsH.GetStats)
 
 	// User management (tenant-scoped)
 	users := protected.Group("/users")

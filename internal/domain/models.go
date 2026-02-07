@@ -124,6 +124,30 @@ type DocumentValidationRule struct {
 	UpdatedAt              time.Time          `db:"updated_at" json:"updated_at"`
 }
 
+// Stats holds aggregate counts for documents, collections, and their statuses.
+type Stats struct {
+	TotalDocuments   int `db:"total_documents" json:"total_documents"`
+	TotalCollections int `db:"total_collections" json:"total_collections"`
+
+	ParsingCompleted  int `db:"parsing_completed" json:"parsing_completed"`
+	ParsingFailed     int `db:"parsing_failed" json:"parsing_failed"`
+	ParsingProcessing int `db:"parsing_processing" json:"parsing_processing"`
+	ParsingPending    int `db:"parsing_pending" json:"parsing_pending"`
+	ParsingQueued     int `db:"parsing_queued" json:"parsing_queued"`
+
+	ValidationValid   int `db:"validation_valid" json:"validation_valid"`
+	ValidationWarning int `db:"validation_warning" json:"validation_warning"`
+	ValidationInvalid int `db:"validation_invalid" json:"validation_invalid"`
+
+	ReconciliationValid   int `db:"reconciliation_valid" json:"reconciliation_valid"`
+	ReconciliationWarning int `db:"reconciliation_warning" json:"reconciliation_warning"`
+	ReconciliationInvalid int `db:"reconciliation_invalid" json:"reconciliation_invalid"`
+
+	ReviewPending  int `db:"review_pending" json:"review_pending"`
+	ReviewApproved int `db:"review_approved" json:"review_approved"`
+	ReviewRejected int `db:"review_rejected" json:"review_rejected"`
+}
+
 // FileMeta stores metadata about an uploaded file.
 type FileMeta struct {
 	ID           uuid.UUID  `db:"id" json:"id"`

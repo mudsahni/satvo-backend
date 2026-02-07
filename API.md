@@ -14,6 +14,7 @@ Complete API documentation for the SATVOS multi-tenant document processing servi
   - [Files](#files)
   - [Collections](#collections)
   - [Documents](#documents)
+  - [Stats](#stats)
   - [Users](#users)
   - [Tenants](#tenants)
 - [TypeScript Types](#typescript-types)
@@ -1345,6 +1346,55 @@ Authorization: Bearer <token>
 
 ---
 
+### Stats
+
+#### Get Stats
+
+```http
+GET /api/v1/stats
+Authorization: Bearer <token>
+```
+
+Returns aggregate counts for documents, collections, and their statuses. Role-filtered: admin/manager/member see tenant-wide stats, viewers see only stats from collections they have permission on.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "total_documents": 156,
+    "total_collections": 12,
+    "parsing_completed": 140,
+    "parsing_failed": 6,
+    "parsing_processing": 2,
+    "parsing_pending": 3,
+    "parsing_queued": 5,
+    "validation_valid": 56,
+    "validation_warning": 14,
+    "validation_invalid": 86,
+    "reconciliation_valid": 92,
+    "reconciliation_warning": 8,
+    "reconciliation_invalid": 56,
+    "review_pending": 84,
+    "review_approved": 60,
+    "review_rejected": 12
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_documents` | `int` | Total number of documents |
+| `total_collections` | `int` | Total number of collections |
+| `parsing_*` | `int` | Count of documents by parsing status |
+| `validation_*` | `int` | Count of documents by validation status |
+| `reconciliation_*` | `int` | Count of documents by reconciliation status |
+| `review_*` | `int` | Count of documents by review status |
+
+**Required Role**: Any authenticated user
+
+---
+
 ### Users
 
 #### Create User
@@ -1704,6 +1754,27 @@ interface FileMeta {
   created_at: Timestamp;
   updated_at: Timestamp;
   download_url?: string; // Only in GET /files/:id
+}
+
+// ============== Stats ==============
+
+interface Stats {
+  total_documents: number;
+  total_collections: number;
+  parsing_completed: number;
+  parsing_failed: number;
+  parsing_processing: number;
+  parsing_pending: number;
+  parsing_queued: number;
+  validation_valid: number;
+  validation_warning: number;
+  validation_invalid: number;
+  reconciliation_valid: number;
+  reconciliation_warning: number;
+  reconciliation_invalid: number;
+  review_pending: number;
+  review_approved: number;
+  review_rejected: number;
 }
 
 // ============== Collection ==============

@@ -8,6 +8,8 @@ definitions:
         type: string
       description:
         type: string
+      document_count:
+        type: integer
       id:
         type: string
       name:
@@ -64,6 +66,8 @@ definitions:
         type: string
       name:
         type: string
+      parse_attempts:
+        type: integer
       parse_mode:
         $ref: '#/definitions/domain.ParseMode'
       parsed_at:
@@ -78,6 +82,8 @@ definitions:
         $ref: '#/definitions/domain.ParsingStatus'
       reconciliation_status:
         $ref: '#/definitions/domain.ReconciliationStatus'
+      retry_after:
+        type: string
       review_status:
         $ref: '#/definitions/domain.ReviewStatus'
       reviewed_at:
@@ -85,6 +91,8 @@ definitions:
       reviewed_by:
         type: string
       reviewer_notes:
+        type: string
+      secondary_parser_model:
         type: string
       structured_data:
         type: object
@@ -179,12 +187,14 @@ definitions:
     - processing
     - completed
     - failed
+    - queued
     type: string
     x-enum-varnames:
     - ParsingStatusPending
     - ParsingStatusProcessing
     - ParsingStatusCompleted
     - ParsingStatusFailed
+    - ParsingStatusQueued
   domain.ReconciliationStatus:
     enum:
     - pending
@@ -207,6 +217,41 @@ definitions:
     - ReviewStatusPending
     - ReviewStatusApproved
     - ReviewStatusRejected
+  domain.Stats:
+    properties:
+      parsing_completed:
+        type: integer
+      parsing_failed:
+        type: integer
+      parsing_pending:
+        type: integer
+      parsing_processing:
+        type: integer
+      parsing_queued:
+        type: integer
+      reconciliation_invalid:
+        type: integer
+      reconciliation_valid:
+        type: integer
+      reconciliation_warning:
+        type: integer
+      review_approved:
+        type: integer
+      review_pending:
+        type: integer
+      review_rejected:
+        type: integer
+      total_collections:
+        type: integer
+      total_documents:
+        type: integer
+      validation_invalid:
+        type: integer
+      validation_valid:
+        type: integer
+      validation_warning:
+        type: integer
+    type: object
   domain.Tenant:
     properties:
       created_at:
@@ -1743,6 +1788,57 @@ paths:
       summary: Get document by ID
       tags:
       - documents
+    put:
+      consumes:
+      - application/json
+      description: Manually edit the parsed structured data of a document, re-run
+        validation and auto-tag extraction
+      parameters:
+      - description: Document ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Structured data (GSTInvoice)
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.EditStructuredDataRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Document updated with new structured data
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/domain.Document'
+              type: object
+        "400":
+          description: Invalid request, document not parsed, or invalid structured
+            data
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "403":
+          description: Insufficient permission
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "404":
+          description: Document not found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Edit structured data
+      tags:
+      - documents
   /documents/{id}/retry:
     post:
       description: Re-trigger AI parsing for a failed document
@@ -2357,6 +2453,32 @@ paths:
       summary: Readiness probe
       tags:
       - health
+  /stats:
+    get:
+      description: Get aggregate counts for documents, collections, and their statuses.
+        Admin/manager/member see tenant-wide stats, viewers see only stats from collections
+        they have permission on.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Aggregate statistics
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/domain.Stats'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get tenant statistics
+      tags:
+      - stats
   /users:
     get:
       description: List all users in the tenant (admin only)
