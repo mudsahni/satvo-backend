@@ -595,7 +595,7 @@ func (h *CollectionHandler) ExportCSV(c *gin.Context) {
 	// Set response headers before streaming
 	filename := csvexport.BuildFilename(collection.Name)
 	c.Header("Content-Type", "text/csv; charset=utf-8")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%q"`, filename))
 
 	// Write UTF-8 BOM for Excel compatibility
 	if _, err := c.Writer.Write(csvexport.BOM); err != nil {
