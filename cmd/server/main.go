@@ -89,6 +89,7 @@ func run() error {
 	docRepo := postgres.NewDocumentRepo(db)
 	documentTagRepo := postgres.NewDocumentTagRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
+	statsRepo := postgres.NewStatsRepo(db)
 
 	// Register parser providers
 	parser.RegisterProvider("claude", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
@@ -156,6 +157,8 @@ func run() error {
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
+	statsSvc := service.NewStatsService(statsRepo)
+
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
 		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine)
@@ -182,9 +185,10 @@ func run() error {
 	healthH := handler.NewHealthHandler(db)
 	collectionH := handler.NewCollectionHandler(collectionSvc)
 	documentH := handler.NewDocumentHandler(documentSvc)
+	statsH := handler.NewStatsHandler(statsSvc)
 
 	// Setup router
-	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, cfg.CORS.AllowedOrigins)
+	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, cfg.CORS.AllowedOrigins)
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {

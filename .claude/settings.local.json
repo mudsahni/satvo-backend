@@ -14,7 +14,9 @@
       "Bash(swag init:*)",
       "Bash(for f in /home/muditsahni/Documents/Projects/satvos/bruno/Documents/*.bru:*)",
       "Bash(done)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(make build:*)",
+      "Bash(make lint:*)"
     ]
   }
 }

@@ -23,6 +23,7 @@ A multi-tenant document processing service built in Go. Supports tenant-isolated
   - [Documents (AI-Powered Parsing + Validation)](#documents-ai-powered-parsing--validation)
     - [Built-in Validation Rules](#built-in-validation-rules)
     - [Parsed Invoice Schema](#parsed-invoice-schema)
+  - [Stats](#stats)
 - [Authentication & Authorization](#authentication--authorization)
 - [Error Codes](#error-codes)
 - [Docker](#docker)
@@ -899,6 +900,42 @@ When parsing completes, `structured_data` contains:
     "payment_terms": "Net 30"
   },
   "notes": "Thank you for your business"
+}
+```
+
+### Stats
+
+#### Get aggregate statistics
+
+```bash
+curl http://localhost:8080/api/v1/stats \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Returns tenant-scoped aggregate counts for documents, collections, and their statuses. Admin/manager/member see tenant-wide stats; viewers see only stats from collections they have permission on.
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "total_documents": 156,
+    "total_collections": 12,
+    "parsing_completed": 140,
+    "parsing_failed": 6,
+    "parsing_processing": 2,
+    "parsing_pending": 3,
+    "parsing_queued": 5,
+    "validation_valid": 56,
+    "validation_warning": 14,
+    "validation_invalid": 86,
+    "reconciliation_valid": 92,
+    "reconciliation_warning": 8,
+    "reconciliation_invalid": 56,
+    "review_pending": 84,
+    "review_approved": 60,
+    "review_rejected": 12
+  }
 }
 ```
 
