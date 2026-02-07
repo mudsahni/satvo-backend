@@ -183,7 +183,7 @@ func run() error {
 	tenantH := handler.NewTenantHandler(tenantSvc)
 	userH := handler.NewUserHandler(userSvc)
 	healthH := handler.NewHealthHandler(db)
-	collectionH := handler.NewCollectionHandler(collectionSvc)
+	collectionH := handler.NewCollectionHandler(collectionSvc, documentSvc)
 	documentH := handler.NewDocumentHandler(documentSvc)
 	statsH := handler.NewStatsHandler(statsSvc)
 
