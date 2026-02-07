@@ -57,6 +57,35 @@ func (r *collectionPermissionRepo) GetByCollectionAndUser(ctx context.Context, c
 	return &perm, nil
 }
 
+func (r *collectionPermissionRepo) GetByUserForCollections(ctx context.Context, userID uuid.UUID, collectionIDs []uuid.UUID) (map[uuid.UUID]domain.CollectionPermission, error) {
+	if len(collectionIDs) == 0 {
+		return make(map[uuid.UUID]domain.CollectionPermission), nil
+	}
+
+	query, args, err := sqlx.In(
+		"SELECT collection_id, permission FROM collection_permissions WHERE user_id = ? AND collection_id IN (?)",
+		userID, collectionIDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("collectionPermissionRepo.GetByUserForCollections: building query: %w", err)
+	}
+	query = r.db.Rebind(query)
+
+	var rows []struct {
+		CollectionID uuid.UUID                   `db:"collection_id"`
+		Permission   domain.CollectionPermission `db:"permission"`
+	}
+	if err := r.db.SelectContext(ctx, &rows, query, args...); err != nil {
+		return nil, fmt.Errorf("collectionPermissionRepo.GetByUserForCollections: %w", err)
+	}
+
+	result := make(map[uuid.UUID]domain.CollectionPermission, len(rows))
+	for i := range rows {
+		result[rows[i].CollectionID] = rows[i].Permission
+	}
+	return result, nil
+}
+
 func (r *collectionPermissionRepo) ListByCollection(ctx context.Context, collectionID uuid.UUID, offset, limit int) ([]domain.CollectionPermissionEntry, int, error) {
 	var total int
 	err := r.db.GetContext(ctx, &total,
