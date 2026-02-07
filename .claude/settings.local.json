@@ -16,7 +16,8 @@
       "Bash(done)",
       "Bash(grep:*)",
       "Bash(make build:*)",
-      "Bash(make lint:*)"
+      "Bash(make lint:*)",
+      "Bash(go run:*)"
     ]
   }
 }

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -8,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"satvos/internal/csvexport"
 	"satvos/internal/domain"
 	"satvos/internal/middleware"
 	"satvos/internal/service"
@@ -16,11 +19,12 @@ import (
 // CollectionHandler handles collection management endpoints.
 type CollectionHandler struct {
 	collectionService service.CollectionService
+	documentService   service.DocumentService
 }
 
 // NewCollectionHandler creates a new CollectionHandler.
-func NewCollectionHandler(collectionService service.CollectionService) *CollectionHandler {
-	return &CollectionHandler{collectionService: collectionService}
+func NewCollectionHandler(collectionService service.CollectionService, documentService service.DocumentService) *CollectionHandler {
+	return &CollectionHandler{collectionService: collectionService, documentService: documentService}
 }
 
 // Create handles POST /api/v1/collections
@@ -547,6 +551,91 @@ func (h *CollectionHandler) RemovePermission(c *gin.Context) {
 	}
 
 	RespondOK(c, gin.H{"message": "permission removed"})
+}
+
+// ExportCSV handles GET /api/v1/collections/:id/export/csv
+// @Summary Export collection documents as CSV
+// @Description Download all documents in a collection as a CSV file for GST reconciliation
+// @Tags collections
+// @Produce text/csv
+// @Param id path string true "Collection ID (UUID)"
+// @Success 200 {file} file "CSV file"
+// @Failure 400 {object} ErrorResponseBody "Invalid ID"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Collection not found"
+// @Security BearerAuth
+// @Router /collections/{id}/export/csv [get]
+func (h *CollectionHandler) ExportCSV(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
+
+	collectionID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid collection ID")
+		return
+	}
+
+	// Permission check + get collection name
+	collection, err := h.collectionService.GetByID(c.Request.Context(), tenantID, collectionID, userID, role)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	// Set response headers before streaming
+	filename := csvexport.BuildFilename(collection.Name)
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+	// Write UTF-8 BOM for Excel compatibility
+	if _, err := c.Writer.Write(csvexport.BOM); err != nil {
+		log.Printf("ERROR: csv export BOM write failed: %v", err)
+		return
+	}
+
+	w := csvexport.NewWriter(c.Writer)
+	if err := w.WriteHeader(); err != nil {
+		log.Printf("ERROR: csv export header write failed: %v", err)
+		return
+	}
+
+	// Batch-load documents
+	const batchSize = 200
+	offset := 0
+	for {
+		docs, total, err := h.documentService.ListByCollection(
+			c.Request.Context(), tenantID, collectionID, userID, role, offset, batchSize,
+		)
+		if err != nil {
+			log.Printf("ERROR: csv export document fetch failed at offset %d: %v", offset, err)
+			return
+		}
+
+		if err := w.WriteDocuments(docs); err != nil {
+			log.Printf("ERROR: csv export write failed at offset %d: %v", offset, err)
+			return
+		}
+
+		offset += batchSize
+		if offset >= total {
+			break
+		}
+	}
+
+	w.Flush()
+	if err := w.Error(); err != nil {
+		log.Printf("ERROR: csv export flush failed: %v", err)
+	}
 }
 
 // parsePagination extracts offset and limit from query params with defaults.

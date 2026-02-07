@@ -1346,6 +1346,43 @@ paths:
       summary: Update a collection
       tags:
       - collections
+  /collections/{id}/export/csv:
+    get:
+      description: Download all documents in a collection as a CSV file for GST reconciliation
+      parameters:
+      - description: Collection ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: CSV file
+          schema:
+            type: file
+        "400":
+          description: Invalid ID
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "403":
+          description: Insufficient permission
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "404":
+          description: Collection not found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Export collection documents as CSV
+      tags:
+      - collections
   /collections/{id}/files:
     post:
       consumes:

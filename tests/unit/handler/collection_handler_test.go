@@ -20,7 +20,7 @@ import (
 
 func newCollectionHandler() (*handler.CollectionHandler, *mocks.MockCollectionService) {
 	mockSvc := new(mocks.MockCollectionService)
-	h := handler.NewCollectionHandler(mockSvc)
+	h := handler.NewCollectionHandler(mockSvc, nil)
 	return h, mockSvc
 }
 
