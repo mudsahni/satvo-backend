@@ -22,6 +22,7 @@ type CollectionRepository interface {
 type CollectionPermissionRepository interface {
 	Upsert(ctx context.Context, perm *domain.CollectionPermissionEntry) error
 	GetByCollectionAndUser(ctx context.Context, collectionID, userID uuid.UUID) (*domain.CollectionPermissionEntry, error)
+	GetByUserForCollections(ctx context.Context, userID uuid.UUID, collectionIDs []uuid.UUID) (map[uuid.UUID]domain.CollectionPermission, error)
 	ListByCollection(ctx context.Context, collectionID uuid.UUID, offset, limit int) ([]domain.CollectionPermissionEntry, int, error)
 	Delete(ctx context.Context, collectionID, userID uuid.UUID) error
 }

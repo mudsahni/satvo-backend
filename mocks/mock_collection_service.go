@@ -95,3 +95,16 @@ func (m *MockCollectionService) RemovePermission(ctx context.Context, tenantID, 
 	args := m.Called(ctx, tenantID, collectionID, targetUserID, userID, role)
 	return args.Error(0)
 }
+
+func (m *MockCollectionService) EffectivePermission(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole) domain.CollectionPermission {
+	args := m.Called(ctx, collectionID, userID, role)
+	return args.Get(0).(domain.CollectionPermission)
+}
+
+func (m *MockCollectionService) EffectivePermissions(ctx context.Context, collectionIDs []uuid.UUID, userID uuid.UUID, role domain.UserRole) (map[uuid.UUID]domain.CollectionPermission, error) {
+	args := m.Called(ctx, collectionIDs, userID, role)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID]domain.CollectionPermission), args.Error(1)
+}

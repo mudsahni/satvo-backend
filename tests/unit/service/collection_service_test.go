@@ -701,3 +701,146 @@ func TestCollectionService_RemovePermission_NotOwner(t *testing.T) {
 
 	assert.ErrorIs(t, err, domain.ErrCollectionPermDenied)
 }
+
+// --- EffectivePermission ---
+
+func TestCollectionService_EffectivePermission_AdminReturnsOwner(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	// Admin has no explicit permission
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+
+	perm := svc.EffectivePermission(context.Background(), collectionID, userID, domain.RoleAdmin)
+
+	assert.Equal(t, domain.CollectionPermOwner, perm)
+}
+
+func TestCollectionService_EffectivePermission_ViewerReturnsViewer(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	// Viewer with explicit owner perm should still be capped at viewer
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(ownerPerm(collectionID, userID), nil)
+
+	perm := svc.EffectivePermission(context.Background(), collectionID, userID, domain.RoleViewer)
+
+	assert.Equal(t, domain.CollectionPermViewer, perm)
+}
+
+func TestCollectionService_EffectivePermission_MemberWithExplicitEditor(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(editorPerm(collectionID, userID), nil)
+
+	perm := svc.EffectivePermission(context.Background(), collectionID, userID, domain.RoleMember)
+
+	assert.Equal(t, domain.CollectionPermEditor, perm)
+}
+
+func TestCollectionService_EffectivePermission_MemberNoExplicit(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	collectionID := uuid.New()
+	userID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
+		Return(nil, domain.ErrCollectionPermDenied)
+
+	perm := svc.EffectivePermission(context.Background(), collectionID, userID, domain.RoleMember)
+
+	assert.Equal(t, domain.CollectionPermViewer, perm)
+}
+
+// --- EffectivePermissions (batch) ---
+
+func TestCollectionService_EffectivePermissions_AdminShortCircuits(t *testing.T) {
+	svc, _, _, _ := setupCollectionService()
+
+	id1 := uuid.New()
+	id2 := uuid.New()
+	userID := uuid.New()
+
+	// Admin should not make any DB calls
+	result, err := svc.EffectivePermissions(context.Background(), []uuid.UUID{id1, id2}, userID, domain.RoleAdmin)
+
+	assert.NoError(t, err)
+	assert.Equal(t, domain.CollectionPermOwner, result[id1])
+	assert.Equal(t, domain.CollectionPermOwner, result[id2])
+}
+
+func TestCollectionService_EffectivePermissions_ViewerShortCircuits(t *testing.T) {
+	svc, _, _, _ := setupCollectionService()
+
+	id1 := uuid.New()
+	userID := uuid.New()
+
+	result, err := svc.EffectivePermissions(context.Background(), []uuid.UUID{id1}, userID, domain.RoleViewer)
+
+	assert.NoError(t, err)
+	assert.Equal(t, domain.CollectionPermViewer, result[id1])
+}
+
+func TestCollectionService_EffectivePermissions_MemberBatchQuery(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	id1 := uuid.New()
+	id2 := uuid.New()
+	id3 := uuid.New()
+	userID := uuid.New()
+	collIDs := []uuid.UUID{id1, id2, id3}
+
+	// id1 has explicit editor, id2 has explicit owner, id3 has no explicit perm
+	explicitPerms := map[uuid.UUID]domain.CollectionPermission{
+		id1: domain.CollectionPermEditor,
+		id2: domain.CollectionPermOwner,
+	}
+	permRepo.On("GetByUserForCollections", mock.Anything, userID, collIDs).
+		Return(explicitPerms, nil)
+
+	result, err := svc.EffectivePermissions(context.Background(), collIDs, userID, domain.RoleMember)
+
+	assert.NoError(t, err)
+	// Member implicit = viewer; explicit editor > viewer
+	assert.Equal(t, domain.CollectionPermEditor, result[id1])
+	// Member implicit = viewer; explicit owner > viewer
+	assert.Equal(t, domain.CollectionPermOwner, result[id2])
+	// Member implicit = viewer; no explicit -> viewer
+	assert.Equal(t, domain.CollectionPermViewer, result[id3])
+	permRepo.AssertExpectations(t)
+}
+
+func TestCollectionService_EffectivePermissions_ManagerBatchQuery(t *testing.T) {
+	svc, _, permRepo, _ := setupCollectionService()
+
+	id1 := uuid.New()
+	id2 := uuid.New()
+	userID := uuid.New()
+	collIDs := []uuid.UUID{id1, id2}
+
+	// id1 has explicit owner, id2 has no explicit perm
+	explicitPerms := map[uuid.UUID]domain.CollectionPermission{
+		id1: domain.CollectionPermOwner,
+	}
+	permRepo.On("GetByUserForCollections", mock.Anything, userID, collIDs).
+		Return(explicitPerms, nil)
+
+	result, err := svc.EffectivePermissions(context.Background(), collIDs, userID, domain.RoleManager)
+
+	assert.NoError(t, err)
+	// Manager implicit = editor; explicit owner > editor
+	assert.Equal(t, domain.CollectionPermOwner, result[id1])
+	// Manager implicit = editor; no explicit -> editor
+	assert.Equal(t, domain.CollectionPermEditor, result[id2])
+	permRepo.AssertExpectations(t)
+}

@@ -113,6 +113,12 @@ func TestCollectionHandler_List_Success(t *testing.T) {
 	mockSvc.On("List", mock.Anything, tenantID, userID, domain.UserRole("member"), 0, 20).
 		Return(collections, 1, nil)
 
+	permMap := map[uuid.UUID]domain.CollectionPermission{
+		collections[0].ID: domain.CollectionPermViewer,
+	}
+	mockSvc.On("EffectivePermissions", mock.Anything, []uuid.UUID{collections[0].ID}, userID, domain.UserRole("member")).
+		Return(permMap, nil)
+
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/collections?offset=0&limit=20", http.NoBody)
@@ -127,6 +133,13 @@ func TestCollectionHandler_List_Success(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, resp.Success)
 	assert.NotNil(t, resp.Meta)
+
+	// Verify current_user_permission is present in response data
+	dataSlice, ok := resp.Data.([]interface{})
+	assert.True(t, ok)
+	assert.Len(t, dataSlice, 1)
+	firstItem := dataSlice[0].(map[string]interface{})
+	assert.Equal(t, "viewer", firstItem["current_user_permission"])
 	mockSvc.AssertExpectations(t)
 }
 
@@ -147,6 +160,8 @@ func TestCollectionHandler_GetByID_Success(t *testing.T) {
 	mockSvc.On("GetByID", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member")).Return(expected, nil)
 	mockSvc.On("ListFiles", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member"), 0, 20).
 		Return(files, 1, nil)
+	mockSvc.On("EffectivePermission", mock.Anything, collectionID, userID, domain.UserRole("member")).
+		Return(domain.CollectionPermViewer)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -157,6 +172,14 @@ func TestCollectionHandler_GetByID_Success(t *testing.T) {
 	h.GetByID(c)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+
+	data := resp.Data.(map[string]interface{})
+	assert.Equal(t, "viewer", data["current_user_permission"])
 	mockSvc.AssertExpectations(t)
 }
 
