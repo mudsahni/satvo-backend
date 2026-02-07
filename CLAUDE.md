@@ -46,7 +46,8 @@ internal/
   handler/
     auth_handler.go          POST /auth/login, POST /auth/refresh
     file_handler.go          POST /files/upload (optional collection_id), GET /files, GET /files/:id, DELETE /files/:id
-    collection_handler.go    CRUD /collections, batch file upload, permission management
+    collection_handler.go    CRUD /collections, batch file upload, permission management,
+                             GET /collections/:id/export/csv (CSV export)
     document_handler.go      POST /documents, GET /documents, GET /documents/:id,
                              PUT /documents/:id (edit structured data),
                              POST /documents/:id/retry, PUT /documents/:id/review,
@@ -102,6 +103,8 @@ internal/
     document_tag_repo.go     Document tag queries (batch create, search by tag)
     document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
     stats_repo.go            Aggregate stats queries (conditional COUNTs on documents + collections)
+  csvexport/
+    writer.go                CSV export for collections (Writer, SanitizeFilename, BuildFilename)
   storage/s3/
     s3_client.go             S3 implementation (supports LocalStack endpoint)
   parser/
@@ -391,6 +394,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
 - **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read.
+- **CSV export**: `GET /collections/:id/export/csv` streams all documents in a collection as CSV. 30 columns ordered for GST reconciliation (reconciliation-critical fields first). UTF-8 BOM for Excel compatibility. Batched loading (200 docs/batch). Unparsed docs included with empty invoice columns. Viewer+ permission required. Logic in `internal/csvexport/` package, handler in `CollectionHandler.ExportCSV`.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
 - **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed/queued. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). `parse_attempts` is incremented on each parse/retry attempt. `secondary_parser_model` records the secondary model name in dual-parse mode (from `ParseOutput.SecondaryModel`). Core parse logic lives in `ParseDocument` (called by both `parseInBackground` and `ParseQueueWorker`). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
 - **Parse queue (rate-limit retry)**: When all LLM parsers return `RateLimitError` (HTTP 429), `handleParseError` sets `parsing_status=queued` and `retry_after` to the earliest retry time (instead of permanently failing). A `ParseQueueWorker` polls the DB every 10s via `ClaimQueued` (atomic `UPDATE ... FOR UPDATE SKIP LOCKED`), re-dispatches queued documents with bounded concurrency (semaphore, default 5). Each document gets up to `max_retries` (default 5) parse attempts before permanent failure. Each worker goroutine uses `context.WithTimeout(context.Background(), 5min)` so in-flight parses complete even during shutdown. Config: `SATVOS_QUEUE_POLL_INTERVAL_SECS`, `SATVOS_QUEUE_MAX_RETRIES`, `SATVOS_QUEUE_CONCURRENCY`. **Known limitation**: If the server crashes mid-parse, a document may stay in `processing` indefinitely (staleness detector is a future enhancement).
@@ -422,6 +426,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`
 - **Adding a new document type**: Create typed model in `internal/validator/<type>/types.go`, implement validators, register in `cmd/server/main.go`
 - **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.
+- **Modifying CSV export columns**: `internal/csvexport/writer.go` — `columns` slice defines header, `documentToRow` maps document fields to row cells
 
 ## Gotchas & Past Issues
 
