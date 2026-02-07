@@ -49,7 +49,7 @@ func TestStatsHandler_GetStats_AdminSuccess(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", http.NoBody)
 	setAuthContext(c, tenantID, userID, "admin")
 
 	h.GetStats(c)
@@ -80,7 +80,7 @@ func TestStatsHandler_GetStats_ViewerSuccess(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", http.NoBody)
 	setAuthContext(c, tenantID, userID, "viewer")
 
 	h.GetStats(c)
@@ -99,7 +99,7 @@ func TestStatsHandler_GetStats_MissingTenantContext(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", http.NoBody)
 	// No auth context set
 
 	h.GetStats(c)
@@ -117,7 +117,7 @@ func TestStatsHandler_GetStats_ServiceError(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", nil)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/stats", http.NoBody)
 	setAuthContext(c, tenantID, userID, "admin")
 
 	h.GetStats(c)
