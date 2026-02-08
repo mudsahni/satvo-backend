@@ -871,6 +871,64 @@ const docTemplate = `{
                 }
             }
         },
+        "/collections/{id}/export/csv": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Download all documents in a collection as a CSV file for GST reconciliation",
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Export collection documents as CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "CSV file",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid ID",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Insufficient permission",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Collection not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
         "/collections/{id}/files": {
             "post": {
                 "security": [
