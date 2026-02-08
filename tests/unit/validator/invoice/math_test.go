@@ -246,7 +246,7 @@ func TestMath_TaxableAmount(t *testing.T) {
 	t.Run("pass_with_discount", func(t *testing.T) {
 		inv := validInvoice()
 		inv.Totals.TotalDiscount = 100
-		inv.Totals.TaxableAmount = 900 // sum(taxable) - discount = 1000 - 100
+		inv.Totals.TaxableAmount = 900
 		results := v.Validate(ctx, inv)
 		require.Len(t, results, 1)
 		assert.True(t, results[0].Passed)
