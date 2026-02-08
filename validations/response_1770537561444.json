@@ -1,0 +1,820 @@
+{
+  "success": true,
+  "data": {
+    "id": "6e4ea4e7-bb87-42d3-b492-9ad52f448568",
+    "tenant_id": "141b77f4-9d11-48be-bb87-9ee4dbcdea35",
+    "collection_id": "1358e6b1-c474-40a3-9d4f-e791a71c71a3",
+    "file_id": "2483edb9-9c53-44da-b3d1-89629807ab9f",
+    "name": "2024_06_20_VS Enterprises_HP Tonner_Inv 62",
+    "document_type": "invoice",
+    "parser_model": "claude-sonnet-4-20250514",
+    "parser_prompt": "You are a document data extraction assistant. Analyze the provided invoice document and extract ALL data into the following JSON structure.\n\nIMPORTANT INSTRUCTIONS:\n- The document may span multiple pages. Extract ALL line items from every page and every section (e.g., Genuine Parts, Other Parts, Labor, Other Labor, Services, Other Charges) into a single flat \"line_items\" array.\n- It is critical that you extract EVERY line item. Do not skip, summarize, or omit any items.\n- Normalize all dates to DD-MM-YYYY format. Strip timestamps, annotations like \"(On or Before)\", and other non-date text.\n- State codes must be exactly 2 digits, zero-padded (e.g., \"07\" not \"7\").\n\nReturn ONLY valid JSON with no markdown formatting, no code fences, no explanation — just the raw JSON object.\n\nReturn two top-level keys: \"data\" and \"confidence_scores\".\n\nThe \"data\" object must follow this schema:\n{\n  \"invoice\": {\n    \"invoice_number\": \"\",\n    \"invoice_date\": \"\",\n    \"due_date\": \"\",\n    \"invoice_type\": \"\",\n    \"currency\": \"\",\n    \"place_of_supply\": \"\",\n    \"reverse_charge\": false\n  },\n  \"seller\": {\n    \"name\": \"\", \"address\": \"\",\n    \"gstin\": \"\", \"pan\": \"\",\n    \"state\": \"\", \"state_code\": \"\"\n  },\n  \"buyer\": {\n    \"name\": \"\", \"address\": \"\",\n    \"gstin\": \"\", \"pan\": \"\",\n    \"state\": \"\", \"state_code\": \"\"\n  },\n  \"line_items\": [\n    {\n      \"description\": \"\",\n      \"hsn_sac_code\": \"\",\n      \"quantity\": 0, \"unit\": \"\",\n      \"unit_price\": 0, \"discount\": 0,\n      \"taxable_amount\": 0,\n      \"cgst_rate\": 0, \"cgst_amount\": 0,\n      \"sgst_rate\": 0, \"sgst_amount\": 0,\n      \"igst_rate\": 0, \"igst_amount\": 0,\n      \"total\": 0\n    }\n  ],\n  \"totals\": {\n    \"subtotal\": 0, \"total_discount\": 0,\n    \"taxable_amount\": 0,\n    \"cgst\": 0, \"sgst\": 0, \"igst\": 0, \"cess\": 0,\n    \"round_off\": 0, \"total\": 0,\n    \"amount_in_words\": \"\"\n  },\n  \"payment\": {\n    \"bank_name\": \"\",\n    \"account_number\": \"\",\n    \"ifsc_code\": \"\",\n    \"payment_terms\": \"\"\n  },\n  \"notes\": \"\"\n}\n\nThe \"confidence_scores\" object should mirror the \"data\" structure but with float values between 0.0 and 1.0 indicating your confidence for each extracted field. Use 0.0 for fields not found in the document.\n\nIf a field is not present in the document, use empty string for text, 0 for numbers, and false for booleans.",
+    "structured_data": {
+      "buyer": {
+        "pan": "AEGFS0831M",
+        "name": "SOLIDUM AND STARS GUILD LLP",
+        "gstin": "07AEGFS0831M1ZU",
+        "state": "Delhi",
+        "address": "GROUND KH/1595/1596/1597/1482 FATHEHPUR BERI NEW DELHI",
+        "state_code": "07"
+      },
+      "notes": "THANKS FOR SHOPPING WITH US .",
+      "seller": {
+        "pan": "AFVPV0914Q",
+        "name": "V.S. ENTERPRISES",
+        "gstin": "07AFVPV0914Q2ZG",
+        "state": "Delhi",
+        "address": "E-8/12 SHOP NO.3 MALVIYA NAGAR , NEW DELHI -110017",
+        "state_code": "07"
+      },
+      "totals": {
+        "cess": 0,
+        "cgst": 610.17,
+        "igst": 0,
+        "sgst": 610.17,
+        "total": 8000,
+        "subtotal": 8000,
+        "round_off": 0,
+        "taxable_amount": 6779.66,
+        "total_discount": 0,
+        "amount_in_words": "Eight Thousand Rupees only"
+      },
+      "invoice": {
+        "currency": "INR",
+        "due_date": "",
+        "invoice_date": "20-06-2024",
+        "invoice_type": "Tax Invoice",
+        "invoice_number": "24-25/62",
+        "reverse_charge": false,
+        "place_of_supply": "07-Delhi"
+      },
+      "payment": {
+        "bank_name": "ICICI BANK LIMITED, DELHI - VASANT SQARE MALL, DELHI",
+        "ifsc_code": "ICIC0001644",
+        "payment_terms": "THANKS FOR SHOPPING WITH US .",
+        "account_number": "164405000050"
+      },
+      "line_items": [
+        {
+          "unit": "Pcs",
+          "total": 8000,
+          "discount": 0,
+          "quantity": 2,
+          "cgst_rate": 9,
+          "igst_rate": 0,
+          "sgst_rate": 9,
+          "unit_price": 3389.83,
+          "cgst_amount": 610.17,
+          "description": "TONNER 152A HP COMPT",
+          "igst_amount": 0,
+          "sgst_amount": 610.17,
+          "hsn_sac_code": "",
+          "taxable_amount": 6779.66
+        }
+      ]
+    },
+    "confidence_scores": {
+      "buyer": {
+        "pan": 0.92,
+        "name": 1,
+        "gstin": 1,
+        "state": 1,
+        "address": 1,
+        "state_code": 1
+      },
+      "seller": {
+        "pan": 0.92,
+        "name": 1,
+        "gstin": 1,
+        "state": 1,
+        "address": 1,
+        "state_code": 1
+      },
+      "totals": {
+        "cess": 0.8400000000000001,
+        "cgst": 1,
+        "igst": 0.8400000000000001,
+        "sgst": 1,
+        "total": 1,
+        "subtotal": 0.6,
+        "round_off": 0.8400000000000001,
+        "taxable_amount": 1,
+        "total_discount": 0.8400000000000001
+      },
+      "invoice": {
+        "currency": 0.92,
+        "due_date": 0.2,
+        "invoice_date": 1,
+        "invoice_type": 1,
+        "invoice_number": 1,
+        "reverse_charge": 0.8,
+        "place_of_supply": 1
+      },
+      "payment": {
+        "bank_name": 0.6,
+        "ifsc_code": 1,
+        "payment_terms": 1,
+        "account_number": 1
+      },
+      "line_items": [
+        {
+          "unit": 1,
+          "total": 1,
+          "discount": 0.8,
+          "quantity": 1,
+          "cgst_rate": 1,
+          "igst_rate": 0.8,
+          "sgst_rate": 1,
+          "unit_price": 1,
+          "cgst_amount": 1,
+          "description": 1,
+          "igst_amount": 0.8,
+          "sgst_amount": 1,
+          "hsn_sac_code": 0,
+          "taxable_amount": 1
+        }
+      ]
+    },
+    "parsing_status": "completed",
+    "parsing_error": "",
+    "parsed_at": "2026-02-08T01:01:00.0985+05:30",
+    "review_status": "pending",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "reviewer_notes": "",
+    "validation_status": "invalid",
+    "validation_results": [
+      {
+        "passed": true,
+        "message": "Cross-field: buyer GSTIN-PAN Match: GSTIN contains matching PAN",
+        "rule_id": "ca6a101a-c570-4a91-9e66-01852f4a2d5b",
+        "field_path": "buyer.gstin",
+        "actual_value": "AEGFS0831M",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "GSTIN[2:12] == AEGFS0831M",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Cross-field: buyer GSTIN-State Match: GSTIN state code matches",
+        "rule_id": "faf6015b-5c7c-4623-b50c-a3d1c86a4e71",
+        "field_path": "buyer.gstin",
+        "actual_value": "07",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "GSTIN[0:2] == 07",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Cross-field: Different Party GSTINs: seller and buyer have different GSTINs",
+        "rule_id": "b0e08f20-c7c8-439e-8854-8afb87b68f32",
+        "field_path": "seller.gstin",
+        "actual_value": "seller=07AFVPV0914Q2ZG, buyer=07AEGFS0831M1ZU",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "seller.gstin != buyer.gstin",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Cross-field: Due Date After Invoice Date: dates missing, skipping",
+        "rule_id": "8d2f3599-61d5-4c43-9365-135016f63215",
+        "field_path": "invoice.due_date",
+        "actual_value": "",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Cross-field: Intrastate Tax Type: line_items[0] uses CGST+SGST correctly",
+        "rule_id": "34f190c8-9254-41e0-b033-b93df9d8ff3b",
+        "field_path": "line_items[0]",
+        "actual_value": "CGST=9.00, SGST=9.00, IGST=0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "CGST+SGST used, IGST=0",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Cross-field: seller GSTIN-PAN Match: GSTIN contains matching PAN",
+        "rule_id": "e87628f4-6e24-40a2-8bf0-4456586b795e",
+        "field_path": "seller.gstin",
+        "actual_value": "AFVPV0914Q",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "GSTIN[2:12] == AFVPV0914Q",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Cross-field: seller GSTIN-State Match: GSTIN state code matches",
+        "rule_id": "b554bd7f-0dee-457a-b5b3-87145671d645",
+        "field_path": "seller.gstin",
+        "actual_value": "07",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "GSTIN[0:2] == 07",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Format: Account Number: payment.account_number matches expected format",
+        "rule_id": "d0da95f9-f137-4761-a878-91e55df3a142",
+        "field_path": "payment.account_number",
+        "actual_value": "164405000050",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "9-18 digit account number",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: Buyer GSTIN: buyer.gstin matches expected format",
+        "rule_id": "51ae5c0e-e19f-4e21-bcb1-a8cd1bce97b5",
+        "field_path": "buyer.gstin",
+        "actual_value": "07AEGFS0831M1ZU",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "15-char GSTIN format",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Format: Buyer PAN: buyer.pan matches expected format",
+        "rule_id": "49700493-c1d7-409d-a466-567103541d22",
+        "field_path": "buyer.pan",
+        "actual_value": "AEGFS0831M",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "10-char PAN format",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: Buyer State Code: buyer.state_code is a valid state code",
+        "rule_id": "f099d42a-c9a3-4dba-ac65-3bf2066dfba9",
+        "field_path": "buyer.state_code",
+        "actual_value": "07",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "2-digit state code (01-38)",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Format: Currency: valid ISO 4217 code",
+        "rule_id": "04992bd2-9022-46a1-8824-b4541b955952",
+        "field_path": "invoice.currency",
+        "actual_value": "INR",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "ISO 4217 code",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: Due Date: field is empty, skipping date check",
+        "rule_id": "e791a88f-ebfc-4587-a72a-978ff446b0c7",
+        "field_path": "invoice.due_date",
+        "actual_value": "",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "parseable date",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: HSN/SAC Code: field is empty, skipping format check",
+        "rule_id": "bdc5d27d-0d75-4149-bbb9-c1a9d2b08da0",
+        "field_path": "line_items[0].hsn_sac_code",
+        "actual_value": "",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "4-8 digit HSN/SAC code",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: IFSC Code: payment.ifsc_code matches expected format",
+        "rule_id": "f6f3b506-26c7-4138-8686-c292608cf19f",
+        "field_path": "payment.ifsc_code",
+        "actual_value": "ICIC0001644",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "IFSC format (XXXX0XXXXXX)",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: Invoice Date: invoice.invoice_date is a valid date",
+        "rule_id": "2cc670a4-6f85-43f0-8f6b-2e104a77ff96",
+        "field_path": "invoice.invoice_date",
+        "actual_value": "20-06-2024",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "parseable date",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: Seller GSTIN: seller.gstin matches expected format",
+        "rule_id": "dd9f68d4-d819-4fe1-b7a6-546bcbbfdc28",
+        "field_path": "seller.gstin",
+        "actual_value": "07AFVPV0914Q2ZG",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "15-char GSTIN format",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Format: Seller PAN: seller.pan matches expected format",
+        "rule_id": "6ec9ad2a-ad07-4785-b103-8dc2ec22b747",
+        "field_path": "seller.pan",
+        "actual_value": "AFVPV0914Q",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "10-char PAN format",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Format: Seller State Code: seller.state_code is a valid state code",
+        "rule_id": "f9dfcaf0-d363-4c07-be21-ae91d83db4b1",
+        "field_path": "seller.state_code",
+        "actual_value": "07",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "2-digit state code (01-38)",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Logical: At Least One Line Item: invoice has line items",
+        "rule_id": "8dc8952c-1ee3-45bf-b5c7-bfad81067139",
+        "field_path": "line_items",
+        "actual_value": "1",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 1 line item",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Logical: CGST Equals SGST Rate: line_items[0] CGST and SGST rates match",
+        "rule_id": "69b5d2a1-5ff6-4b14-bf8a-4d3372f41331",
+        "field_path": "line_items[0]",
+        "actual_value": "cgst=9.00, sgst=9.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "cgst_rate == sgst_rate",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Exclusive Tax Types: line_items[0] uses either CGST+SGST or IGST, not both",
+        "rule_id": "7d30ff7f-57b7-4a39-9b3f-6ea69b27d31a",
+        "field_path": "line_items[0]",
+        "actual_value": "CGST=9.00, SGST=9.00, IGST=0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "either CGST+SGST or IGST, not both",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Logical: Invoice Date Not in Future: invoice date is not in the future",
+        "rule_id": "5b336c22-cd73-4a43-bde1-1b1e85fb6efc",
+        "field_path": "invoice.invoice_date",
+        "actual_value": "20-06-2024",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "<= 2026-02-08",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].cgst_amount is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].cgst_amount",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].sgst_amount is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].sgst_amount",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].igst_amount is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].igst_amount",
+        "actual_value": "0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].total is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].total",
+        "actual_value": "8000.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].quantity is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].quantity",
+        "actual_value": "2.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].unit_price is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].unit_price",
+        "actual_value": "3389.83",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Line Item Non-Negative Amounts: line_items[0].taxable_amount is non-negative",
+        "rule_id": "47577cc1-2350-450b-96c1-c60d7dda5282",
+        "field_path": "line_items[0].taxable_amount",
+        "actual_value": "6779.66",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Non-Negative Totals: totals.total is non-negative",
+        "rule_id": "8fa55903-75fb-4efe-8d22-fccd1ab85ec8",
+        "field_path": "totals.total",
+        "actual_value": "8000.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Non-Negative Totals: totals.subtotal is non-negative",
+        "rule_id": "8fa55903-75fb-4efe-8d22-fccd1ab85ec8",
+        "field_path": "totals.subtotal",
+        "actual_value": "8000.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Non-Negative Totals: totals.taxable_amount is non-negative",
+        "rule_id": "8fa55903-75fb-4efe-8d22-fccd1ab85ec8",
+        "field_path": "totals.taxable_amount",
+        "actual_value": "6779.66",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Non-Negative Totals: totals.cgst is non-negative",
+        "rule_id": "8fa55903-75fb-4efe-8d22-fccd1ab85ec8",
+        "field_path": "totals.cgst",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Non-Negative Totals: totals.sgst is non-negative",
+        "rule_id": "8fa55903-75fb-4efe-8d22-fccd1ab85ec8",
+        "field_path": "totals.sgst",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Non-Negative Totals: totals.igst is non-negative",
+        "rule_id": "8fa55903-75fb-4efe-8d22-fccd1ab85ec8",
+        "field_path": "totals.igst",
+        "actual_value": "0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": ">= 0",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Valid Tax Rate: line_items[0].cgst_rate has a standard GST rate",
+        "rule_id": "5b5a08df-4c1d-4743-a841-071d6bcc87f6",
+        "field_path": "line_items[0].cgst_rate",
+        "actual_value": "9.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "one of {0, 0.125, 0.25, 1.5, 2.5, 3, 5, 6, 9, 12, 14, 18, 28}",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Valid Tax Rate: line_items[0].sgst_rate has a standard GST rate",
+        "rule_id": "5b5a08df-4c1d-4743-a841-071d6bcc87f6",
+        "field_path": "line_items[0].sgst_rate",
+        "actual_value": "9.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "one of {0, 0.125, 0.25, 1.5, 2.5, 3, 5, 6, 9, 12, 14, 18, 28}",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Logical: Valid Tax Rate: line_items[0].igst_rate has a standard GST rate",
+        "rule_id": "5b5a08df-4c1d-4743-a841-071d6bcc87f6",
+        "field_path": "line_items[0].igst_rate",
+        "actual_value": "0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "one of {0, 0.125, 0.25, 1.5, 2.5, 3, 5, 6, 9, 12, 14, 18, 28}",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Grand Total: totals.total calculation matches",
+        "rule_id": "8ae7c37e-188f-4124-84fc-ef05becb54a2",
+        "field_path": "totals.total",
+        "actual_value": "8000.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "8000.00",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Math: Line Item CGST Amount: line_items[0].cgst_amount calculation matches",
+        "rule_id": "af2d6f0f-fbd7-4370-b111-f415086f20b6",
+        "field_path": "line_items[0].cgst_amount",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "610.17",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Line Item IGST Amount: line_items[0].igst_amount calculation matches",
+        "rule_id": "d1e77553-81e7-4656-a337-a6c7666d10f5",
+        "field_path": "line_items[0].igst_amount",
+        "actual_value": "0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "0.00",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Line Item SGST Amount: line_items[0].sgst_amount calculation matches",
+        "rule_id": "712c664b-fae5-4020-944e-4105293dcf45",
+        "field_path": "line_items[0].sgst_amount",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "610.17",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Line Item Taxable Amount: line_items[0].taxable_amount calculation matches",
+        "rule_id": "493eab59-fb65-472b-a8f4-48c2a31d617d",
+        "field_path": "line_items[0].taxable_amount",
+        "actual_value": "6779.66",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "6779.66",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Line Item Total: line_items[0].total calculation matches",
+        "rule_id": "2cc65805-4065-4489-89af-6bdc05e4dab4",
+        "field_path": "line_items[0].total",
+        "actual_value": "8000.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "8000.00",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Round Off: within acceptable range",
+        "rule_id": "72392131-1c43-43ba-93d3-5f0dd7d2404f",
+        "field_path": "totals.round_off",
+        "actual_value": "0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "abs(round_off) <= 0.50",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": false,
+        "message": "Math: Subtotal: totals.subtotal calculation mismatch (expected 6779.66, got 8000.00)",
+        "rule_id": "819bfcdf-63e9-4b19-9423-08ebf016106f",
+        "field_path": "totals.subtotal",
+        "actual_value": "8000.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "6779.66",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Math: Taxable Amount: totals.taxable_amount calculation matches",
+        "rule_id": "0d6734cb-1b47-4f3d-83c2-5a049692a079",
+        "field_path": "totals.taxable_amount",
+        "actual_value": "6779.66",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "6779.66",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Math: Total CGST: totals.cgst calculation matches",
+        "rule_id": "60957742-72e0-469b-b2f3-85649fdf7522",
+        "field_path": "totals.cgst",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "610.17",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Math: Total IGST: totals.igst calculation matches",
+        "rule_id": "2e66ff4d-93d4-4e89-96bd-c5e4c3ca55e6",
+        "field_path": "totals.igst",
+        "actual_value": "0.00",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "0.00",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Math: Total SGST: totals.sgst calculation matches",
+        "rule_id": "32ac3bba-0827-41f8-a392-5a796ecfb188",
+        "field_path": "totals.sgst",
+        "actual_value": "610.17",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "610.17",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Buyer GSTIN: buyer.gstin is present",
+        "rule_id": "2ff9f611-38cf-45b5-b072-a6771735d5bb",
+        "field_path": "buyer.gstin",
+        "actual_value": "07AEGFS0831M1ZU",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Buyer Name: buyer.name is present",
+        "rule_id": "f3e34b2a-fa7a-4130-a492-74021c55b122",
+        "field_path": "buyer.name",
+        "actual_value": "SOLIDUM AND STARS GUILD LLP",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Required: Buyer State Code: buyer.state_code is present",
+        "rule_id": "fd55085b-c3d5-4be8-8c0a-aa50d48060f1",
+        "field_path": "buyer.state_code",
+        "actual_value": "07",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Required: Currency: invoice.currency is present",
+        "rule_id": "06ec749c-cae9-4d10-8d0d-72d12640f512",
+        "field_path": "invoice.currency",
+        "actual_value": "INR",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Required: Invoice Date: invoice.invoice_date is present",
+        "rule_id": "e64fd0a8-9c84-457b-82f5-ad29ea3e134c",
+        "field_path": "invoice.invoice_date",
+        "actual_value": "20-06-2024",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Invoice Number: invoice.invoice_number is present",
+        "rule_id": "07a487f2-916f-4d05-8736-81e32998ff1c",
+        "field_path": "invoice.invoice_number",
+        "actual_value": "24-25/62",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Line Item Description: line_items[0].description is present",
+        "rule_id": "7f5e2fcf-7a56-4c97-8cdd-de3c8da23a43",
+        "field_path": "line_items[0].description",
+        "actual_value": "TONNER 152A HP COMPT",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": false,
+        "message": "Required: Line Item HSN/SAC Code: line_items[0].hsn_sac_code is missing or empty",
+        "rule_id": "d61e53ea-eac1-4e04-9690-4852d801f36e",
+        "field_path": "line_items[0].hsn_sac_code",
+        "actual_value": "",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": false
+      },
+      {
+        "passed": true,
+        "message": "Required: Place of Supply: invoice.place_of_supply is present",
+        "rule_id": "1139ec86-da1e-478e-b823-5e30a10549fe",
+        "field_path": "invoice.place_of_supply",
+        "actual_value": "07-Delhi",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Seller GSTIN: seller.gstin is present",
+        "rule_id": "46b00e2e-c9c8-4512-8d5b-ee9460e13cb4",
+        "field_path": "seller.gstin",
+        "actual_value": "07AFVPV0914Q2ZG",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Seller Name: seller.name is present",
+        "rule_id": "4dff17e0-40a6-4d67-8f4f-f94b890e52a8",
+        "field_path": "seller.name",
+        "actual_value": "V.S. ENTERPRISES",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": true
+      },
+      {
+        "passed": true,
+        "message": "Required: Seller State Code: seller.state_code is present",
+        "rule_id": "1b00f3a8-9955-4241-b74e-56dd7dcbfb4b",
+        "field_path": "seller.state_code",
+        "actual_value": "07",
+        "validated_at": "2026-02-08T06:40:26.995027Z",
+        "expected_value": "non-empty value",
+        "reconciliation_critical": false
+      }
+    ],
+    "reconciliation_status": "valid",
+    "parse_mode": "dual",
+    "field_provenance": {
+      "buyer.pan": "agree",
+      "buyer.name": "agree",
+      "line_items": "primary",
+      "seller.pan": "agree",
+      "buyer.gstin": "agree",
+      "buyer.state": "agree",
+      "seller.name": "agree",
+      "totals.cess": "agree",
+      "totals.cgst": "agree",
+      "totals.igst": "agree",
+      "totals.sgst": "agree",
+      "seller.gstin": "agree",
+      "seller.state": "agree",
+      "totals.total": "agree",
+      "buyer.address": "agree",
+      "seller.address": "agree",
+      "totals.subtotal": "disagreement",
+      "buyer.state_code": "agree",
+      "invoice.currency": "agree",
+      "invoice.due_date": "agree",
+      "totals.round_off": "agree",
+      "payment.bank_name": "disagreement",
+      "payment.ifsc_code": "agree",
+      "seller.state_code": "agree",
+      "invoice.invoice_date": "agree",
+      "invoice.invoice_type": "agree",
+      "payment.payment_terms": "secondary",
+      "totals.taxable_amount": "agree",
+      "totals.total_discount": "agree",
+      "invoice.invoice_number": "agree",
+      "payment.account_number": "agree",
+      "invoice.place_of_supply": "agree"
+    },
+    "secondary_parser_model": "gemini-3-flash-preview",
+    "parse_attempts": 1,
+    "created_by": "9229e94b-88c2-4f95-aace-7d424368a607",
+    "created_at": "2026-02-08T01:00:37.411403+05:30",
+    "updated_at": "2026-02-08T12:10:26.995421+05:30"
+  }
+}

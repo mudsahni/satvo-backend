@@ -133,7 +133,7 @@ func MathValidators() []*mathValidator {
 				var sum float64
 				for idx := range d.LineItems {
 					item := &d.LineItems[idx]
-					sum += item.Total
+					sum += item.TaxableAmount
 				}
 				passed := approxEqual(d.Totals.Subtotal, sum)
 				return []ValidationResult{mathResult(passed, "totals.subtotal", fmtf(sum), fmtf(d.Totals.Subtotal), "Math: Subtotal")}
