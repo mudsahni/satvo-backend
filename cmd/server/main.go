@@ -91,6 +91,7 @@ func run() error {
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 	statsRepo := postgres.NewStatsRepo(db)
 	hsnRepo := postgres.NewHSNRepo(db)
+	duplicateFinder := postgres.NewDuplicateFinderRepo(db)
 
 	// Register parser providers
 	parser.RegisterProvider("claude", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
@@ -161,6 +162,9 @@ func run() error {
 	for _, v := range invoice.HSNValidators(hsnLookup) {
 		registry.Register(v)
 	}
+
+	// Register duplicate invoice validator
+	registry.Register(invoice.DuplicateInvoiceValidator(duplicateFinder))
 
 	validationEngine := validator.NewEngine(registry, validationRuleRepo, docRepo)
 
