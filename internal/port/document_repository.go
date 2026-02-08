@@ -28,6 +28,7 @@ type DocumentTagRepository interface {
 	CreateBatch(ctx context.Context, tags []domain.DocumentTag) error
 	ListByDocument(ctx context.Context, documentID uuid.UUID) ([]domain.DocumentTag, error)
 	SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error)
+	DeleteByID(ctx context.Context, documentID, tagID uuid.UUID) error
 	DeleteByDocument(ctx context.Context, documentID uuid.UUID) error
 	DeleteByDocumentAndSource(ctx context.Context, documentID uuid.UUID, source string) error
 }

@@ -12,7 +12,6 @@ import (
 
 	"satvos/internal/csvexport"
 	"satvos/internal/domain"
-	"satvos/internal/middleware"
 	"satvos/internal/service"
 )
 
@@ -41,17 +40,10 @@ func NewCollectionHandler(collectionService service.CollectionService, documentS
 // @Security BearerAuth
 // @Router /collections [post]
 func (h *CollectionHandler) Create(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	var req struct {
 		Name        string `json:"name" binding:"required"`
@@ -89,17 +81,10 @@ func (h *CollectionHandler) Create(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections [get]
 func (h *CollectionHandler) List(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	offset, limit := parsePagination(c)
 
@@ -151,17 +136,10 @@ func (h *CollectionHandler) List(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id} [get]
 func (h *CollectionHandler) GetByID(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -209,17 +187,10 @@ func (h *CollectionHandler) GetByID(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id} [put]
 func (h *CollectionHandler) Update(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -266,17 +237,10 @@ func (h *CollectionHandler) Update(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id} [delete]
 func (h *CollectionHandler) Delete(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -309,17 +273,10 @@ func (h *CollectionHandler) Delete(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id}/files [post]
 func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -397,17 +354,10 @@ func (h *CollectionHandler) BatchUploadFiles(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id}/files/{fileId} [delete]
 func (h *CollectionHandler) RemoveFile(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -445,17 +395,10 @@ func (h *CollectionHandler) RemoveFile(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id}/permissions [post]
 func (h *CollectionHandler) SetPermission(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -503,17 +446,10 @@ func (h *CollectionHandler) SetPermission(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id}/permissions [get]
 func (h *CollectionHandler) ListPermissions(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -547,17 +483,10 @@ func (h *CollectionHandler) ListPermissions(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id}/permissions/{userId} [delete]
 func (h *CollectionHandler) RemovePermission(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -593,17 +522,10 @@ func (h *CollectionHandler) RemovePermission(c *gin.Context) {
 // @Security BearerAuth
 // @Router /collections/{id}/export/csv [get]
 func (h *CollectionHandler) ExportCSV(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	collectionID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

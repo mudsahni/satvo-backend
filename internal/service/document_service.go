@@ -61,8 +61,8 @@ type DocumentService interface {
 	UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error)
 	EditStructuredData(ctx context.Context, input *EditStructuredDataInput) (*domain.Document, error)
 	RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
-	ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error
-	GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error)
+	ValidateDocument(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error
+	GetValidation(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*validator.ValidationResponse, error)
 	Delete(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error
 	ListTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) ([]domain.DocumentTag, error)
 	AddTags(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole, tags map[string]string) ([]domain.DocumentTag, error)
@@ -620,9 +620,12 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userI
 	return &result, nil
 }
 
-func (s *documentService) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID) error {
+func (s *documentService) ValidateDocument(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error {
 	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
 	if err != nil {
+		return err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return err
 	}
 	if doc.ParsingStatus != domain.ParsingStatusCompleted {
@@ -634,7 +637,14 @@ func (s *documentService) ValidateDocument(ctx context.Context, tenantID, docID 
 	return s.validator.ValidateDocument(ctx, tenantID, docID)
 }
 
-func (s *documentService) GetValidation(ctx context.Context, tenantID, docID uuid.UUID) (*validator.ValidationResponse, error) {
+func (s *documentService) GetValidation(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*validator.ValidationResponse, error) {
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermViewer); err != nil {
+		return nil, err
+	}
 	if s.validator == nil {
 		return nil, fmt.Errorf("validation engine not configured")
 	}
@@ -692,44 +702,7 @@ func (s *documentService) DeleteTag(ctx context.Context, tenantID, docID, userID
 	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return err
 	}
-
-	// Verify tag belongs to document by listing and checking
-	tags, err := s.tagRepo.ListByDocument(ctx, docID)
-	if err != nil {
-		return fmt.Errorf("listing tags: %w", err)
-	}
-	found := false
-	for i := range tags {
-		if tags[i].ID == tagID {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return domain.ErrNotFound
-	}
-
-	// Delete all tags for document and re-create the ones we want to keep
-	// Since we don't have a single-tag delete, we use DeleteByDocument and recreate
-	// Actually, let's just do a direct delete. We need to add that or use the existing approach.
-	// For simplicity, we'll delete by document and re-create remaining.
-	remaining := make([]domain.DocumentTag, 0, len(tags)-1)
-	for i := range tags {
-		if tags[i].ID != tagID {
-			tags[i].ID = uuid.New() // new IDs for re-insert
-			remaining = append(remaining, tags[i])
-		}
-	}
-
-	if err := s.tagRepo.DeleteByDocument(ctx, docID); err != nil {
-		return fmt.Errorf("deleting tags: %w", err)
-	}
-	if len(remaining) > 0 {
-		if err := s.tagRepo.CreateBatch(ctx, remaining); err != nil {
-			return fmt.Errorf("re-creating tags: %w", err)
-		}
-	}
-	return nil
+	return s.tagRepo.DeleteByID(ctx, docID, tagID)
 }
 
 func (s *documentService) SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error) {
