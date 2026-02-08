@@ -32,7 +32,10 @@ func AllBuiltinValidators() []*BuiltinValidator {
 	mathVals := MathValidators()
 	xfVals := CrossFieldValidators()
 	logVals := LogicalValidators()
-	all := make([]*BuiltinValidator, 0, len(reqVals)+len(fmtVals)+len(mathVals)+len(xfVals)+len(logVals))
+	irnFmtVals := IRNFormatValidators()
+	irnXfVals := IRNCrossFieldValidators()
+	irnLogVals := IRNLogicalValidators()
+	all := make([]*BuiltinValidator, 0, len(reqVals)+len(fmtVals)+len(mathVals)+len(xfVals)+len(logVals)+len(irnFmtVals)+len(irnXfVals)+len(irnLogVals))
 
 	// Required field validators
 	for _, v := range reqVals {
@@ -80,6 +83,39 @@ func AllBuiltinValidators() []*BuiltinValidator {
 
 	// Logical validators
 	for _, v := range logVals {
+		v := v
+		all = append(all, &BuiltinValidator{
+			key: v.RuleKey(), name: v.RuleName(),
+			ruleType: v.RuleType(), sev: v.Severity(),
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
+		})
+	}
+
+	// IRN format validators
+	for _, v := range irnFmtVals {
+		v := v
+		all = append(all, &BuiltinValidator{
+			key: v.RuleKey(), name: v.RuleName(),
+			ruleType: v.RuleType(), sev: v.Severity(),
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
+		})
+	}
+
+	// IRN cross-field validators
+	for _, v := range irnXfVals {
+		v := v
+		all = append(all, &BuiltinValidator{
+			key: v.RuleKey(), name: v.RuleName(),
+			ruleType: v.RuleType(), sev: v.Severity(),
+			reconCritical: v.ReconciliationCritical(),
+			fn:            v.Validate,
+		})
+	}
+
+	// IRN logical validators
+	for _, v := range irnLogVals {
 		v := v
 		all = append(all, &BuiltinValidator{
 			key: v.RuleKey(), name: v.RuleName(),

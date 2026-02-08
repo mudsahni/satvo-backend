@@ -9,6 +9,7 @@ IMPORTANT INSTRUCTIONS:
 - It is critical that you extract EVERY line item. Do not skip, summarize, or omit any items.
 - Normalize all dates to DD-MM-YYYY format. Strip timestamps, annotations like "(On or Before)", and other non-date text.
 - State codes must be exactly 2 digits, zero-padded (e.g., "07" not "7").
+- If the document contains an IRN (Invoice Reference Number, a 64-character hexadecimal string), Acknowledgement Number, or Acknowledgement Date (commonly found near a QR code on e-invoices), extract them.
 
 Return ONLY valid JSON with no markdown formatting, no code fences, no explanation — just the raw JSON object.
 
@@ -23,7 +24,10 @@ The "data" object must follow this schema:
     "invoice_type": "",
     "currency": "",
     "place_of_supply": "",
-    "reverse_charge": false
+    "reverse_charge": false,
+    "irn": "",
+    "acknowledgement_number": "",
+    "acknowledgement_date": ""
   },
   "seller": {
     "name": "", "address": "",

@@ -18,8 +18,12 @@ type InvoiceHeader struct {
 	DueDate       string `json:"due_date"`
 	InvoiceType   string `json:"invoice_type"`
 	Currency      string `json:"currency"`
-	PlaceOfSupply string `json:"place_of_supply"`
-	ReverseCharge bool   `json:"reverse_charge"`
+	PlaceOfSupply         string `json:"place_of_supply"`
+	ReverseCharge         bool   `json:"reverse_charge"`
+	IRN                   string `json:"irn"`
+	AcknowledgementNumber string `json:"acknowledgement_number"`
+	AcknowledgementDate   string `json:"acknowledgement_date"`
+	QRCodeData            string `json:"qr_code_data"`
 }
 
 // Party represents a seller or buyer.
@@ -89,8 +93,12 @@ type InvoiceConfidence struct {
 	DueDate       float64 `json:"due_date"`
 	InvoiceType   float64 `json:"invoice_type"`
 	Currency      float64 `json:"currency"`
-	PlaceOfSupply float64 `json:"place_of_supply"`
-	ReverseCharge float64 `json:"reverse_charge"`
+	PlaceOfSupply         float64 `json:"place_of_supply"`
+	ReverseCharge         float64 `json:"reverse_charge"`
+	IRN                   float64 `json:"irn"`
+	AcknowledgementNumber float64 `json:"acknowledgement_number"`
+	AcknowledgementDate   float64 `json:"acknowledgement_date"`
+	QRCodeData            float64 `json:"qr_code_data"`
 }
 
 // PartyConfidence holds confidence for party fields.

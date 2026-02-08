@@ -93,13 +93,13 @@ func TestExportCSV_Success(t *testing.T) {
 
 	// Header row
 	assert.Equal(t, "Document Name", records[0][0])
-	assert.Len(t, records[0], 30)
+	assert.Len(t, records[0], 33)
 
 	// Data row
 	assert.Equal(t, "Invoice 1", records[1][0])
 	assert.Equal(t, "INV-001", records[1][5])
-	assert.Equal(t, "Seller Corp", records[1][10])
-	assert.Equal(t, "1000.00", records[1][23])
+	assert.Equal(t, "Seller Corp", records[1][13])
+	assert.Equal(t, "1000.00", records[1][26])
 
 	collSvc.AssertExpectations(t)
 	docSvc.AssertExpectations(t)

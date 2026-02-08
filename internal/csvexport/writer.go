@@ -17,7 +17,7 @@ import (
 // UTF-8 BOM bytes for Excel compatibility on Windows.
 var BOM = []byte{0xEF, 0xBB, 0xBF}
 
-// columns defines the CSV header row (30 columns).
+// columns defines the CSV header row (33 columns).
 var columns = []string{
 	"Document Name",
 	"Parsing Status",
@@ -25,6 +25,9 @@ var columns = []string{
 	"Validation Status",
 	"Reconciliation Status",
 	"Invoice Number",
+	"IRN",
+	"Acknowledgement Number",
+	"Acknowledgement Date",
 	"Invoice Date",
 	"Invoice Type",
 	"Place of Supply",
@@ -61,7 +64,7 @@ func NewWriter(w io.Writer) *Writer {
 	return &Writer{csv: csv.NewWriter(w)}
 }
 
-// WriteHeader writes the 30-column header row.
+// WriteHeader writes the 33-column header row.
 func (w *Writer) WriteHeader() error {
 	return w.csv.Write(columns)
 }
@@ -87,7 +90,7 @@ func (w *Writer) Error() error {
 	return w.csv.Error()
 }
 
-// documentToRow converts a single document to a 30-element string slice.
+// documentToRow converts a single document to a 33-element string slice.
 // If the document is not successfully parsed or StructuredData is invalid,
 // metadata columns are filled and invoice columns are left empty.
 func documentToRow(doc *domain.Document) []string {
@@ -99,9 +102,9 @@ func documentToRow(doc *domain.Document) []string {
 	row[2] = string(doc.ReviewStatus)
 	row[3] = string(doc.ValidationStatus)
 	row[4] = string(doc.ReconciliationStatus)
-	row[27] = doc.ReviewerNotes
-	row[28] = formatTime(doc.ParsedAt)
-	row[29] = doc.CreatedAt.Format(time.RFC3339)
+	row[30] = doc.ReviewerNotes
+	row[31] = formatTime(doc.ParsedAt)
+	row[32] = doc.CreatedAt.Format(time.RFC3339)
 
 	// Invoice columns: only if parsing completed and JSON is valid
 	if doc.ParsingStatus != domain.ParsingStatusCompleted || len(doc.StructuredData) == 0 {
@@ -114,27 +117,30 @@ func documentToRow(doc *domain.Document) []string {
 	}
 
 	row[5] = inv.Invoice.InvoiceNumber
-	row[6] = inv.Invoice.InvoiceDate
-	row[7] = inv.Invoice.InvoiceType
-	row[8] = inv.Invoice.PlaceOfSupply
-	row[9] = formatBool(inv.Invoice.ReverseCharge)
-	row[10] = inv.Seller.Name
-	row[11] = inv.Seller.GSTIN
-	row[12] = inv.Seller.State
-	row[13] = inv.Seller.StateCode
-	row[14] = inv.Buyer.Name
-	row[15] = inv.Buyer.GSTIN
-	row[16] = inv.Buyer.State
-	row[17] = inv.Buyer.StateCode
-	row[18] = formatMoney(inv.Totals.TaxableAmount)
-	row[19] = formatMoney(inv.Totals.CGST)
-	row[20] = formatMoney(inv.Totals.SGST)
-	row[21] = formatMoney(inv.Totals.IGST)
-	row[22] = formatMoney(inv.Totals.Cess)
-	row[23] = formatMoney(inv.Totals.Total)
-	row[24] = inv.Invoice.Currency
-	row[25] = inv.Invoice.DueDate
-	row[26] = strconv.Itoa(len(inv.LineItems))
+	row[6] = inv.Invoice.IRN
+	row[7] = inv.Invoice.AcknowledgementNumber
+	row[8] = inv.Invoice.AcknowledgementDate
+	row[9] = inv.Invoice.InvoiceDate
+	row[10] = inv.Invoice.InvoiceType
+	row[11] = inv.Invoice.PlaceOfSupply
+	row[12] = formatBool(inv.Invoice.ReverseCharge)
+	row[13] = inv.Seller.Name
+	row[14] = inv.Seller.GSTIN
+	row[15] = inv.Seller.State
+	row[16] = inv.Seller.StateCode
+	row[17] = inv.Buyer.Name
+	row[18] = inv.Buyer.GSTIN
+	row[19] = inv.Buyer.State
+	row[20] = inv.Buyer.StateCode
+	row[21] = formatMoney(inv.Totals.TaxableAmount)
+	row[22] = formatMoney(inv.Totals.CGST)
+	row[23] = formatMoney(inv.Totals.SGST)
+	row[24] = formatMoney(inv.Totals.IGST)
+	row[25] = formatMoney(inv.Totals.Cess)
+	row[26] = formatMoney(inv.Totals.Total)
+	row[27] = inv.Invoice.Currency
+	row[28] = inv.Invoice.DueDate
+	row[29] = strconv.Itoa(len(inv.LineItems))
 
 	return row
 }

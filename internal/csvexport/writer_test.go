@@ -26,10 +26,10 @@ func TestWriteHeader(t *testing.T) {
 	row, err := r.Read()
 	require.NoError(t, err)
 
-	assert.Len(t, row, 30)
+	assert.Len(t, row, 33)
 	assert.Equal(t, "Document Name", row[0])
 	assert.Equal(t, "Parsing Status", row[1])
-	assert.Equal(t, "Created At", row[29])
+	assert.Equal(t, "Created At", row[32])
 }
 
 func TestWriteDocuments_Completed(t *testing.T) {
@@ -98,37 +98,40 @@ func TestWriteDocuments_Completed(t *testing.T) {
 	row, err := r.Read()
 	require.NoError(t, err)
 
-	assert.Len(t, row, 30)
+	assert.Len(t, row, 33)
 	assert.Equal(t, "Test Invoice", row[0])
 	assert.Equal(t, "completed", row[1])
 	assert.Equal(t, "pending", row[2])
 	assert.Equal(t, "valid", row[3])
 	assert.Equal(t, "valid", row[4])
 	assert.Equal(t, "INV-001", row[5])
-	assert.Equal(t, "2025-01-15", row[6])
-	assert.Equal(t, "Tax Invoice", row[7])
-	assert.Equal(t, "29-Karnataka", row[8])
-	assert.Equal(t, "Yes", row[9])
-	assert.Equal(t, "Seller Corp", row[10])
-	assert.Equal(t, "29ABCDE1234F1Z5", row[11])
-	assert.Equal(t, "Karnataka", row[12])
-	assert.Equal(t, "29", row[13])
-	assert.Equal(t, "Buyer Inc", row[14])
-	assert.Equal(t, "07FGHIJ5678K2Z3", row[15])
-	assert.Equal(t, "Delhi", row[16])
-	assert.Equal(t, "07", row[17])
-	assert.Equal(t, "10000.50", row[18])
-	assert.Equal(t, "900.25", row[19])
-	assert.Equal(t, "900.25", row[20])
-	assert.Equal(t, "0.00", row[21])
-	assert.Equal(t, "50.10", row[22])
-	assert.Equal(t, "11851.10", row[23])
-	assert.Equal(t, "INR", row[24])
-	assert.Equal(t, "2025-02-15", row[25])
-	assert.Equal(t, "2", row[26])
-	assert.Equal(t, "Looks good", row[27])
-	assert.Equal(t, "2025-01-15T10:30:00Z", row[28])
-	assert.Equal(t, "2025-01-14T08:00:00Z", row[29])
+	assert.Equal(t, "", row[6])                  // IRN (empty)
+	assert.Equal(t, "", row[7])                  // Acknowledgement Number (empty)
+	assert.Equal(t, "", row[8])                  // Acknowledgement Date (empty)
+	assert.Equal(t, "2025-01-15", row[9])        // Invoice Date
+	assert.Equal(t, "Tax Invoice", row[10])      // Invoice Type
+	assert.Equal(t, "29-Karnataka", row[11])     // Place of Supply
+	assert.Equal(t, "Yes", row[12])              // Reverse Charge
+	assert.Equal(t, "Seller Corp", row[13])      // Seller Name
+	assert.Equal(t, "29ABCDE1234F1Z5", row[14]) // Seller GSTIN
+	assert.Equal(t, "Karnataka", row[15])        // Seller State
+	assert.Equal(t, "29", row[16])               // Seller State Code
+	assert.Equal(t, "Buyer Inc", row[17])        // Buyer Name
+	assert.Equal(t, "07FGHIJ5678K2Z3", row[18]) // Buyer GSTIN
+	assert.Equal(t, "Delhi", row[19])            // Buyer State
+	assert.Equal(t, "07", row[20])               // Buyer State Code
+	assert.Equal(t, "10000.50", row[21])         // Taxable Amount
+	assert.Equal(t, "900.25", row[22])           // CGST
+	assert.Equal(t, "900.25", row[23])           // SGST
+	assert.Equal(t, "0.00", row[24])             // IGST
+	assert.Equal(t, "50.10", row[25])            // Cess
+	assert.Equal(t, "11851.10", row[26])         // Total
+	assert.Equal(t, "INR", row[27])              // Currency
+	assert.Equal(t, "2025-02-15", row[28])       // Due Date
+	assert.Equal(t, "2", row[29])                // Line Item Count
+	assert.Equal(t, "Looks good", row[30])       // Reviewer Notes
+	assert.Equal(t, "2025-01-15T10:30:00Z", row[31]) // Parsed At
+	assert.Equal(t, "2025-01-14T08:00:00Z", row[32]) // Created At
 }
 
 func TestWriteDocuments_Unparsed(t *testing.T) {
@@ -153,15 +156,15 @@ func TestWriteDocuments_Unparsed(t *testing.T) {
 	row, err := r.Read()
 	require.NoError(t, err)
 
-	assert.Len(t, row, 30)
+	assert.Len(t, row, 33)
 	assert.Equal(t, "Pending Doc", row[0])
 	assert.Equal(t, "pending", row[1])
 	// Invoice columns should be empty
-	for i := 5; i <= 26; i++ {
+	for i := 5; i <= 29; i++ {
 		assert.Empty(t, row[i], "column %d should be empty for unparsed doc", i)
 	}
-	assert.Equal(t, "", row[28]) // parsed_at empty
-	assert.Equal(t, "2025-01-14T08:00:00Z", row[29])
+	assert.Equal(t, "", row[31]) // parsed_at empty
+	assert.Equal(t, "2025-01-14T08:00:00Z", row[32])
 }
 
 func TestWriteDocuments_MalformedJSON(t *testing.T) {
@@ -186,11 +189,11 @@ func TestWriteDocuments_MalformedJSON(t *testing.T) {
 	row, err := r.Read()
 	require.NoError(t, err)
 
-	assert.Len(t, row, 30)
+	assert.Len(t, row, 33)
 	assert.Equal(t, "Bad JSON", row[0])
 	assert.Equal(t, "completed", row[1])
 	// Invoice columns should be empty due to unmarshal failure
-	for i := 5; i <= 26; i++ {
+	for i := 5; i <= 29; i++ {
 		assert.Empty(t, row[i], "column %d should be empty for malformed JSON", i)
 	}
 }
@@ -223,10 +226,10 @@ func TestWriteDocuments_MonetaryFormatting(t *testing.T) {
 	row, err := r.Read()
 	require.NoError(t, err)
 
-	assert.Equal(t, "1000.00", row[18])  // TaxableAmount
-	assert.Equal(t, "100.00", row[19])   // CGST (99.999 rounds)
-	assert.Equal(t, "0.10", row[20])     // SGST
-	assert.Equal(t, "1100.10", row[23])  // Total
+	assert.Equal(t, "1000.00", row[21])  // TaxableAmount
+	assert.Equal(t, "100.00", row[22])   // CGST (99.999 rounds)
+	assert.Equal(t, "0.10", row[23])     // SGST
+	assert.Equal(t, "1100.10", row[26])  // Total
 }
 
 func TestWriteDocuments_ReverseCharge(t *testing.T) {
@@ -260,7 +263,7 @@ func TestWriteDocuments_ReverseCharge(t *testing.T) {
 			r := csv.NewReader(&buf)
 			row, err := r.Read()
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, row[9])
+			assert.Equal(t, tt.expected, row[12])
 		})
 	}
 }

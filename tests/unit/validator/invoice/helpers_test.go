@@ -4,18 +4,22 @@ import (
 	"satvos/internal/validator/invoice"
 )
 
-// validInvoice returns a fully-valid *GSTInvoice that passes all 50 validators.
+// validInvoice returns a fully-valid *GSTInvoice that passes all 56 validators.
 // Intrastate (seller/buyer state "29") → CGST+SGST, zero IGST.
 // 1 line item: qty=10, price=100, taxable=1000, CGST=9%/90, SGST=9%/90, total=1180.
+// IRN = SHA-256("29ABCDE1234F1Z5" + "INV-001" + "2024-25")
 func validInvoice() *invoice.GSTInvoice {
 	return &invoice.GSTInvoice{
 		Invoice: invoice.InvoiceHeader{
-			InvoiceNumber: "INV-001",
-			InvoiceDate:   "15/01/2025",
-			DueDate:       "15/02/2025",
-			InvoiceType:   "tax_invoice",
-			Currency:      "INR",
-			PlaceOfSupply: "Karnataka",
+			InvoiceNumber:         "INV-001",
+			InvoiceDate:           "15/01/2025",
+			DueDate:               "15/02/2025",
+			InvoiceType:           "tax_invoice",
+			Currency:              "INR",
+			PlaceOfSupply:         "Karnataka",
+			IRN:                   "fc3c01b73e8c2a0c57bfc195a264c1cdd6da3acf4fbdb5e5e06b90494d1b8568",
+			AcknowledgementNumber: "1234567890",
+			AcknowledgementDate:   "15/01/2025",
 		},
 		Seller: invoice.Party{
 			Name:      "Seller Corp",

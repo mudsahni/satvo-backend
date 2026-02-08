@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 50+ built-in GST invoice rules, reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 56 built-in GST invoice rules (including IRN/e-invoice validation), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -128,7 +128,7 @@ internal/
                              ReconciliationCritical)
     registry.go              Map-based validator registry (Register, Get, All)
     field_status.go          Computes per-field status from rule results + confidence scores
-    invoice/                 GST invoice validators (50 built-in rules):
+    invoice/                 GST invoice validators (56 built-in rules):
       types.go               GSTInvoice, Party, LineItem, Totals, Payment, ConfidenceScores structs
       builtin_rules.go       AllBuiltinValidators() — collects all validators into BuiltinValidator wrappers
       required.go            12 required field validators (invoice number, GSTIN, state codes, etc.)
@@ -136,6 +136,8 @@ internal/
       math.go                11 mathematical validators (line item arithmetic, totals reconciliation)
       crossfield.go          7 cross-field validators (GSTIN-state match, GSTIN-PAN match, tax type consistency)
       logical.go             7 logical validators (non-negative amounts, valid GST rates, exclusive tax type)
+      irn.go                 5 IRN validators (format, ack number/date, hash verification, missing IRN warning)
+                             + DeriveFinancialYear/ComputeIRNHash helpers
   router/
     router.go                Route definitions, middleware wiring
   mocks/                     Generated mocks (uber/mock) for testing
@@ -203,7 +205,7 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   │ View Results │<─────────────────────────────────────│                         │
   │ per-rule     │                                      │ 1. Ensure builtin rules │
   │ per-field    │                                      │ 2. Load active rules    │
-  │ summary      │                                      │ 3. Run 50+ validators   │
+  │ summary      │                                      │ 3. Run 56 validators    │
   └──────────────┘                                      │ 4. Compute field status │
                                                         │ 5. Save JSONB results   │
   PUT /documents/:id/review                             │ validation: valid/      │

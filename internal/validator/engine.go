@@ -363,6 +363,9 @@ func flattenConfidenceScores(raw json.RawMessage) map[string]float64 {
 	result["invoice.invoice_type"] = scores.Invoice.InvoiceType
 	result["invoice.currency"] = scores.Invoice.Currency
 	result["invoice.place_of_supply"] = scores.Invoice.PlaceOfSupply
+	result["invoice.irn"] = scores.Invoice.IRN
+	result["invoice.acknowledgement_number"] = scores.Invoice.AcknowledgementNumber
+	result["invoice.acknowledgement_date"] = scores.Invoice.AcknowledgementDate
 
 	// Seller fields
 	result["seller.name"] = scores.Seller.Name

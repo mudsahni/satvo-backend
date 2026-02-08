@@ -511,13 +511,16 @@ func (s *documentService) EditStructuredData(ctx context.Context, input *EditStr
 func buildFullConfidenceScores(inv *invoice.GSTInvoice) invoice.ConfidenceScores {
 	scores := invoice.ConfidenceScores{
 		Invoice: invoice.InvoiceConfidence{
-			InvoiceNumber: 1.0,
-			InvoiceDate:   1.0,
-			DueDate:       1.0,
-			InvoiceType:   1.0,
-			Currency:      1.0,
-			PlaceOfSupply: 1.0,
-			ReverseCharge: 1.0,
+			InvoiceNumber:         1.0,
+			InvoiceDate:           1.0,
+			DueDate:               1.0,
+			InvoiceType:           1.0,
+			Currency:              1.0,
+			PlaceOfSupply:         1.0,
+			ReverseCharge:         1.0,
+			IRN:                   1.0,
+			AcknowledgementNumber: 1.0,
+			AcknowledgementDate:   1.0,
 		},
 		Seller: invoice.PartyConfidence{
 			Name:      1.0,
@@ -740,6 +743,9 @@ func (s *documentService) extractAndSaveAutoTags(ctx context.Context, docID, ten
 	}
 	if inv.Invoice.PlaceOfSupply != "" {
 		tagMap["place_of_supply"] = inv.Invoice.PlaceOfSupply
+	}
+	if inv.Invoice.IRN != "" {
+		tagMap["irn"] = inv.Invoice.IRN
 	}
 	if inv.Totals.Total != 0 {
 		tagMap["total_amount"] = fmt.Sprintf("%.2f", inv.Totals.Total)
