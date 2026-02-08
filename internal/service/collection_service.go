@@ -69,6 +69,8 @@ type CollectionService interface {
 	SetPermission(ctx context.Context, input *SetPermissionInput) error
 	ListPermissions(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.CollectionPermissionEntry, int, error)
 	RemovePermission(ctx context.Context, tenantID, collectionID, targetUserID, userID uuid.UUID, role domain.UserRole) error
+	EffectivePermission(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole) domain.CollectionPermission
+	EffectivePermissions(ctx context.Context, collectionIDs []uuid.UUID, userID uuid.UUID, role domain.UserRole) (map[uuid.UUID]domain.CollectionPermission, error)
 }
 
 type collectionService struct {
@@ -325,4 +327,49 @@ func (s *collectionService) RemovePermission(ctx context.Context, tenantID, coll
 	log.Printf("collectionService.RemovePermission: removing permission for user %s on collection %s by user %s",
 		targetUserID, collectionID, userID)
 	return s.permRepo.Delete(ctx, collectionID, targetUserID)
+}
+
+// EffectivePermission returns the effective collection permission for a user,
+// combining their tenant role's implicit permission with any explicit grant.
+func (s *collectionService) EffectivePermission(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole) domain.CollectionPermission {
+	return s.effectivePermission(ctx, collectionID, userID, role)
+}
+
+// EffectivePermissions returns the effective permission for a user across multiple collections.
+// Optimized: admin always gets owner, viewer always gets viewer, manager/member do a single batch query.
+func (s *collectionService) EffectivePermissions(ctx context.Context, collectionIDs []uuid.UUID, userID uuid.UUID, role domain.UserRole) (map[uuid.UUID]domain.CollectionPermission, error) {
+	result := make(map[uuid.UUID]domain.CollectionPermission, len(collectionIDs))
+
+	// Admin always has owner-level access
+	if role == domain.RoleAdmin {
+		for _, id := range collectionIDs {
+			result[id] = domain.CollectionPermOwner
+		}
+		return result, nil
+	}
+
+	// Viewer is capped at viewer regardless of explicit perms
+	if role == domain.RoleViewer {
+		for _, id := range collectionIDs {
+			result[id] = domain.CollectionPermViewer
+		}
+		return result, nil
+	}
+
+	// Manager/member: batch-query explicit permissions
+	implicit := domain.ImplicitCollectionPerm(role)
+	explicitPerms, err := s.permRepo.GetByUserForCollections(ctx, userID, collectionIDs)
+	if err != nil {
+		return nil, fmt.Errorf("computing effective permissions: %w", err)
+	}
+
+	for _, id := range collectionIDs {
+		explicit, ok := explicitPerms[id]
+		if ok && domain.CollectionPermLevel(explicit) > domain.CollectionPermLevel(implicit) {
+			result[id] = explicit
+		} else {
+			result[id] = implicit
+		}
+	}
+	return result, nil
 }

@@ -109,7 +109,30 @@ func (h *CollectionHandler) List(c *gin.Context) {
 		return
 	}
 
-	RespondPaginated(c, collections, PagMeta{Total: total, Offset: offset, Limit: limit})
+	// Enrich collections with the current user's effective permission
+	collectionIDs := make([]uuid.UUID, len(collections))
+	for i := range collections {
+		collectionIDs[i] = collections[i].ID
+	}
+	permMap, err := h.collectionService.EffectivePermissions(c.Request.Context(), collectionIDs, userID, role)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	type collectionWithPermission struct {
+		domain.Collection     `json:",inline"`
+		CurrentUserPermission domain.CollectionPermission `json:"current_user_permission"`
+	}
+	enriched := make([]collectionWithPermission, len(collections))
+	for i := range collections {
+		enriched[i] = collectionWithPermission{
+			Collection:            collections[i],
+			CurrentUserPermission: permMap[collections[i].ID],
+		}
+	}
+
+	RespondPaginated(c, enriched, PagMeta{Total: total, Offset: offset, Limit: limit})
 }
 
 // GetByID handles GET /api/v1/collections/:id
@@ -160,10 +183,13 @@ func (h *CollectionHandler) GetByID(c *gin.Context) {
 		return
 	}
 
+	perm := h.collectionService.EffectivePermission(c.Request.Context(), collectionID, userID, role)
+
 	RespondOK(c, gin.H{
-		"collection": collection,
-		"files":      files,
-		"files_meta": PagMeta{Total: totalFiles, Offset: offset, Limit: limit},
+		"collection":              collection,
+		"current_user_permission": perm,
+		"files":                   files,
+		"files_meta":              PagMeta{Total: totalFiles, Offset: offset, Limit: limit},
 	})
 }
 

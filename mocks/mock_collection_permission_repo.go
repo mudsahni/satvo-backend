@@ -27,6 +27,14 @@ func (m *MockCollectionPermissionRepo) GetByCollectionAndUser(ctx context.Contex
 	return args.Get(0).(*domain.CollectionPermissionEntry), args.Error(1)
 }
 
+func (m *MockCollectionPermissionRepo) GetByUserForCollections(ctx context.Context, userID uuid.UUID, collectionIDs []uuid.UUID) (map[uuid.UUID]domain.CollectionPermission, error) {
+	args := m.Called(ctx, userID, collectionIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(map[uuid.UUID]domain.CollectionPermission), args.Error(1)
+}
+
 func (m *MockCollectionPermissionRepo) ListByCollection(ctx context.Context, collectionID uuid.UUID, offset, limit int) ([]domain.CollectionPermissionEntry, int, error) {
 	args := m.Called(ctx, collectionID, offset, limit)
 	if args.Get(0) == nil {
