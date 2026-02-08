@@ -17,7 +17,10 @@
       "Bash(grep:*)",
       "Bash(make build:*)",
       "Bash(make lint:*)",
-      "Bash(go run:*)"
+      "Bash(go run:*)",
+      "Bash(python3:*)",
+      "Bash(/tmp/check_excel.go << 'EOF'\npackage main\n\nimport \\(\n\t\"fmt\"\n\t\"log\"\n\n\t\"github.com/xuri/excelize/v2\"\n\\)\n\nfunc main\\(\\) {\n\tf, err := excelize.OpenFile\\(\"AI Tool - GST_HSN Code summary_19.02.2025.xlsx\"\\)\n\tif err != nil {\n\t\tlog.Fatal\\(err\\)\n\t}\n\tdefer f.Close\\(\\)\n\n\tsheetName := f.GetSheetName\\(0\\)\n\trows, err := f.GetRows\\(sheetName\\)\n\tif err != nil {\n\t\tlog.Fatal\\(err\\)\n\t}\n\n\t// Print column N \\(index 13\\) for rows 6-15\n\tfor i := 5; i < 15 && i < len\\(rows\\); i++ {\n\t\trow := rows[i]\n\t\tval := \"\"\n\t\tif len\\(row\\) > 13 {\n\t\t\tval = row[13]\n\t\t}\n\t\t\n\t\t// Also get the raw cell value\n\t\tcellRef := fmt.Sprintf\\(\"N%d\", i+1\\)\n\t\trawVal, _ := f.GetCellValue\\(sheetName, cellRef\\)\n\t\trawFormula, _ := f.GetCellFormula\\(sheetName, cellRef\\)\n\t\t\n\t\tfmt.Printf\\(\"Row %d: GetRows=%q  GetCellValue=%q  Formula=%q\\\\n\", i+1, val, rawVal, rawFormula\\)\n\t}\n}\nEOF)",
+      "Bash(golangci-lint run:*)"
     ]
   }
 }

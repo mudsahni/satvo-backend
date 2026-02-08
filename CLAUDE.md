@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 56 built-in GST invoice rules (including IRN/e-invoice validation), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 58 registered GST invoice rules (56 built-in + 2 HSN-based, including IRN/e-invoice validation and HSN code existence/rate cross-validation), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -16,13 +16,16 @@ make migrate-up       # Apply database migrations
 make migrate-down     # Rollback one migration
 make docker-up        # Start full stack via Docker Compose
 make docker-down      # Stop Docker Compose stack
+make generate-hsn-seed # Generate db/seeds/hsn_codes.sql from Excel
+make seed-hsn         # Load HSN seed data into database
 ```
 
 ## Architecture & Code Layout
 
 ```
-cmd/server/main.go           Entry point — wires config, DB, storage, services, validator engine, router
+cmd/server/main.go           Entry point — wires config, DB, storage, services, validator engine (incl. HSN), router
 cmd/migrate/main.go          Migration CLI (up/down/steps/version)
+cmd/seedhsn/main.go         One-time Excel→SQL conversion for HSN codes
 
 internal/
   config/config.go           Loads env vars (SATVOS_ prefix) via viper
@@ -91,6 +94,7 @@ internal/
                              DocumentValidationRuleRepository interfaces
     stats_repository.go      StatsRepository interface (GetTenantStats, GetUserStats)
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
+    hsn_repository.go        HSNEntry DTO + HSNRepository interface (LoadAll for in-memory cache)
     storage.go               ObjectStorage interface (Upload, Download, Delete, GetPresignedURL)
   repository/postgres/
     db.go                    Database connection setup (sqlx + pgx)
@@ -103,6 +107,7 @@ internal/
     document_repo.go         Document CRUD queries (incl. UpdateValidationResults, ClaimQueued)
     document_tag_repo.go     Document tag queries (batch create, search by tag)
     document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
+    hsn_repo.go              HSN codes bulk loader (LoadAll for startup cache)
     stats_repo.go            Aggregate stats queries (conditional COUNTs on documents + collections)
   csvexport/
     writer.go                CSV export for collections (Writer, SanitizeFilename, BuildFilename)
@@ -128,7 +133,7 @@ internal/
                              ReconciliationCritical)
     registry.go              Map-based validator registry (Register, Get, All)
     field_status.go          Computes per-field status from rule results + confidence scores
-    invoice/                 GST invoice validators (56 built-in rules):
+    invoice/                 GST invoice validators (56 built-in + 2 HSN-based rules):
       types.go               GSTInvoice, Party, LineItem, Totals, Payment, ConfidenceScores structs
       builtin_rules.go       AllBuiltinValidators() — collects all validators into BuiltinValidator wrappers
       required.go            12 required field validators (invoice number, GSTIN, state codes, etc.)
@@ -138,17 +143,20 @@ internal/
       logical.go             7 logical validators (non-negative amounts, valid GST rates, exclusive tax type)
       irn.go                 5 IRN validators (format, ack number/date, hash verification, missing IRN warning)
                              + DeriveFinancialYear/ComputeIRNHash helpers
+      hsn_lookup.go          In-memory HSN code lookup (loaded from DB at startup, prefix fallback)
+      hsn.go                 2 HSN validators (existence check + rate cross-validation) via closure-captured lookup
   router/
     router.go                Route definitions, middleware wiring
   mocks/                     Generated mocks (uber/mock) for testing
 
 tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
-db/migrations/               12 SQL migrations: tenants -> users -> file_metadata -> collections
+db/migrations/               13 SQL migrations: tenants -> users -> file_metadata -> collections
                              -> documents -> validation columns -> consolidated validation results
                              -> reconciliation tiering -> multi-parser fields
                              -> document name + tag source
                              -> secondary_parser_model + parse_attempts
                              -> parse queue (retry_after column + partial index)
+                             -> hsn_codes reference table
 ```
 
 ## Data Flow
@@ -283,6 +291,8 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
 | IRN Format | 3 | `regex` | Error/Warning | `fmt.invoice.*` | `invoice/irn.go` |
 | IRN Cross-field | 1 | `cross_field` | Warning | `xf.invoice.*` | `invoice/irn.go` |
 | IRN Logical | 1 | `custom` | Warning | `logic.invoice.*` | `invoice/irn.go` |
+| HSN Existence | 1 | `custom` | Warning | `logic.line_item.hsn_exists` | `invoice/hsn.go` |
+| HSN Rate | 1 | `cross_field` | Warning | `xf.line_item.hsn_rate` | `invoice/hsn.go` |
 
 ### Field Status Computation (`field_status.go`)
 
@@ -408,7 +418,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount, irn) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
 - **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini implementation in `parser/gemini/`, OpenAI implementation in `parser/openai/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`. `FallbackParser` in `parser/fallback.go` provides rate-limit-aware failover across providers.
-- **Validation**: Runs automatically after parsing completes. 56 built-in GST invoice rules across 8 categories (including IRN format, cross-field hash verification, and missing-IRN warning). Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
+- **Validation**: Runs automatically after parsing completes. 58 registered GST invoice rules (56 built-in via `AllBuiltinValidators()` + 2 HSN-based via `HSNValidators()`) across 10 categories (including IRN format, cross-field hash verification, missing-IRN warning, HSN code existence, and HSN-to-rate cross-validation). HSN validators use a closure-captured in-memory lookup loaded from `hsn_codes` table at startup. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.
 - **Pagination**: `offset` and `limit` query params on list endpoints.
 - **Testing**: Unit tests use testify assertions and uber/mock for interface mocking. Tests run with `-race` flag in CI.
@@ -429,7 +439,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Modifying config**: `internal/config/config.go` (struct + viper binding), `.env.example`
 - **Adding middleware**: `internal/middleware/`, wire it in `internal/router/router.go`
 - **Adding a new parser provider**: Implement `port.DocumentParser` interface in `internal/parser/<provider>/`, register via `parser.RegisterProvider()` in `cmd/server/main.go`, use shared prompt from `parser.BuildGSTInvoicePrompt()`
-- **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`
+- **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`. For data-dependent validators (like HSN), use the closure-capture pattern: load data into a lookup struct, pass it to a factory function that returns `[]*BuiltinValidator`, register separately in `main.go`
 - **Adding a new document type**: Create typed model in `internal/validator/<type>/types.go`, implement validators, register in `cmd/server/main.go`
 - **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.
 - **Modifying CSV export columns**: `internal/csvexport/writer.go` — `columns` slice defines header, `documentToRow` maps document fields to row cells
@@ -443,3 +453,4 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Validation results are JSONB, not a separate table**: Migration 007 consolidated results from a separate `document_validation_results` table into `documents.validation_results` JSONB column.
 - **Import shadow lint (`importShadow`)**: In `document_service.go`, constructor params for parsers must not be named `parser` since it shadows the imported `satvos/internal/parser` package — use `docParser`/`mergeDocParser`. Similarly, test files importing `parser` must use `p` for mock parser variables.
 - **Stale processing documents (known limitation)**: If the server crashes mid-parse, a document stays in `processing` status indefinitely. A staleness detector (timeout-based requeue) is a planned future enhancement.
+- **HSN lookup is loaded at startup**: The `hsn_codes` table is loaded into an in-memory `HSNLookup` map when the server starts. If the table is empty, HSN validators gracefully skip (no crash). To update HSN data, update the DB and restart the server. Future enhancement: admin endpoint for hot reload.

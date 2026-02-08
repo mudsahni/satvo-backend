@@ -1,4 +1,4 @@
-.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down swagger
+.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down swagger seed-hsn generate-hsn-seed
 
 include .env
 export $(shell sed 's/=.*//' .env)
@@ -41,3 +41,9 @@ docker-down:
 
 swagger:
 	swag init -g cmd/server/main.go -o docs
+
+generate-hsn-seed:
+	go run ./cmd/seedhsn
+
+seed-hsn:
+	psql "postgres://$(SATVOS_DB_USER):$(SATVOS_DB_PASSWORD)@$(SATVOS_DB_HOST):$(SATVOS_DB_PORT)/$(SATVOS_DB_NAME)?sslmode=$(SATVOS_DB_SSLMODE)" -f db/seeds/hsn_codes.sql

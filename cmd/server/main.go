@@ -90,6 +90,7 @@ func run() error {
 	documentTagRepo := postgres.NewDocumentTagRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 	statsRepo := postgres.NewStatsRepo(db)
+	hsnRepo := postgres.NewHSNRepo(db)
 
 	// Register parser providers
 	parser.RegisterProvider("claude", func(provCfg *config.ParserProviderConfig) (port.DocumentParser, error) {
@@ -149,6 +150,18 @@ func run() error {
 	for _, v := range invoice.AllBuiltinValidators() {
 		registry.Register(v)
 	}
+
+	// Load HSN codes and register HSN validators
+	hsnEntries, err := hsnRepo.LoadAll(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to load HSN codes: %w", err)
+	}
+	log.Printf("Loaded %d HSN code entries", len(hsnEntries))
+	hsnLookup := invoice.NewHSNLookup(hsnEntries)
+	for _, v := range invoice.HSNValidators(hsnLookup) {
+		registry.Register(v)
+	}
+
 	validationEngine := validator.NewEngine(registry, validationRuleRepo, docRepo)
 
 	// Initialize services
