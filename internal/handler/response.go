@@ -6,8 +6,10 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 
 	"satvos/internal/domain"
+	"satvos/internal/middleware"
 )
 
 // APIResponse is the standard envelope for all API responses.
@@ -102,6 +104,24 @@ func MapDomainError(err error) (status int, code, msg string) {
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}
+}
+
+// extractAuthContext extracts tenant ID, user ID, and role from the request context.
+// Returns false if auth context is missing (error response already written).
+func extractAuthContext(c *gin.Context) (tenantID, userID uuid.UUID, role domain.UserRole, ok bool) {
+	var err error
+	tenantID, err = middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return uuid.Nil, uuid.Nil, "", false
+	}
+	userID, err = middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return uuid.Nil, uuid.Nil, "", false
+	}
+	role = domain.UserRole(middleware.GetRole(c))
+	return tenantID, userID, role, true
 }
 
 // HandleError maps a domain error and sends the appropriate error response.

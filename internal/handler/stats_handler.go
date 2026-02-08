@@ -1,12 +1,8 @@
 package handler
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 
-	"satvos/internal/domain"
-	"satvos/internal/middleware"
 	"satvos/internal/service"
 )
 
@@ -30,17 +26,10 @@ func NewStatsHandler(statsService service.StatsService) *StatsHandler {
 // @Security BearerAuth
 // @Router /stats [get]
 func (h *StatsHandler) GetStats(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	stats, err := h.statsService.GetStats(c.Request.Context(), tenantID, userID, role)
 	if err != nil {

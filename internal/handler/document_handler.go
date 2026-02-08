@@ -38,17 +38,10 @@ func NewDocumentHandler(documentService service.DocumentService) *DocumentHandle
 // @Security BearerAuth
 // @Router /documents [post]
 func (h *DocumentHandler) Create(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	var req struct {
 		FileID       uuid.UUID         `json:"file_id" binding:"required"`
@@ -105,17 +98,10 @@ func (h *DocumentHandler) Create(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id} [get]
 func (h *DocumentHandler) GetByID(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -146,17 +132,10 @@ func (h *DocumentHandler) GetByID(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents [get]
 func (h *DocumentHandler) List(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	offset, limit := parsePagination(c)
 
@@ -199,17 +178,10 @@ func (h *DocumentHandler) List(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/retry [post]
 func (h *DocumentHandler) Retry(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -242,17 +214,10 @@ func (h *DocumentHandler) Retry(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/review [put]
 func (h *DocumentHandler) UpdateReview(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -307,17 +272,10 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 // @Router /documents/{id} [put]
 // @Router /documents/{id}/structured-data [put]
 func (h *DocumentHandler) EditStructuredData(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -361,9 +319,8 @@ func (h *DocumentHandler) EditStructuredData(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/validate [post]
 func (h *DocumentHandler) Validate(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
 
@@ -373,7 +330,7 @@ func (h *DocumentHandler) Validate(c *gin.Context) {
 		return
 	}
 
-	if err := h.documentService.ValidateDocument(c.Request.Context(), tenantID, docID); err != nil {
+	if err := h.documentService.ValidateDocument(c.Request.Context(), tenantID, docID, userID, role); err != nil {
 		HandleError(c, err)
 		return
 	}
@@ -394,9 +351,8 @@ func (h *DocumentHandler) Validate(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/validation [get]
 func (h *DocumentHandler) GetValidation(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
 
@@ -406,7 +362,7 @@ func (h *DocumentHandler) GetValidation(c *gin.Context) {
 		return
 	}
 
-	result, err := h.documentService.GetValidation(c.Request.Context(), tenantID, docID)
+	result, err := h.documentService.GetValidation(c.Request.Context(), tenantID, docID, userID, role)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -429,17 +385,10 @@ func (h *DocumentHandler) GetValidation(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/tags [get]
 func (h *DocumentHandler) ListTags(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -472,17 +421,10 @@ func (h *DocumentHandler) ListTags(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/tags [post]
 func (h *DocumentHandler) AddTags(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -522,17 +464,10 @@ func (h *DocumentHandler) AddTags(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id}/tags/{tagId} [delete]
 func (h *DocumentHandler) DeleteTag(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -607,17 +542,10 @@ func (h *DocumentHandler) SearchByTag(c *gin.Context) {
 // @Security BearerAuth
 // @Router /documents/{id} [delete]
 func (h *DocumentHandler) Delete(c *gin.Context) {
-	tenantID, err := middleware.GetTenantID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
 		return
 	}
-	userID, err := middleware.GetUserID(c)
-	if err != nil {
-		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
-		return
-	}
-	role := domain.UserRole(middleware.GetRole(c))
 
 	docID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

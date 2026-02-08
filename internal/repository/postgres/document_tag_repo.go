@@ -89,6 +89,19 @@ func (r *documentTagRepo) SearchByTag(ctx context.Context, tenantID uuid.UUID, k
 	return docs, total, nil
 }
 
+func (r *documentTagRepo) DeleteByID(ctx context.Context, documentID, tagID uuid.UUID) error {
+	result, err := r.db.ExecContext(ctx,
+		"DELETE FROM document_tags WHERE id = $1 AND document_id = $2", tagID, documentID)
+	if err != nil {
+		return fmt.Errorf("documentTagRepo.DeleteByID: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (r *documentTagRepo) DeleteByDocument(ctx context.Context, documentID uuid.UUID) error {
 	_, err := r.db.ExecContext(ctx,
 		"DELETE FROM document_tags WHERE document_id = $1", documentID)

@@ -35,6 +35,11 @@ func (m *MockDocumentTagRepo) SearchByTag(ctx context.Context, tenantID uuid.UUI
 	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
+func (m *MockDocumentTagRepo) DeleteByID(ctx context.Context, documentID, tagID uuid.UUID) error {
+	args := m.Called(ctx, documentID, tagID)
+	return args.Error(0)
+}
+
 func (m *MockDocumentTagRepo) DeleteByDocument(ctx context.Context, documentID uuid.UUID) error {
 	args := m.Called(ctx, documentID)
 	return args.Error(0)

@@ -15,6 +15,7 @@ import (
 	"satvos/internal/domain"
 	"satvos/internal/handler"
 	"satvos/internal/service"
+	"satvos/internal/validator"
 	"satvos/mocks"
 )
 
@@ -1294,4 +1295,240 @@ func TestDocumentHandler_EditStructuredData_InvalidStructuredData(t *testing.T) 
 	h.EditStructuredData(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- Validate ---
+
+func TestDocumentHandler_Validate_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("ValidateDocument", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).
+		Return(nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+docID.String()+"/validate", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Validate(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_Validate_InvalidID(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/not-a-uuid/validate", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: "not-a-uuid"}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Validate(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDocumentHandler_Validate_NoAuth(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+uuid.New().String()+"/validate", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+
+	h.Validate(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestDocumentHandler_Validate_NotFound(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("ValidateDocument", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).
+		Return(domain.ErrDocumentNotFound)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+docID.String()+"/validate", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Validate(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_Validate_NotParsed(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("ValidateDocument", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).
+		Return(domain.ErrDocumentNotParsed)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+docID.String()+"/validate", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.Validate(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_Validate_PermDenied(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("ValidateDocument", mock.Anything, tenantID, docID, userID, domain.UserRole("viewer")).
+		Return(domain.ErrCollectionPermDenied)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPost, "/api/v1/documents/"+docID.String()+"/validate", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "viewer")
+
+	h.Validate(c)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+// --- GetValidation ---
+
+func TestDocumentHandler_GetValidation_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	expected := &validator.ValidationResponse{
+		DocumentID:           docID,
+		ValidationStatus:     domain.ValidationStatusValid,
+		Summary:              validator.ValidationSummary{Total: 3, Passed: 3},
+		ReconciliationStatus: domain.ReconciliationStatusValid,
+	}
+
+	mockSvc.On("GetValidation", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).
+		Return(expected, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/"+docID.String()+"/validation", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.GetValidation(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Data)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_GetValidation_InvalidID(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/not-a-uuid/validation", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: "not-a-uuid"}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.GetValidation(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDocumentHandler_GetValidation_NoAuth(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/"+uuid.New().String()+"/validation", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: uuid.New().String()}}
+
+	h.GetValidation(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestDocumentHandler_GetValidation_NotFound(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("GetValidation", mock.Anything, tenantID, docID, userID, domain.UserRole("member")).
+		Return(nil, domain.ErrDocumentNotFound)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/"+docID.String()+"/validation", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.GetValidation(c)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_GetValidation_PermDenied(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("GetValidation", mock.Anything, tenantID, docID, userID, domain.UserRole("viewer")).
+		Return(nil, domain.ErrCollectionPermDenied)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/"+docID.String()+"/validation", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "viewer")
+
+	h.GetValidation(c)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	mockSvc.AssertExpectations(t)
 }
