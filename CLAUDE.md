@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 50+ built-in GST invoice rules, reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 56 built-in GST invoice rules (including IRN/e-invoice validation), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -128,7 +128,7 @@ internal/
                              ReconciliationCritical)
     registry.go              Map-based validator registry (Register, Get, All)
     field_status.go          Computes per-field status from rule results + confidence scores
-    invoice/                 GST invoice validators (50 built-in rules):
+    invoice/                 GST invoice validators (56 built-in rules):
       types.go               GSTInvoice, Party, LineItem, Totals, Payment, ConfidenceScores structs
       builtin_rules.go       AllBuiltinValidators() — collects all validators into BuiltinValidator wrappers
       required.go            12 required field validators (invoice number, GSTIN, state codes, etc.)
@@ -136,6 +136,8 @@ internal/
       math.go                11 mathematical validators (line item arithmetic, totals reconciliation)
       crossfield.go          7 cross-field validators (GSTIN-state match, GSTIN-PAN match, tax type consistency)
       logical.go             7 logical validators (non-negative amounts, valid GST rates, exclusive tax type)
+      irn.go                 5 IRN validators (format, ack number/date, hash verification, missing IRN warning)
+                             + DeriveFinancialYear/ComputeIRNHash helpers
   router/
     router.go                Route definitions, middleware wiring
   mocks/                     Generated mocks (uber/mock) for testing
@@ -203,7 +205,7 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   │ View Results │<─────────────────────────────────────│                         │
   │ per-rule     │                                      │ 1. Ensure builtin rules │
   │ per-field    │                                      │ 2. Load active rules    │
-  │ summary      │                                      │ 3. Run 50+ validators   │
+  │ summary      │                                      │ 3. Run 56 validators    │
   └──────────────┘                                      │ 4. Compute field status │
                                                         │ 5. Save JSONB results   │
   PUT /documents/:id/review                             │ validation: valid/      │
@@ -269,7 +271,7 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   └───────────────┘  └──────────────┘  └──────────────┘
 ```
 
-### Validator Categories (50 built-in rules)
+### Validator Categories (56 built-in rules)
 
 | Category | Count | Rule Type | Severity | Key Prefix | File |
 |----------|-------|-----------|----------|------------|------|
@@ -278,6 +280,9 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
 | Mathematical | 11 | `sum_check` | Error/Warning | `math.*` | `invoice/math.go` |
 | Cross-field | 7 | `cross_field` | Error/Warning | `xf.*` | `invoice/crossfield.go` |
 | Logical | 7 | `custom` | Error/Warning | `logic.*` | `invoice/logical.go` |
+| IRN Format | 3 | `regex` | Error/Warning | `fmt.invoice.*` | `invoice/irn.go` |
+| IRN Cross-field | 1 | `cross_field` | Warning | `xf.invoice.*` | `invoice/irn.go` |
+| IRN Logical | 1 | `custom` | Warning | `logic.invoice.*` | `invoice/irn.go` |
 
 ### Field Status Computation (`field_status.go`)
 
@@ -290,7 +295,7 @@ Per-field status is determined by combining validation results and confidence sc
 ### GST Invoice Type Model (`invoice/types.go`)
 
 The `GSTInvoice` struct mirrors the LLM parser output:
-- `Invoice` — header (number, date, due_date, type, currency, place_of_supply, reverse_charge)
+- `Invoice` — header (number, date, due_date, type, currency, place_of_supply, reverse_charge, irn, acknowledgement_number, acknowledgement_date, qr_code_data)
 - `Seller` / `Buyer` — party (name, address, gstin, pan, state, state_code)
 - `LineItems[]` — (description, hsn_sac_code, quantity, unit, unit_price, discount, taxable_amount, cgst/sgst/igst rate+amount, total)
 - `Totals` — (subtotal, total_discount, taxable_amount, cgst, sgst, igst, cess, round_off, total, amount_in_words)
@@ -317,7 +322,7 @@ Results are stored as JSONB directly on the `documents` table (`validation_resul
 
 ### Reconciliation Tiering
 
-21 of the 50 validation rules are classified as **reconciliation-critical** for GSTR-2A/2B matching. These are the fields the GST portal uses for invoice matching: supplier GSTIN, invoice number/date, total value, taxable value, CGST/SGST/IGST amounts, place of supply, and reverse charge.
+22 of the 56 validation rules are classified as **reconciliation-critical** for GSTR-2A/2B matching. These are the fields the GST portal uses for invoice matching: supplier GSTIN, invoice number/date, total value, taxable value, CGST/SGST/IGST amounts, place of supply, reverse charge, and IRN hash verification.
 
 The `reconciliation_status` field on documents is computed independently from `validation_status`:
 - Only reconciliation-critical rule failures affect `reconciliation_status`
@@ -325,7 +330,7 @@ The `reconciliation_status` field on documents is computed independently from `v
 
 Each validator implements `ReconciliationCritical() bool`. Each `DocumentValidationRule` row has a `reconciliation_critical` boolean. The engine tracks recon errors/warnings separately and saves the result to `documents.reconciliation_status`.
 
-**Reconciliation-critical rule keys** (21 total): `req.invoice.number`, `req.invoice.date`, `req.invoice.place_of_supply`, `req.seller.name`, `req.seller.gstin`, `req.buyer.gstin`, `fmt.seller.gstin`, `fmt.buyer.gstin`, `fmt.seller.state_code`, `fmt.buyer.state_code`, `math.totals.taxable_amount`, `math.totals.cgst`, `math.totals.sgst`, `math.totals.igst`, `math.totals.grand_total`, `xf.seller.gstin_state`, `xf.buyer.gstin_state`, `xf.tax_type.intrastate`, `xf.tax_type.interstate`, `logic.line_items.at_least_one`, `logic.line_item.exclusive_tax`.
+**Reconciliation-critical rule keys** (22 total): `req.invoice.number`, `req.invoice.date`, `req.invoice.place_of_supply`, `req.seller.name`, `req.seller.gstin`, `req.buyer.gstin`, `fmt.seller.gstin`, `fmt.buyer.gstin`, `fmt.seller.state_code`, `fmt.buyer.state_code`, `math.totals.taxable_amount`, `math.totals.cgst`, `math.totals.sgst`, `math.totals.igst`, `math.totals.grand_total`, `xf.seller.gstin_state`, `xf.buyer.gstin_state`, `xf.tax_type.intrastate`, `xf.tax_type.interstate`, `logic.line_items.at_least_one`, `logic.line_item.exclusive_tax`, `xf.invoice.irn_hash`.
 
 ### Multi-Parser Architecture
 
@@ -394,20 +399,16 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **File validation**: Extension whitelist (pdf/jpg/jpeg/png) + magic bytes content-type detection.
 - **S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
 - **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
-<<<<<<< add-excel
-- **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read.
-- **CSV export**: `GET /collections/:id/export/csv` streams all documents in a collection as CSV. 30 columns ordered for GST reconciliation (reconciliation-critical fields first). UTF-8 BOM for Excel compatibility. Batched loading (200 docs/batch). Unparsed docs included with empty invoice columns. Viewer+ permission required. Logic in `internal/csvexport/` package, handler in `CollectionHandler.ExportCSV`.
-=======
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read. `GET /collections` and `GET /collections/:id` include `current_user_permission` in responses (the user's effective permission). `EffectivePermissions` (batch) is optimized: admin/viewer short-circuit without DB queries; manager/member use a single `GetByUserForCollections` batch query.
->>>>>>> main
+- **CSV export**: `GET /collections/:id/export/csv` streams all documents in a collection as CSV. 33 columns ordered for GST reconciliation (reconciliation-critical fields first, including IRN/Ack Number/Ack Date). UTF-8 BOM for Excel compatibility. Batched loading (200 docs/batch). Unparsed docs included with empty invoice columns. Viewer+ permission required. Logic in `internal/csvexport/` package, handler in `CollectionHandler.ExportCSV`.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
 - **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed/queued. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). `parse_attempts` is incremented on each parse/retry attempt. `secondary_parser_model` records the secondary model name in dual-parse mode (from `ParseOutput.SecondaryModel`). Core parse logic lives in `ParseDocument` (called by both `parseInBackground` and `ParseQueueWorker`). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
 - **Parse queue (rate-limit retry)**: When all LLM parsers return `RateLimitError` (HTTP 429), `handleParseError` sets `parsing_status=queued` and `retry_after` to the earliest retry time (instead of permanently failing). A `ParseQueueWorker` polls the DB every 10s via `ClaimQueued` (atomic `UPDATE ... FOR UPDATE SKIP LOCKED`), re-dispatches queued documents with bounded concurrency (semaphore, default 5). Each document gets up to `max_retries` (default 5) parse attempts before permanent failure. Each worker goroutine uses `context.WithTimeout(context.Background(), 5min)` so in-flight parses complete even during shutdown. Config: `SATVOS_QUEUE_POLL_INTERVAL_SECS`, `SATVOS_QUEUE_MAX_RETRIES`, `SATVOS_QUEUE_CONCURRENCY`. **Known limitation**: If the server crashes mid-parse, a document may stay in `processing` indefinitely (staleness detector is a future enhancement).
 - **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
-- **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
+- **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount, irn) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
 - **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini implementation in `parser/gemini/`, OpenAI implementation in `parser/openai/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`. `FallbackParser` in `parser/fallback.go` provides rate-limit-aware failover across providers.
-- **Validation**: Runs automatically after parsing completes. 50 built-in GST invoice rules across 5 categories. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
+- **Validation**: Runs automatically after parsing completes. 56 built-in GST invoice rules across 8 categories (including IRN format, cross-field hash verification, and missing-IRN warning). Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.
 - **Pagination**: `offset` and `limit` query params on list endpoints.
 - **Testing**: Unit tests use testify assertions and uber/mock for interface mocking. Tests run with `-race` flag in CI.

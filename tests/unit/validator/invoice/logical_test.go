@@ -392,7 +392,7 @@ func TestAllValidInvoice_PassesAllValidators(t *testing.T) {
 
 func TestAllBuiltinValidators_Count(t *testing.T) {
 	all := invoice.AllBuiltinValidators()
-	assert.Len(t, all, 51, "expected 51 built-in validators, got %d", len(all))
+	assert.Len(t, all, 56, "expected 56 built-in validators, got %d", len(all))
 }
 
 func TestAllBuiltinValidators_UniqueKeys(t *testing.T) {
@@ -412,7 +412,7 @@ func TestReconciliationCriticalCount(t *testing.T) {
 			count++
 		}
 	}
-	assert.Equal(t, 21, count, "expected 21 reconciliation-critical validators")
+	assert.Equal(t, 22, count, "expected 22 reconciliation-critical validators")
 }
 
 func TestValidInterstateInvoice_PassesAllValidators(t *testing.T) {

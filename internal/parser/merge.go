@@ -13,6 +13,7 @@ import (
 )
 
 var gstinRe = regexp.MustCompile(`^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$`)
+var irnRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // MergeParser wraps two DocumentParsers, runs both in parallel, and merges results.
 type MergeParser struct {
@@ -101,6 +102,9 @@ func mergeOutputs(primary, secondary *port.ParseOutput) (*port.ParseOutput, erro
 	mergeString(&merged.Invoice.InvoiceType, sData.Invoice.InvoiceType, &pConf.Invoice.InvoiceType, sConf.Invoice.InvoiceType, "invoice.invoice_type", provenance, nil)
 	mergeString(&merged.Invoice.Currency, sData.Invoice.Currency, &pConf.Invoice.Currency, sConf.Invoice.Currency, "invoice.currency", provenance, nil)
 	mergeString(&merged.Invoice.PlaceOfSupply, sData.Invoice.PlaceOfSupply, &pConf.Invoice.PlaceOfSupply, sConf.Invoice.PlaceOfSupply, "invoice.place_of_supply", provenance, nil)
+	mergeString(&merged.Invoice.IRN, sData.Invoice.IRN, &pConf.Invoice.IRN, sConf.Invoice.IRN, "invoice.irn", provenance, irnRe)
+	mergeString(&merged.Invoice.AcknowledgementNumber, sData.Invoice.AcknowledgementNumber, &pConf.Invoice.AcknowledgementNumber, sConf.Invoice.AcknowledgementNumber, "invoice.acknowledgement_number", provenance, nil)
+	mergeString(&merged.Invoice.AcknowledgementDate, sData.Invoice.AcknowledgementDate, &pConf.Invoice.AcknowledgementDate, sConf.Invoice.AcknowledgementDate, "invoice.acknowledgement_date", provenance, nil)
 
 	// Merge seller fields
 	mergeString(&merged.Seller.Name, sData.Seller.Name, &pConf.Seller.Name, sConf.Seller.Name, "seller.name", provenance, nil)

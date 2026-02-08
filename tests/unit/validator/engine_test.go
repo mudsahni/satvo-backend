@@ -717,9 +717,10 @@ func TestEngine_EnsureBuiltinRules_SetsReconciliationCritical(t *testing.T) {
 		"xf.tax_type.interstate":      true,
 		"logic.line_items.at_least_one":  true,
 		"logic.line_item.exclusive_tax": true,
+		"xf.invoice.irn_hash":           true,
 	}
 
-	assert.Equal(t, len(expectedReconKeys), len(reconCriticalKeys), "expected 21 reconciliation-critical rules")
+	assert.Equal(t, len(expectedReconKeys), len(reconCriticalKeys), "expected 22 reconciliation-critical rules")
 	for _, key := range reconCriticalKeys {
 		assert.True(t, expectedReconKeys[key], "unexpected reconciliation-critical key: %s", key)
 	}
@@ -802,6 +803,7 @@ func TestBuiltinValidators_ReconciliationCritical(t *testing.T) {
 		"xf.seller.gstin_state": true, "xf.buyer.gstin_state": true,
 		"xf.tax_type.intrastate": true, "xf.tax_type.interstate": true,
 		"logic.line_items.at_least_one": true, "logic.line_item.exclusive_tax": true,
+		"xf.invoice.irn_hash": true,
 	}
 
 	for _, v := range validators {
