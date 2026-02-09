@@ -125,12 +125,12 @@ func TestEngine_ValidateDocument_Success(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).Return(nil)
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
 
 	err := engine.ValidateDocument(ctx, tenantID, docID)
 
 	assert.NoError(t, err)
-	docRepo.AssertCalled(t, "UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document"))
+	docRepo.AssertCalled(t, "UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document"))
 }
 
 func TestEngine_ValidateDocument_NoRules(t *testing.T) {
@@ -153,7 +153,7 @@ func TestEngine_ValidateDocument_NoRules(t *testing.T) {
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	// No active rules
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return([]domain.DocumentValidationRule{}, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusValid, d.ValidationStatus)
@@ -219,7 +219,7 @@ func TestEngine_ValidateDocument_MixedResults(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			// Should be invalid because seller GSTIN is missing
@@ -268,7 +268,7 @@ func TestEngine_ValidateDocument_WarningOnly(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusWarning, d.ValidationStatus)
@@ -316,7 +316,7 @@ func TestEngine_ValidateDocument_ErrorOverridesWarning(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusInvalid, d.ValidationStatus)
@@ -527,7 +527,7 @@ func TestEngine_ValidateDocument_ReconciliationCriticalError(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusInvalid, d.ValidationStatus)
@@ -575,7 +575,7 @@ func TestEngine_ValidateDocument_NonReconCriticalError_ReconValid(t *testing.T) 
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusWarning, d.ValidationStatus)
@@ -627,7 +627,7 @@ func TestEngine_ValidateDocument_MixedReconAndNonRecon(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusInvalid, d.ValidationStatus)
@@ -662,7 +662,7 @@ func TestEngine_ValidateDocument_AllPass_ReconValid(t *testing.T) {
 	docRepo.On("GetByID", ctx, tenantID, docID).Return(doc, nil)
 	ruleRepo.On("ListBuiltinKeys", ctx, tenantID, "invoice").Return(allBuiltinKeys(), nil)
 	ruleRepo.On("ListByDocumentType", ctx, tenantID, "invoice", (*uuid.UUID)(nil)).Return(rules, nil)
-	docRepo.On("UpdateValidationResults", ctx, mock.AnythingOfType("*domain.Document")).
+	docRepo.On("UpdateValidationResults", mock.Anything, mock.AnythingOfType("*domain.Document")).
 		Run(func(args mock.Arguments) {
 			d := args.Get(1).(*domain.Document)
 			assert.Equal(t, domain.ValidationStatusValid, d.ValidationStatus)

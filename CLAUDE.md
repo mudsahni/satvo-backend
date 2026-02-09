@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 58 registered GST invoice rules (56 built-in + 2 HSN-based, including IRN/e-invoice validation and HSN code existence/rate cross-validation), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 59 registered GST invoice rules (56 built-in + 2 HSN-based + 1 duplicate detection, including IRN/e-invoice validation, HSN code existence/rate cross-validation, and duplicate invoice detection), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -95,6 +95,7 @@ internal/
     stats_repository.go      StatsRepository interface (GetTenantStats, GetUserStats)
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
     hsn_repository.go        HSNEntry DTO + HSNRepository interface (LoadAll for in-memory cache)
+    duplicate_finder.go      DuplicateMatch DTO + DuplicateInvoiceFinder interface
     storage.go               ObjectStorage interface (Upload, Download, Delete, GetPresignedURL)
   repository/postgres/
     db.go                    Database connection setup (sqlx + pgx)
@@ -108,6 +109,7 @@ internal/
     document_tag_repo.go     Document tag queries (batch create, search by tag)
     document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
     hsn_repo.go              HSN codes bulk loader (LoadAll for startup cache)
+    duplicate_finder_repo.go Duplicate invoice finder (JSONB @> containment query)
     stats_repo.go            Aggregate stats queries (conditional COUNTs on documents + collections)
   csvexport/
     writer.go                CSV export for collections (Writer, SanitizeFilename, BuildFilename)
@@ -133,7 +135,7 @@ internal/
                              ReconciliationCritical)
     registry.go              Map-based validator registry (Register, Get, All)
     field_status.go          Computes per-field status from rule results + confidence scores
-    invoice/                 GST invoice validators (56 built-in + 2 HSN-based rules):
+    invoice/                 GST invoice validators (56 built-in + 2 HSN-based + 1 duplicate detection):
       types.go               GSTInvoice, Party, LineItem, Totals, Payment, ConfidenceScores structs
       builtin_rules.go       AllBuiltinValidators() — collects all validators into BuiltinValidator wrappers
       required.go            12 required field validators (invoice number, GSTIN, state codes, etc.)
@@ -145,6 +147,8 @@ internal/
                              + DeriveFinancialYear/ComputeIRNHash helpers
       hsn_lookup.go          In-memory HSN code lookup (loaded from DB at startup, prefix fallback)
       hsn.go                 2 HSN validators (existence check + rate cross-validation) via closure-captured lookup
+      context.go             Validation context helpers (WithValidationContext, TenantIDFromContext, DocumentIDFromContext)
+      duplicate.go           Duplicate invoice detection validator via closure-captured DuplicateInvoiceFinder
   router/
     router.go                Route definitions, middleware wiring
   mocks/                     Generated mocks (uber/mock) for testing
@@ -279,7 +283,7 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
   └───────────────┘  └──────────────┘  └──────────────┘
 ```
 
-### Validator Categories (56 built-in rules)
+### Validator Categories (56 built-in + 3 data-dependent rules)
 
 | Category | Count | Rule Type | Severity | Key Prefix | File |
 |----------|-------|-----------|----------|------------|------|
@@ -293,6 +297,7 @@ Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
 | IRN Logical | 1 | `custom` | Warning | `logic.invoice.*` | `invoice/irn.go` |
 | HSN Existence | 1 | `custom` | Warning | `logic.line_item.hsn_exists` | `invoice/hsn.go` |
 | HSN Rate | 1 | `cross_field` | Warning | `xf.line_item.hsn_rate` | `invoice/hsn.go` |
+| Duplicate Detection | 1 | `custom` | Warning | `logic.invoice.duplicate` | `invoice/duplicate.go` |
 
 ### Field Status Computation (`field_status.go`)
 
@@ -418,7 +423,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount, irn) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
 - **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
 - **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini implementation in `parser/gemini/`, OpenAI implementation in `parser/openai/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`. `FallbackParser` in `parser/fallback.go` provides rate-limit-aware failover across providers.
-- **Validation**: Runs automatically after parsing completes. 58 registered GST invoice rules (56 built-in via `AllBuiltinValidators()` + 2 HSN-based via `HSNValidators()`) across 10 categories (including IRN format, cross-field hash verification, missing-IRN warning, HSN code existence, and HSN-to-rate cross-validation). HSN validators use a closure-captured in-memory lookup loaded from `hsn_codes` table at startup. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
+- **Validation**: Runs automatically after parsing completes. 59 registered GST invoice rules (56 built-in via `AllBuiltinValidators()` + 2 HSN-based via `HSNValidators()` + 1 duplicate detection via `DuplicateInvoiceValidator()`) across 11 categories (including IRN format, cross-field hash verification, missing-IRN warning, HSN code existence, HSN-to-rate cross-validation, and duplicate invoice detection). HSN validators use a closure-captured in-memory lookup loaded from `hsn_codes` table at startup. The duplicate validator uses a closure-captured `DuplicateInvoiceFinder` that queries the DB via JSONB containment (`@>`). The validation engine injects `(tenantID, docID)` into the context via `invoice.WithValidationContext()` so validators like duplicate detection can access them. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
 - **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.
 - **Pagination**: `offset` and `limit` query params on list endpoints.
 - **Testing**: Unit tests use testify assertions and uber/mock for interface mocking. Tests run with `-race` flag in CI.
@@ -439,7 +444,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Modifying config**: `internal/config/config.go` (struct + viper binding), `.env.example`
 - **Adding middleware**: `internal/middleware/`, wire it in `internal/router/router.go`
 - **Adding a new parser provider**: Implement `port.DocumentParser` interface in `internal/parser/<provider>/`, register via `parser.RegisterProvider()` in `cmd/server/main.go`, use shared prompt from `parser.BuildGSTInvoicePrompt()`
-- **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`. For data-dependent validators (like HSN), use the closure-capture pattern: load data into a lookup struct, pass it to a factory function that returns `[]*BuiltinValidator`, register separately in `main.go`
+- **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`. For data-dependent validators (like HSN, duplicate detection), use the closure-capture pattern: inject a dependency (lookup struct or finder interface) into a factory function that returns `*BuiltinValidator` or `[]*BuiltinValidator`, register separately in `main.go`. Validators needing tenant/document context can use `invoice.TenantIDFromContext(ctx)` / `invoice.DocumentIDFromContext(ctx)` (injected by the engine via `WithValidationContext`)
 - **Adding a new document type**: Create typed model in `internal/validator/<type>/types.go`, implement validators, register in `cmd/server/main.go`
 - **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.
 - **Modifying CSV export columns**: `internal/csvexport/writer.go` — `columns` slice defines header, `documentToRow` maps document fields to row cells

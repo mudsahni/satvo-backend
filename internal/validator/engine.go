@@ -74,6 +74,8 @@ func (e *Engine) ValidateDocument(ctx context.Context, tenantID, docID uuid.UUID
 		return fmt.Errorf("unmarshaling structured_data: %w", err)
 	}
 
+	ctx = invoice.WithValidationContext(ctx, tenantID, docID)
+
 	// Run validators and collect results
 	now := time.Now().UTC()
 	var allResults []ValidationResultEntry
