@@ -113,9 +113,9 @@ func (s *passwordResetService) ResetPassword(ctx context.Context, input ResetPas
 	return s.userRepo.ResetPassword(ctx, claims.TenantID, claims.UserID, string(hash), claims.ID)
 }
 
-func (s *passwordResetService) generateResetToken(user *domain.User) (string, string, error) {
+func (s *passwordResetService) generateResetToken(user *domain.User) (tokenString, jti string, err error) {
 	now := time.Now()
-	jti := uuid.New().String()
+	jti = uuid.New().String()
 	claims := &Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   user.ID.String(),
@@ -132,7 +132,7 @@ func (s *passwordResetService) generateResetToken(user *domain.User) (string, st
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(s.jwtCfg.Secret))
+	tokenString, err = token.SignedString([]byte(s.jwtCfg.Secret))
 	if err != nil {
 		return "", "", err
 	}
