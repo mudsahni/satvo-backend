@@ -120,6 +120,12 @@ func (h *FileHandler) List(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
 		return
 	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
@@ -130,7 +136,13 @@ func (h *FileHandler) List(c *gin.Context) {
 		offset = 0
 	}
 
-	files, total, err := h.fileService.List(c.Request.Context(), tenantID, offset, limit)
+	var files []domain.FileMeta
+	var total int
+	if role == domain.RoleFree {
+		files, total, err = h.fileService.ListByUploader(c.Request.Context(), tenantID, userID, offset, limit)
+	} else {
+		files, total, err = h.fileService.List(c.Request.Context(), tenantID, offset, limit)
+	}
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -157,6 +169,12 @@ func (h *FileHandler) GetByID(c *gin.Context) {
 		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
 		return
 	}
+	userID, err := middleware.GetUserID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing user context")
+		return
+	}
+	role := domain.UserRole(middleware.GetRole(c))
 
 	fileID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
@@ -167,6 +185,12 @@ func (h *FileHandler) GetByID(c *gin.Context) {
 	meta, err := h.fileService.GetByID(c.Request.Context(), tenantID, fileID)
 	if err != nil {
 		HandleError(c, err)
+		return
+	}
+
+	// Free users can only see their own files
+	if role == domain.RoleFree && meta.UploadedBy != userID {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "resource not found")
 		return
 	}
 

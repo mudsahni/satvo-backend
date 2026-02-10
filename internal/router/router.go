@@ -47,6 +47,7 @@ func Setup(
 	auth := v1.Group("/auth")
 	auth.POST("/login", authH.Login)
 	auth.POST("/refresh", authH.RefreshToken)
+	auth.POST("/register", authH.Register)
 
 	// Protected routes - require valid JWT
 	protected := v1.Group("")
@@ -54,7 +55,7 @@ func Setup(
 
 	// File routes
 	files := protected.Group("/files")
-	files.POST("/upload", middleware.RequireRole(domain.RoleAdmin, domain.RoleManager, domain.RoleMember), fileH.Upload)
+	files.POST("/upload", middleware.RequireRole(domain.RoleAdmin, domain.RoleManager, domain.RoleMember, domain.RoleFree), fileH.Upload)
 	files.GET("", fileH.List)
 	files.GET("/:id", fileH.GetByID)
 	files.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), fileH.Delete)

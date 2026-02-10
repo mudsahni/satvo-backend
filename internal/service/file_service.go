@@ -30,6 +30,7 @@ type FileService interface {
 	Upload(ctx context.Context, input FileUploadInput) (*domain.FileMeta, error)
 	GetByID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.FileMeta, error)
 	List(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error)
+	ListByUploader(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error)
 	GetDownloadURL(ctx context.Context, tenantID, fileID uuid.UUID) (string, error)
 	Delete(ctx context.Context, tenantID, fileID uuid.UUID) error
 }
@@ -144,6 +145,10 @@ func (s *fileService) GetByID(ctx context.Context, tenantID, fileID uuid.UUID) (
 
 func (s *fileService) List(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error) {
 	return s.fileRepo.ListByTenant(ctx, tenantID, offset, limit)
+}
+
+func (s *fileService) ListByUploader(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error) {
+	return s.fileRepo.ListByUploader(ctx, tenantID, userID, offset, limit)
 }
 
 func (s *fileService) GetDownloadURL(ctx context.Context, tenantID, fileID uuid.UUID) (string, error) {

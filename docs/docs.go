@@ -3533,6 +3533,12 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "current_period_start": {
+                    "type": "string"
+                },
+                "documents_used_this_period": {
+                    "type": "integer"
+                },
                 "email": {
                     "type": "string"
                 },
@@ -3544,6 +3550,9 @@ const docTemplate = `{
                 },
                 "is_active": {
                     "type": "boolean"
+                },
+                "monthly_document_limit": {
+                    "type": "integer"
                 },
                 "role": {
                     "$ref": "#/definitions/domain.UserRole"
@@ -3562,13 +3571,15 @@ const docTemplate = `{
                 "admin",
                 "manager",
                 "member",
-                "viewer"
+                "viewer",
+                "free"
             ],
             "x-enum-varnames": [
                 "RoleAdmin",
                 "RoleManager",
                 "RoleMember",
-                "RoleViewer"
+                "RoleViewer",
+                "RoleFree"
             ]
         },
         "domain.ValidationStatus": {

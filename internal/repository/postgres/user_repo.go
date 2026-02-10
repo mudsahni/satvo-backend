@@ -29,13 +29,18 @@ func (r *userRepo) Create(ctx context.Context, user *domain.User) error {
 	now := time.Now().UTC()
 	user.CreatedAt = now
 	user.UpdatedAt = now
+	if user.CurrentPeriodStart.IsZero() {
+		user.CurrentPeriodStart = now
+	}
 
-	query := `INSERT INTO users (id, tenant_id, email, password_hash, full_name, role, is_active, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+	query := `INSERT INTO users (id, tenant_id, email, password_hash, full_name, role, is_active,
+		monthly_document_limit, documents_used_this_period, current_period_start, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		user.ID, user.TenantID, user.Email, user.PasswordHash, user.FullName,
-		user.Role, user.IsActive, user.CreatedAt, user.UpdatedAt)
+		user.Role, user.IsActive, user.MonthlyDocumentLimit, user.DocumentsUsedThisPeriod,
+		user.CurrentPeriodStart, user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
 			return domain.ErrDuplicateEmail
@@ -117,6 +122,52 @@ func (r *userRepo) Delete(ctx context.Context, tenantID, userID uuid.UUID) error
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *userRepo) CheckAndIncrementQuota(ctx context.Context, tenantID, userID uuid.UUID) error {
+	// 0 means unlimited — skip check entirely
+	var limit int
+	err := r.db.GetContext(ctx, &limit,
+		"SELECT monthly_document_limit FROM users WHERE id = $1 AND tenant_id = $2", userID, tenantID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrNotFound
+		}
+		return fmt.Errorf("userRepo.CheckAndIncrementQuota lookup: %w", err)
+	}
+	if limit == 0 {
+		return nil
+	}
+
+	// Reset period if >30 days have elapsed, then increment if under limit.
+	// Single atomic UPDATE with conditional logic.
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET
+			current_period_start = CASE
+				WHEN NOW() - current_period_start > INTERVAL '30 days' THEN NOW()
+				ELSE current_period_start
+			END,
+			documents_used_this_period = CASE
+				WHEN NOW() - current_period_start > INTERVAL '30 days' THEN 1
+				WHEN documents_used_this_period < monthly_document_limit THEN documents_used_this_period + 1
+				ELSE documents_used_this_period
+			END,
+			updated_at = NOW()
+		WHERE id = $1 AND tenant_id = $2
+		  AND (
+				NOW() - current_period_start > INTERVAL '30 days'
+				OR documents_used_this_period < monthly_document_limit
+		  )`,
+		userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("userRepo.CheckAndIncrementQuota: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrQuotaExceeded
 	}
 	return nil
 }

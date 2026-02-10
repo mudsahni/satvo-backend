@@ -10,12 +10,13 @@ import (
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
-	authService service.AuthService
+	authService         service.AuthService
+	registrationService service.RegistrationService
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(authService service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService service.AuthService, registrationService service.RegistrationService) *AuthHandler {
+	return &AuthHandler{authService: authService, registrationService: registrationService}
 }
 
 // Login handles POST /api/v1/auth/login
@@ -71,4 +72,26 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}
 
 	RespondOK(c, tokenPair)
+}
+
+// Register handles POST /api/v1/auth/register
+func (h *AuthHandler) Register(c *gin.Context) {
+	if h.registrationService == nil {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "registration is not enabled")
+		return
+	}
+
+	var input service.RegisterInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		RespondError(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	output, err := h.registrationService.Register(c.Request.Context(), input)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondCreated(c, output)
 }

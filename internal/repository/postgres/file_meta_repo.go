@@ -77,6 +77,27 @@ func (r *fileMetaRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, off
 	return files, total, nil
 }
 
+func (r *fileMetaRepo) ListByUploader(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error) {
+	var total int
+	err := r.db.GetContext(ctx, &total,
+		"SELECT COUNT(*) FROM file_metadata WHERE tenant_id = $1 AND uploaded_by = $2 AND status != $3",
+		tenantID, userID, domain.FileStatusDeleted)
+	if err != nil {
+		return nil, 0, fmt.Errorf("fileMetaRepo.ListByUploader count: %w", err)
+	}
+
+	var files []domain.FileMeta
+	err = r.db.SelectContext(ctx, &files,
+		`SELECT * FROM file_metadata
+		 WHERE tenant_id = $1 AND uploaded_by = $2 AND status != $3
+		 ORDER BY created_at DESC LIMIT $4 OFFSET $5`,
+		tenantID, userID, domain.FileStatusDeleted, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("fileMetaRepo.ListByUploader: %w", err)
+	}
+	return files, total, nil
+}
+
 func (r *fileMetaRepo) UpdateStatus(ctx context.Context, tenantID, fileID uuid.UUID, status domain.FileStatus) error {
 	result, err := r.db.ExecContext(ctx,
 		"UPDATE file_metadata SET status = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4",

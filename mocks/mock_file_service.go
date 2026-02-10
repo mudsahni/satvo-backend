@@ -39,6 +39,14 @@ func (m *MockFileService) List(ctx context.Context, tenantID uuid.UUID, offset, 
 	return args.Get(0).([]domain.FileMeta), args.Int(1), args.Error(2)
 }
 
+func (m *MockFileService) ListByUploader(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error) {
+	args := m.Called(ctx, tenantID, userID, offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]domain.FileMeta), args.Int(1), args.Error(2)
+}
+
 func (m *MockFileService) GetDownloadURL(ctx context.Context, tenantID, fileID uuid.UUID) (string, error) {
 	args := m.Called(ctx, tenantID, fileID)
 	return args.String(0), args.Error(1)

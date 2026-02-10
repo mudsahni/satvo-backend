@@ -19,15 +19,18 @@ type Tenant struct {
 
 // User represents an authenticated user belonging to a tenant.
 type User struct {
-	ID           uuid.UUID `db:"id" json:"id"`
-	TenantID     uuid.UUID `db:"tenant_id" json:"tenant_id"`
-	Email        string    `db:"email" json:"email"`
-	PasswordHash string    `db:"password_hash" json:"-"`
-	FullName     string    `db:"full_name" json:"full_name"`
-	Role         UserRole  `db:"role" json:"role"`
-	IsActive     bool      `db:"is_active" json:"is_active"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID                      uuid.UUID `db:"id" json:"id"`
+	TenantID                uuid.UUID `db:"tenant_id" json:"tenant_id"`
+	Email                   string    `db:"email" json:"email"`
+	PasswordHash            string    `db:"password_hash" json:"-"`
+	FullName                string    `db:"full_name" json:"full_name"`
+	Role                    UserRole  `db:"role" json:"role"`
+	IsActive                bool      `db:"is_active" json:"is_active"`
+	MonthlyDocumentLimit    int       `db:"monthly_document_limit" json:"monthly_document_limit"`
+	DocumentsUsedThisPeriod int       `db:"documents_used_this_period" json:"documents_used_this_period"`
+	CurrentPeriodStart      time.Time `db:"current_period_start" json:"current_period_start"`
+	CreatedAt               time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // Collection represents a grouping of files within a tenant.

@@ -52,3 +52,8 @@ func (m *MockUserRepo) Delete(ctx context.Context, tenantID, userID uuid.UUID) e
 	args := m.Called(ctx, tenantID, userID)
 	return args.Error(0)
 }
+
+func (m *MockUserRepo) CheckAndIncrementQuota(ctx context.Context, tenantID, userID uuid.UUID) error {
+	args := m.Called(ctx, tenantID, userID)
+	return args.Error(0)
+}

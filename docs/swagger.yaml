@@ -271,6 +271,10 @@ definitions:
     properties:
       created_at:
         type: string
+      current_period_start:
+        type: string
+      documents_used_this_period:
+        type: integer
       email:
         type: string
       full_name:
@@ -279,6 +283,8 @@ definitions:
         type: string
       is_active:
         type: boolean
+      monthly_document_limit:
+        type: integer
       role:
         $ref: '#/definitions/domain.UserRole'
       tenant_id:
@@ -292,12 +298,14 @@ definitions:
     - manager
     - member
     - viewer
+    - free
     type: string
     x-enum-varnames:
     - RoleAdmin
     - RoleManager
     - RoleMember
     - RoleViewer
+    - RoleFree
   domain.ValidationStatus:
     enum:
     - pending

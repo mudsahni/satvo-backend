@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"satvos/internal/config"
+	"satvos/internal/domain"
 	"satvos/internal/handler"
 	"satvos/internal/parser"
 	claudeparser "satvos/internal/parser/claude"
@@ -178,10 +179,29 @@ func run() error {
 
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
-		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine)
+		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine)
 	} else {
-		documentSvc = service.NewDocumentService(docRepo, fileRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine)
+		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine)
 	}
+
+	// Auto-create free tier tenant if it doesn't exist
+	if _, ftErr := tenantRepo.GetBySlug(context.Background(), cfg.FreeTier.TenantSlug); ftErr != nil {
+		log.Printf("Free tier tenant '%s' not found, creating...", cfg.FreeTier.TenantSlug)
+		ft := &domain.Tenant{
+			Name:     "SATVOS Free Tier",
+			Slug:     cfg.FreeTier.TenantSlug,
+			IsActive: true,
+		}
+		if createErr := tenantRepo.Create(context.Background(), ft); createErr != nil {
+			log.Printf("WARNING: failed to create free tier tenant: %v", createErr)
+		} else {
+			log.Printf("Free tier tenant '%s' created with ID %s", cfg.FreeTier.TenantSlug, ft.ID)
+		}
+	} else {
+		log.Printf("Free tier tenant '%s' ready", cfg.FreeTier.TenantSlug)
+	}
+
+	registrationSvc := service.NewRegistrationService(tenantRepo, userRepo, collectionRepo, collectionPermRepo, authSvc, cfg.FreeTier)
 
 	// Start parse queue worker
 	queueCfg := service.ParseQueueConfig{
@@ -195,7 +215,7 @@ func run() error {
 	go queueWorker.Start(queueCtx)
 
 	// Initialize handlers
-	authH := handler.NewAuthHandler(authSvc)
+	authH := handler.NewAuthHandler(authSvc, registrationSvc)
 	fileH := handler.NewFileHandler(fileSvc, collectionSvc)
 	tenantH := handler.NewTenantHandler(tenantSvc)
 	userH := handler.NewUserHandler(userSvc)
