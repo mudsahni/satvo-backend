@@ -20,6 +20,16 @@ type Config struct {
 	CORS     CORSConfig
 	Queue    QueueConfig
 	FreeTier FreeTierConfig
+	Email    EmailConfig
+}
+
+// EmailConfig holds email delivery settings.
+type EmailConfig struct {
+	Provider    string `mapstructure:"provider"`
+	Region      string `mapstructure:"region"`
+	FromAddress string `mapstructure:"from_address"`
+	FromName    string `mapstructure:"from_name"`
+	FrontendURL string `mapstructure:"frontend_url"`
 }
 
 // FreeTierConfig holds free tier settings.
@@ -195,6 +205,13 @@ func Load() (*Config, error) {
 	v.SetDefault("queue.max_retries", 5)
 	v.SetDefault("queue.concurrency", 5)
 
+	// Email defaults
+	v.SetDefault("email.provider", "noop")
+	v.SetDefault("email.region", "ap-south-1")
+	v.SetDefault("email.from_address", "noreply@satvos.com")
+	v.SetDefault("email.from_name", "SATVOS")
+	v.SetDefault("email.frontend_url", "http://localhost:3000")
+
 	// Free tier defaults
 	v.SetDefault("free_tier.tenant_slug", "satvos")
 	v.SetDefault("free_tier.monthly_limit", 5)
@@ -274,6 +291,11 @@ func Load() (*Config, error) {
 		"parser.tertiary.default_model":  "SATVOS_PARSER_TERTIARY_DEFAULT_MODEL",
 		"parser.tertiary.max_retries":    "SATVOS_PARSER_TERTIARY_MAX_RETRIES",
 		"parser.tertiary.timeout_secs":   "SATVOS_PARSER_TERTIARY_TIMEOUT_SECS",
+		"email.provider":                 "SATVOS_EMAIL_PROVIDER",
+		"email.region":                   "SATVOS_EMAIL_REGION",
+		"email.from_address":             "SATVOS_EMAIL_FROM_ADDRESS",
+		"email.from_name":                "SATVOS_EMAIL_FROM_NAME",
+		"email.frontend_url":             "SATVOS_EMAIL_FRONTEND_URL",
 		"free_tier.tenant_slug":          "SATVOS_FREE_TIER_TENANT_SLUG",
 		"free_tier.monthly_limit":        "SATVOS_FREE_TIER_MONTHLY_LIMIT",
 	}
@@ -374,6 +396,14 @@ func Load() (*Config, error) {
 	cfg.FreeTier = FreeTierConfig{
 		TenantSlug:   v.GetString("free_tier.tenant_slug"),
 		MonthlyLimit: v.GetInt("free_tier.monthly_limit"),
+	}
+
+	cfg.Email = EmailConfig{
+		Provider:    v.GetString("email.provider"),
+		Region:      v.GetString("email.region"),
+		FromAddress: v.GetString("email.from_address"),
+		FromName:    v.GetString("email.from_name"),
+		FrontendURL: v.GetString("email.frontend_url"),
 	}
 
 	return cfg, nil

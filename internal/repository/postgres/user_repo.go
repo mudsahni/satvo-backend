@@ -34,13 +34,15 @@ func (r *userRepo) Create(ctx context.Context, user *domain.User) error {
 	}
 
 	query := `INSERT INTO users (id, tenant_id, email, password_hash, full_name, role, is_active,
-		monthly_document_limit, documents_used_this_period, current_period_start, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+		monthly_document_limit, documents_used_this_period, current_period_start,
+		email_verified, email_verified_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		user.ID, user.TenantID, user.Email, user.PasswordHash, user.FullName,
 		user.Role, user.IsActive, user.MonthlyDocumentLimit, user.DocumentsUsedThisPeriod,
-		user.CurrentPeriodStart, user.CreatedAt, user.UpdatedAt)
+		user.CurrentPeriodStart, user.EmailVerified, user.EmailVerifiedAt,
+		user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
 			return domain.ErrDuplicateEmail
@@ -168,6 +170,51 @@ func (r *userRepo) CheckAndIncrementQuota(ctx context.Context, tenantID, userID 
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return domain.ErrQuotaExceeded
+	}
+	return nil
+}
+
+func (r *userRepo) SetEmailVerified(ctx context.Context, tenantID, userID uuid.UUID) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE users SET email_verified = true, email_verified_at = NOW(), updated_at = NOW()
+		 WHERE id = $1 AND tenant_id = $2`,
+		userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("userRepo.SetEmailVerified: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *userRepo) SetPasswordResetToken(ctx context.Context, tenantID, userID uuid.UUID, tokenID string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password_reset_token_id = $1, updated_at = NOW()
+		 WHERE id = $2 AND tenant_id = $3`,
+		tokenID, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("userRepo.SetPasswordResetToken: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
+func (r *userRepo) ResetPassword(ctx context.Context, tenantID, userID uuid.UUID, passwordHash, expectedTokenID string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password_hash = $1, password_reset_token_id = NULL, updated_at = NOW()
+		 WHERE id = $2 AND tenant_id = $3 AND password_reset_token_id = $4`,
+		passwordHash, userID, tenantID, expectedTokenID)
+	if err != nil {
+		return fmt.Errorf("userRepo.ResetPassword: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrPasswordResetTokenInvalid
 	}
 	return nil
 }

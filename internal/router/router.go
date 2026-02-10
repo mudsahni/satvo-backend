@@ -8,6 +8,7 @@ import (
 	"satvos/internal/domain"
 	"satvos/internal/handler"
 	"satvos/internal/middleware"
+	"satvos/internal/port"
 	"satvos/internal/service"
 )
 
@@ -23,6 +24,7 @@ func Setup(
 	documentH *handler.DocumentHandler,
 	statsH *handler.StatsHandler,
 	corsOrigins []string,
+	userRepo port.UserRepository,
 ) *gin.Engine {
 	r := gin.New()
 
@@ -48,14 +50,23 @@ func Setup(
 	auth.POST("/login", authH.Login)
 	auth.POST("/refresh", authH.RefreshToken)
 	auth.POST("/register", authH.Register)
+	auth.GET("/verify-email", authH.VerifyEmail)
+	auth.POST("/forgot-password", authH.ForgotPassword)
+	auth.POST("/reset-password", authH.ResetPassword)
 
 	// Protected routes - require valid JWT
 	protected := v1.Group("")
 	protected.Use(middleware.AuthMiddleware(authSvc))
 
+	// Resend verification (authenticated, no email verification required)
+	protected.POST("/auth/resend-verification", authH.ResendVerification)
+
 	// File routes
 	files := protected.Group("/files")
-	files.POST("/upload", middleware.RequireRole(domain.RoleAdmin, domain.RoleManager, domain.RoleMember, domain.RoleFree), fileH.Upload)
+	files.POST("/upload",
+		middleware.RequireRole(domain.RoleAdmin, domain.RoleManager, domain.RoleMember, domain.RoleFree),
+		middleware.RequireEmailVerified(userRepo),
+		fileH.Upload)
 	files.GET("", fileH.List)
 	files.GET("/:id", fileH.GetByID)
 	files.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), fileH.Delete)
@@ -76,7 +87,7 @@ func Setup(
 
 	// Document routes
 	documents := protected.Group("/documents")
-	documents.POST("", documentH.Create)
+	documents.POST("", middleware.RequireEmailVerified(userRepo), documentH.Create)
 	documents.GET("", documentH.List)
 	documents.GET("/search/tags", documentH.SearchByTag)
 	documents.GET("/:id", documentH.GetByID)

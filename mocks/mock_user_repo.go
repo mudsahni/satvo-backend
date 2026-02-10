@@ -57,3 +57,18 @@ func (m *MockUserRepo) CheckAndIncrementQuota(ctx context.Context, tenantID, use
 	args := m.Called(ctx, tenantID, userID)
 	return args.Error(0)
 }
+
+func (m *MockUserRepo) SetEmailVerified(ctx context.Context, tenantID, userID uuid.UUID) error {
+	args := m.Called(ctx, tenantID, userID)
+	return args.Error(0)
+}
+
+func (m *MockUserRepo) SetPasswordResetToken(ctx context.Context, tenantID, userID uuid.UUID, tokenID string) error {
+	args := m.Called(ctx, tenantID, userID, tokenID)
+	return args.Error(0)
+}
+
+func (m *MockUserRepo) ResetPassword(ctx context.Context, tenantID, userID uuid.UUID, passwordHash, expectedTokenID string) error {
+	args := m.Called(ctx, tenantID, userID, passwordHash, expectedTokenID)
+	return args.Error(0)
+}

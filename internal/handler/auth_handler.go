@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -10,27 +11,17 @@ import (
 
 // AuthHandler handles authentication endpoints.
 type AuthHandler struct {
-	authService         service.AuthService
-	registrationService service.RegistrationService
+	authService          service.AuthService
+	registrationService  service.RegistrationService
+	passwordResetService service.PasswordResetService
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(authService service.AuthService, registrationService service.RegistrationService) *AuthHandler {
-	return &AuthHandler{authService: authService, registrationService: registrationService}
+func NewAuthHandler(authService service.AuthService, registrationService service.RegistrationService, passwordResetService service.PasswordResetService) *AuthHandler {
+	return &AuthHandler{authService: authService, registrationService: registrationService, passwordResetService: passwordResetService}
 }
 
 // Login handles POST /api/v1/auth/login
-// @Summary Login to get access token
-// @Description Authenticate with tenant slug, email and password to receive JWT tokens
-// @Tags auth
-// @Accept json
-// @Produce json
-// @Param request body LoginRequest true "Login credentials"
-// @Success 200 {object} Response{data=TokenResponse} "Successfully authenticated"
-// @Failure 400 {object} ErrorResponseBody "Validation error"
-// @Failure 401 {object} ErrorResponseBody "Invalid credentials"
-// @Failure 403 {object} ErrorResponseBody "Tenant or user inactive"
-// @Router /auth/login [post]
 func (h *AuthHandler) Login(c *gin.Context) {
 	var input service.LoginInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -48,16 +39,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 }
 
 // RefreshToken handles POST /api/v1/auth/refresh
-// @Summary Refresh access token
-// @Description Exchange a refresh token for a new access token pair
-// @Tags auth
-// @Accept json
-// @Produce json
-// @Param request body RefreshRequest true "Refresh token"
-// @Success 200 {object} Response{data=TokenResponse} "New token pair"
-// @Failure 400 {object} ErrorResponseBody "Validation error"
-// @Failure 401 {object} ErrorResponseBody "Invalid or expired refresh token"
-// @Router /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var input service.RefreshInput
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -94,4 +75,87 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	RespondCreated(c, output)
+}
+
+// VerifyEmail handles GET /api/v1/auth/verify-email?token=...
+func (h *AuthHandler) VerifyEmail(c *gin.Context) {
+	if h.registrationService == nil {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "registration is not enabled")
+		return
+	}
+
+	token := c.Query("token")
+	if token == "" {
+		RespondError(c, http.StatusBadRequest, "VALIDATION_ERROR", "token query parameter is required")
+		return
+	}
+
+	if err := h.registrationService.VerifyEmail(c.Request.Context(), token); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, gin.H{"message": "email verified successfully"})
+}
+
+// ForgotPassword handles POST /api/v1/auth/forgot-password
+func (h *AuthHandler) ForgotPassword(c *gin.Context) {
+	if h.passwordResetService == nil {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "password reset is not enabled")
+		return
+	}
+
+	var input service.ForgotPasswordInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		RespondError(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.passwordResetService.ForgotPassword(c.Request.Context(), input); err != nil {
+		// Never leak information — always return 200
+		log.Printf("forgot-password internal error: %v", err)
+	}
+
+	RespondOK(c, gin.H{"message": "if an account with that email exists, a password reset link has been sent"})
+}
+
+// ResetPassword handles POST /api/v1/auth/reset-password
+func (h *AuthHandler) ResetPassword(c *gin.Context) {
+	if h.passwordResetService == nil {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "password reset is not enabled")
+		return
+	}
+
+	var input service.ResetPasswordInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		RespondError(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	if err := h.passwordResetService.ResetPassword(c.Request.Context(), input); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, gin.H{"message": "password has been reset successfully"})
+}
+
+// ResendVerification handles POST /api/v1/auth/resend-verification
+func (h *AuthHandler) ResendVerification(c *gin.Context) {
+	if h.registrationService == nil {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "registration is not enabled")
+		return
+	}
+
+	tenantID, userID, _, ok := extractAuthContext(c)
+	if !ok {
+		return
+	}
+
+	if err := h.registrationService.ResendVerification(c.Request.Context(), tenantID, userID); err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, gin.H{"message": "verification email sent"})
 }

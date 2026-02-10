@@ -28,6 +28,9 @@ type UserRepository interface {
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, tenantID, userID uuid.UUID) error
 	CheckAndIncrementQuota(ctx context.Context, tenantID, userID uuid.UUID) error
+	SetEmailVerified(ctx context.Context, tenantID, userID uuid.UUID) error
+	SetPasswordResetToken(ctx context.Context, tenantID, userID uuid.UUID, tokenID string) error
+	ResetPassword(ctx context.Context, tenantID, userID uuid.UUID, passwordHash, expectedTokenID string) error
 }
 
 // FileMetaRepository defines the contract for file metadata persistence.

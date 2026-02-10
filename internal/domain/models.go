@@ -26,11 +26,14 @@ type User struct {
 	FullName                string    `db:"full_name" json:"full_name"`
 	Role                    UserRole  `db:"role" json:"role"`
 	IsActive                bool      `db:"is_active" json:"is_active"`
-	MonthlyDocumentLimit    int       `db:"monthly_document_limit" json:"monthly_document_limit"`
-	DocumentsUsedThisPeriod int       `db:"documents_used_this_period" json:"documents_used_this_period"`
-	CurrentPeriodStart      time.Time `db:"current_period_start" json:"current_period_start"`
-	CreatedAt               time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt               time.Time `db:"updated_at" json:"updated_at"`
+	MonthlyDocumentLimit    int        `db:"monthly_document_limit" json:"monthly_document_limit"`
+	DocumentsUsedThisPeriod int        `db:"documents_used_this_period" json:"documents_used_this_period"`
+	CurrentPeriodStart      time.Time  `db:"current_period_start" json:"current_period_start"`
+	EmailVerified           bool       `db:"email_verified" json:"email_verified"`
+	EmailVerifiedAt         *time.Time `db:"email_verified_at" json:"email_verified_at,omitempty"`
+	PasswordResetTokenID    *string    `db:"password_reset_token_id" json:"-"`
+	CreatedAt               time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // Collection represents a grouping of files within a tenant.

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer/free), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 59 registered GST invoice rules (56 built-in + 2 HSN-based + 1 duplicate detection, including IRN/e-invoice validation, HSN code existence/rate cross-validation, and duplicate invoice detection), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, a document tagging system with user-provided and auto-generated tags from parsed invoice data, and a free tier allowing self-registration with per-user monthly document quotas. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer/free), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 59 registered GST invoice rules (56 built-in + 2 HSN-based + 1 duplicate detection, including IRN/e-invoice validation, HSN code existence/rate cross-validation, and duplicate invoice detection), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, a document tagging system with user-provided and auto-generated tags from parsed invoice data, a free tier allowing self-registration with per-user monthly document quotas and email verification, email verification for free-tier users (JWT-based token, AWS SES or noop sender), and password reset for all users (JWT-based single-use token with 1h expiry, no email enumeration). The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -47,7 +47,11 @@ internal/
                              ErrDocumentNotFound, ErrDocumentNotParsed, ErrValidationRuleNotFound,
                              ErrInvalidStructuredData, ErrQuotaExceeded, etc.)
   handler/
-    auth_handler.go          POST /auth/login, POST /auth/refresh, POST /auth/register (free-tier self-registration)
+    auth_handler.go          POST /auth/login, POST /auth/refresh, POST /auth/register (free-tier self-registration),
+                             GET /auth/verify-email (public, token in query param),
+                             POST /auth/resend-verification (authenticated),
+                             POST /auth/forgot-password (public, no email enumeration),
+                             POST /auth/reset-password (public, single-use token)
     file_handler.go          POST /files/upload (optional collection_id), GET /files (free: own files only), GET /files/:id (free: ownership check), DELETE /files/:id
     collection_handler.go    CRUD /collections, batch file upload, permission management,
                              GET /collections/:id/export/csv (CSV export)
@@ -71,7 +75,10 @@ internal/
     logger.go                Request ID injection, logging, panic recovery
   service/
     auth_service.go          Login (bcrypt verify), JWT generation/refresh
-    registration_service.go  Free-tier self-registration (create user + personal collection + tokens)
+    registration_service.go  Free-tier self-registration (create user + personal collection + tokens),
+                             email verification (VerifyEmail, ResendVerification)
+    password_reset_service.go Password reset for all users (ForgotPassword, ResetPassword),
+                             JWT token with "password-reset" audience, 1h expiry, single-use via DB jti
     file_service.go          Upload (validate + S3 + DB), download URL, delete, ListByUploader
     collection_service.go    Collection CRUD, batch upload, permission checking, file association,
                              EffectivePermission/EffectivePermissions (batch-optimized for List)
@@ -95,6 +102,7 @@ internal/
                              DocumentTagRepository (incl. DeleteByDocumentAndSource),
                              DocumentValidationRuleRepository interfaces
     stats_repository.go      StatsRepository interface (GetTenantStats, GetUserStats)
+    email.go                 EmailSender interface (SendVerificationEmail, SendPasswordResetEmail)
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
     hsn_repository.go        HSNEntry DTO + HSNRepository interface (LoadAll for in-memory cache)
     duplicate_finder.go      DuplicateMatch DTO + DuplicateInvoiceFinder interface
@@ -113,6 +121,9 @@ internal/
     hsn_repo.go              HSN codes bulk loader (LoadAll for startup cache)
     duplicate_finder_repo.go Duplicate invoice finder (JSONB @> containment query)
     stats_repo.go            Aggregate stats queries (conditional COUNTs on documents + collections)
+  email/
+    ses/ses_sender.go        AWS SES v2 implementation of EmailSender
+    noop/noop_sender.go      No-op implementation (logs verification URL to stdout)
   csvexport/
     writer.go                CSV export for collections (Writer, SanitizeFilename, BuildFilename)
   storage/s3/
@@ -156,7 +167,7 @@ internal/
   mocks/                     Generated mocks (uber/mock) for testing
 
 tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
-db/migrations/               14 SQL migrations: tenants -> users -> file_metadata -> collections
+db/migrations/               16 SQL migrations: tenants -> users -> file_metadata -> collections
                              -> documents -> validation columns -> consolidated validation results
                              -> reconciliation tiering -> multi-parser fields
                              -> document name + tag source
@@ -164,6 +175,8 @@ db/migrations/               14 SQL migrations: tenants -> users -> file_metadat
                              -> parse queue (retry_after column + partial index)
                              -> hsn_codes reference table
                              -> free tier (user quota columns)
+                             -> email verification (email_verified, email_verified_at columns)
+                             -> password reset (password_reset_token_id column)
 ```
 
 ## Data Flow
@@ -410,7 +423,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ## Key Conventions
 
-- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`. Queue worker config: `SATVOS_QUEUE_POLL_INTERVAL_SECS` (default 10), `SATVOS_QUEUE_MAX_RETRIES` (default 5), `SATVOS_QUEUE_CONCURRENCY` (default 5). Free tier config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`).
+- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`. Queue worker config: `SATVOS_QUEUE_POLL_INTERVAL_SECS` (default 10), `SATVOS_QUEUE_MAX_RETRIES` (default 5), `SATVOS_QUEUE_CONCURRENCY` (default 5). Free tier config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`). Email config: `SATVOS_EMAIL_PROVIDER` (default `"noop"`), `SATVOS_EMAIL_REGION` (default `"ap-south-1"`), `SATVOS_EMAIL_FROM_ADDRESS` (default `"noreply@satvos.com"`), `SATVOS_EMAIL_FROM_NAME` (default `"SATVOS"`), `SATVOS_EMAIL_FRONTEND_URL` (default `"http://localhost:3000"`).
 - **Response envelope**: All HTTP responses use `{"success": bool, "data": ..., "error": ..., "meta": ...}` defined in `handler/response.go`.
 - **Tenant isolation**: Every DB query includes `tenant_id` from JWT claims. Users authenticate with tenant slug + email + password.
 - **Error handling**: Domain errors in `domain/errors.go` are mapped to HTTP status codes in `handler/response.go`.
@@ -418,7 +431,9 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
 - **Tenant roles**: 5-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access), free (level 0, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Free users have no implicit collection access but can be granted explicit permissions (e.g., owner on their personal collection). Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
 - **Free tier**: Self-registration on a shared "satvos" tenant via `POST /auth/register` (public, no auth). Free users get `role=free`, a personal collection (owner), and a per-user monthly document quota (default 5). Config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`). The shared tenant is auto-created at server startup if missing. Free users only see their own files (`GET /files` routes to `ListByUploader`, `GET /files/:id` checks ownership). Collections and documents are naturally isolated since free users have no implicit collection access — they only see collections where they have explicit grants. Quota enforcement: `userRepo.CheckAndIncrementQuota()` is called atomically in `CreateAndParse()` before document creation. Period resets after 30 days. `monthly_document_limit=0` means unlimited (all existing/paid users).
-- **Registration flow**: `POST /auth/register` accepts `{email, password, full_name}`. The `RegistrationService` looks up the shared tenant, creates a user (free role, quota), creates a personal collection ("{FullName}'s Invoices"), assigns owner permission, and returns JWT tokens via `authService.Login()`. Returns 201 with `{user, collection, tokens}`. Registration can be disabled by not passing a `RegistrationService` to `NewAuthHandler` (nil check).
+- **Registration flow**: `POST /auth/register` accepts `{email, password, full_name}`. The `RegistrationService` looks up the shared tenant, creates a user (free role, quota, `email_verified=false`), creates a personal collection ("{FullName}'s Invoices"), assigns owner permission, returns JWT tokens via `authService.Login()`, and sends a verification email (non-blocking — failure doesn't fail registration). Returns 201 with `{user, collection, tokens}`. Registration can be disabled by not passing a `RegistrationService` to `NewAuthHandler` (nil check).
+- **Email verification**: Free-tier users must verify their email before performing resource-consuming actions (file upload, document creation). Verification uses a JWT token with `"email-verification"` audience and 24h expiry. `GET /auth/verify-email?token=...` is a public endpoint. `POST /auth/resend-verification` is authenticated. Admin-created users are pre-verified (`email_verified=true`). The `RequireEmailVerified` middleware checks the `email_verified` column for `free` role users only — paid users skip the check. Email is sent via `port.EmailSender` interface with AWS SES (`ses`) and noop (`noop`, default) implementations. Config: `SATVOS_EMAIL_PROVIDER` (default `"noop"`), `SATVOS_EMAIL_REGION`, `SATVOS_EMAIL_FROM_ADDRESS`, `SATVOS_EMAIL_FROM_NAME`, `SATVOS_EMAIL_FRONTEND_URL`.
+- **Password reset**: All users (any tenant/role) can reset their password via `POST /auth/forgot-password` and `POST /auth/reset-password` (both public, no auth required). Uses JWT with `"password-reset"` audience and 1h expiry. Single-use enforcement via `password_reset_token_id` column storing the JWT `jti`. `ForgotPassword` always returns 200 (no email enumeration). Generating a new reset token overwrites the old `jti`, invalidating previous links. Atomic DB update with `WHERE password_reset_token_id = $4` prevents TOCTOU races. `ErrPasswordResetTokenInvalid` maps to HTTP 401 (code: `INVALID_RESET_TOKEN`). Service: `PasswordResetService` in `internal/service/password_reset_service.go`. Email send failure doesn't fail the forgot-password flow. **Known limitation**: Password reset does not invalidate existing access/refresh tokens.
 - **Quota enforcement**: `ErrQuotaExceeded` maps to HTTP 429 (code: `QUOTA_EXCEEDED`). The atomic SQL in `CheckAndIncrementQuota` handles period reset (>30 days) and increment in a single UPDATE with conditional WHERE. If `monthly_document_limit=0`, quota check returns immediately (no DB write).
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read. `GET /collections` and `GET /collections/:id` include `current_user_permission` in responses (the user's effective permission). `EffectivePermissions` (batch) is optimized: admin/viewer short-circuit without DB queries; manager/member use a single `GetByUserForCollections` batch query.
 - **CSV export**: `GET /collections/:id/export/csv` streams all documents in a collection as CSV. 33 columns ordered for GST reconciliation (reconciliation-critical fields first, including IRN/Ack Number/Ack Date). UTF-8 BOM for Excel compatibility. Batched loading (200 docs/batch). Unparsed docs included with empty invoice columns. Viewer+ permission required. Logic in `internal/csvexport/` package, handler in `CollectionHandler.ExportCSV`.
@@ -440,7 +455,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ## Tech Stack
 
-- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing), Google Gemini API (document parsing), OpenAI API (document parsing)
+- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), AWS SES v2 (email verification), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing), Google Gemini API (document parsing), OpenAI API (document parsing)
 
 ## Important Files for Common Tasks
 
@@ -455,6 +470,8 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.
 - **Modifying CSV export columns**: `internal/csvexport/writer.go` — `columns` slice defines header, `documentToRow` maps document fields to row cells
 - **Modifying free tier**: Quota limit in `SATVOS_FREE_TIER_MONTHLY_LIMIT`. Registration flow in `internal/service/registration_service.go`. Quota enforcement in `internal/repository/postgres/user_repo.go` (`CheckAndIncrementQuota`). Free-role file isolation in `internal/handler/file_handler.go`.
+- **Modifying email verification**: Verification flow in `internal/service/registration_service.go` (`VerifyEmail`, `ResendVerification`). Middleware in `internal/middleware/auth.go` (`RequireEmailVerified`). Email sender interface in `internal/port/email.go`. SES implementation in `internal/email/ses/ses_sender.go`. Noop implementation in `internal/email/noop/noop_sender.go`. Routes gated by verification: `POST /files/upload`, `POST /documents` (configured in `internal/router/router.go`).
+- **Modifying password reset**: Service in `internal/service/password_reset_service.go` (`ForgotPassword`, `ResetPassword`). DB column: `password_reset_token_id` on users table (migration 16). Repository methods: `SetPasswordResetToken`, `ResetPassword` in `internal/repository/postgres/user_repo.go`. Email sender: `SendPasswordResetEmail` in `internal/port/email.go`. Handler: `ForgotPassword`, `ResetPassword` in `internal/handler/auth_handler.go`. Routes: `POST /auth/forgot-password`, `POST /auth/reset-password` (public, in `internal/router/router.go`).
 
 ## Gotchas & Past Issues
 
@@ -469,3 +486,9 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Free tier shared tenant**: All free users share a single "satvos" tenant. Data isolation depends on: (1) `free` role having no implicit collection access, (2) file listing filtered by uploader in handler, (3) explicit collection grants only. The shared tenant is auto-created at startup — if tenant creation fails (e.g., already exists), it logs a warning but doesn't crash.
 - **Quota period is 30 days, not calendar month**: `CheckAndIncrementQuota` uses `NOW() - current_period_start > INTERVAL '30 days'` for period reset, not calendar month boundaries. This is simpler but means the reset date floats.
 - **Free role must be explicitly added to RequireRole**: The `free` role is only allowed on routes that explicitly include `domain.RoleFree` in `RequireRole`. Currently only `POST /files/upload` includes it. Collection creation, user management, etc. are blocked by default.
+- **Email verification middleware does a DB lookup per request for free users**: `RequireEmailVerified` queries the user table on every request for `free` role users to check `email_verified`. Paid users skip the check entirely. This is acceptable for the free tier volume. Future optimization: cache verification status in JWT claims.
+- **Email send failure doesn't fail registration**: The verification email send in `Register()` is non-blocking — if it fails, the registration still succeeds and the user can use `POST /auth/resend-verification` to retry.
+- **Migration 15 defaults `email_verified=true`**: All existing users (paid tenants) are unaffected. Only new free-tier registrations explicitly set `email_verified=false`.
+- **Password reset does not invalidate existing sessions**: After a password reset, existing access/refresh tokens remain valid until they expire naturally. Token revocation is a future enhancement.
+- **`NewAuthHandler` takes 3 params**: `(authService, registrationService, passwordResetService)` — any can be nil to disable the corresponding feature.
+- **Migration 16 adds `password_reset_token_id`**: Nullable VARCHAR column on users table. Stores the JWT `jti` for single-use enforcement. Overwritten on each new forgot-password request.
