@@ -27,6 +27,7 @@ type UserRepository interface {
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.User, int, error)
 	Update(ctx context.Context, user *domain.User) error
 	Delete(ctx context.Context, tenantID, userID uuid.UUID) error
+	CheckAndIncrementQuota(ctx context.Context, tenantID, userID uuid.UUID) error
 }
 
 // FileMetaRepository defines the contract for file metadata persistence.
@@ -35,6 +36,7 @@ type FileMetaRepository interface {
 	Create(ctx context.Context, meta *domain.FileMeta) error
 	GetByID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.FileMeta, error)
 	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error)
+	ListByUploader(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error)
 	UpdateStatus(ctx context.Context, tenantID, fileID uuid.UUID, status domain.FileStatus) error
 	Delete(ctx context.Context, tenantID, fileID uuid.UUID) error
 }

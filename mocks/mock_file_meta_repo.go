@@ -35,6 +35,14 @@ func (m *MockFileMetaRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID,
 	return args.Get(0).([]domain.FileMeta), args.Int(1), args.Error(2)
 }
 
+func (m *MockFileMetaRepo) ListByUploader(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.FileMeta, int, error) {
+	args := m.Called(ctx, tenantID, userID, offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]domain.FileMeta), args.Int(1), args.Error(2)
+}
+
 func (m *MockFileMetaRepo) UpdateStatus(ctx context.Context, tenantID, fileID uuid.UUID, status domain.FileStatus) error {
 	args := m.Called(ctx, tenantID, fileID, status)
 	return args.Error(0)

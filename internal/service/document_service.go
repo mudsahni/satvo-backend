@@ -74,6 +74,7 @@ type DocumentService interface {
 type documentService struct {
 	docRepo     port.DocumentRepository
 	fileRepo    port.FileMetaRepository
+	userRepo    port.UserRepository
 	permRepo    port.CollectionPermissionRepository
 	tagRepo     port.DocumentTagRepository
 	parser      port.DocumentParser
@@ -86,6 +87,7 @@ type documentService struct {
 func NewDocumentService(
 	docRepo port.DocumentRepository,
 	fileRepo port.FileMetaRepository,
+	userRepo port.UserRepository,
 	permRepo port.CollectionPermissionRepository,
 	tagRepo port.DocumentTagRepository,
 	docParser port.DocumentParser,
@@ -95,6 +97,7 @@ func NewDocumentService(
 	return &documentService{
 		docRepo:   docRepo,
 		fileRepo:  fileRepo,
+		userRepo:  userRepo,
 		permRepo:  permRepo,
 		tagRepo:   tagRepo,
 		parser:    docParser,
@@ -107,6 +110,7 @@ func NewDocumentService(
 func NewDocumentServiceWithMerge(
 	docRepo port.DocumentRepository,
 	fileRepo port.FileMetaRepository,
+	userRepo port.UserRepository,
 	permRepo port.CollectionPermissionRepository,
 	tagRepo port.DocumentTagRepository,
 	docParser port.DocumentParser,
@@ -117,6 +121,7 @@ func NewDocumentServiceWithMerge(
 	return &documentService{
 		docRepo:     docRepo,
 		fileRepo:    fileRepo,
+		userRepo:    userRepo,
 		permRepo:    permRepo,
 		tagRepo:     tagRepo,
 		parser:      docParser,
@@ -160,6 +165,11 @@ func (s *documentService) requireCollectionPerm(ctx context.Context, collectionI
 func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error) {
 	// Check editor+ permission on the collection
 	if err := s.requireCollectionPerm(ctx, input.CollectionID, input.CreatedBy, input.Role, domain.CollectionPermEditor); err != nil {
+		return nil, err
+	}
+
+	// Check and increment quota (no-op for unlimited users)
+	if err := s.userRepo.CheckAndIncrementQuota(ctx, input.TenantID, input.CreatedBy); err != nil {
 		return nil, err
 	}
 

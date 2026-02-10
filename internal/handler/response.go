@@ -101,6 +101,8 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusForbidden, "INSUFFICIENT_ROLE", "insufficient role for this action"
 	case errors.Is(err, domain.ErrInvalidStructuredData):
 		return http.StatusBadRequest, "INVALID_STRUCTURED_DATA", "structured data does not match expected format"
+	case errors.Is(err, domain.ErrQuotaExceeded):
+		return http.StatusTooManyRequests, "QUOTA_EXCEEDED", "monthly document quota exceeded; upgrade for more"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}

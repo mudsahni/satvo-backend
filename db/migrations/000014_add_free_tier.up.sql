@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE users ADD COLUMN monthly_document_limit INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN documents_used_this_period INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN current_period_start TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+COMMIT;

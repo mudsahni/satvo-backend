@@ -24,7 +24,7 @@ func init() {
 
 func TestAuthHandler_Login_Success(t *testing.T) {
 	mockAuth := new(mocks.MockAuthService)
-	h := handler.NewAuthHandler(mockAuth)
+	h := handler.NewAuthHandler(mockAuth, nil)
 
 	tokenPair := &service.TokenPair{
 		AccessToken:  "access-token",
@@ -62,7 +62,7 @@ func TestAuthHandler_Login_Success(t *testing.T) {
 
 func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 	mockAuth := new(mocks.MockAuthService)
-	h := handler.NewAuthHandler(mockAuth)
+	h := handler.NewAuthHandler(mockAuth, nil)
 
 	mockAuth.On("Login", mock.Anything, mock.AnythingOfType("service.LoginInput")).
 		Return(nil, domain.ErrInvalidCredentials)
@@ -85,7 +85,7 @@ func TestAuthHandler_Login_InvalidCredentials(t *testing.T) {
 
 func TestAuthHandler_Login_ValidationError(t *testing.T) {
 	mockAuth := new(mocks.MockAuthService)
-	h := handler.NewAuthHandler(mockAuth)
+	h := handler.NewAuthHandler(mockAuth, nil)
 
 	// Missing required fields
 	body, _ := json.Marshal(map[string]string{
@@ -104,7 +104,7 @@ func TestAuthHandler_Login_ValidationError(t *testing.T) {
 
 func TestAuthHandler_RefreshToken_Success(t *testing.T) {
 	mockAuth := new(mocks.MockAuthService)
-	h := handler.NewAuthHandler(mockAuth)
+	h := handler.NewAuthHandler(mockAuth, nil)
 
 	tokenPair := &service.TokenPair{
 		AccessToken:  "new-access-token",

@@ -39,6 +39,7 @@ const (
 	RoleManager UserRole = "manager"
 	RoleMember  UserRole = "member"
 	RoleViewer  UserRole = "viewer"
+	RoleFree    UserRole = "free"
 )
 
 // ValidUserRoles maps valid role strings for validation.
@@ -47,6 +48,7 @@ var ValidUserRoles = map[UserRole]bool{
 	RoleManager: true,
 	RoleMember:  true,
 	RoleViewer:  true,
+	RoleFree:    true,
 }
 
 // RoleLevel returns the numeric level for role comparison.
@@ -61,13 +63,15 @@ func RoleLevel(role UserRole) int {
 		return 2
 	case RoleViewer:
 		return 1
+	case RoleFree:
+		return 0
 	default:
 		return 0
 	}
 }
 
 // ImplicitCollectionPerm returns the implicit collection permission for a tenant role.
-// admin → owner, manager → editor, member → viewer, viewer → "" (none).
+// admin → owner, manager → editor, member → viewer, viewer → "" (none), free → "" (none).
 func ImplicitCollectionPerm(role UserRole) CollectionPermission {
 	switch role {
 	case RoleAdmin:

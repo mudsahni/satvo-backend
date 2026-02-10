@@ -11,14 +11,21 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Server ServerConfig
-	DB     DBConfig
-	JWT    JWTConfig
-	S3     S3Config
-	Log    LogConfig
-	Parser ParserConfig
-	CORS   CORSConfig
-	Queue  QueueConfig
+	Server   ServerConfig
+	DB       DBConfig
+	JWT      JWTConfig
+	S3       S3Config
+	Log      LogConfig
+	Parser   ParserConfig
+	CORS     CORSConfig
+	Queue    QueueConfig
+	FreeTier FreeTierConfig
+}
+
+// FreeTierConfig holds free tier settings.
+type FreeTierConfig struct {
+	TenantSlug   string `mapstructure:"tenant_slug"`
+	MonthlyLimit int    `mapstructure:"monthly_limit"`
 }
 
 // QueueConfig holds parse queue worker settings.
@@ -188,6 +195,10 @@ func Load() (*Config, error) {
 	v.SetDefault("queue.max_retries", 5)
 	v.SetDefault("queue.concurrency", 5)
 
+	// Free tier defaults
+	v.SetDefault("free_tier.tenant_slug", "satvos")
+	v.SetDefault("free_tier.monthly_limit", 5)
+
 	// Parser defaults (legacy flat)
 	v.SetDefault("parser.provider", "claude")
 	v.SetDefault("parser.api_key", "")
@@ -263,6 +274,8 @@ func Load() (*Config, error) {
 		"parser.tertiary.default_model":  "SATVOS_PARSER_TERTIARY_DEFAULT_MODEL",
 		"parser.tertiary.max_retries":    "SATVOS_PARSER_TERTIARY_MAX_RETRIES",
 		"parser.tertiary.timeout_secs":   "SATVOS_PARSER_TERTIARY_TIMEOUT_SECS",
+		"free_tier.tenant_slug":          "SATVOS_FREE_TIER_TENANT_SLUG",
+		"free_tier.monthly_limit":        "SATVOS_FREE_TIER_MONTHLY_LIMIT",
 	}
 	for key, env := range envBindings {
 		_ = v.BindEnv(key, env)
@@ -356,6 +369,11 @@ func Load() (*Config, error) {
 		PollIntervalSecs: v.GetInt("queue.poll_interval_secs"),
 		MaxRetries:       v.GetInt("queue.max_retries"),
 		Concurrency:      v.GetInt("queue.concurrency"),
+	}
+
+	cfg.FreeTier = FreeTierConfig{
+		TenantSlug:   v.GetString("free_tier.tenant_slug"),
+		MonthlyLimit: v.GetInt("free_tier.monthly_limit"),
 	}
 
 	return cfg, nil

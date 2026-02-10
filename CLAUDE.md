@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 59 registered GST invoice rules (56 built-in + 2 HSN-based + 1 duplicate detection, including IRN/e-invoice validation, HSN code existence/rate cross-validation, and duplicate invoice detection), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, and a document tagging system with user-provided and auto-generated tags from parsed invoice data. The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer/free), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 59 registered GST invoice rules (56 built-in + 2 HSN-based + 1 duplicate detection, including IRN/e-invoice validation, HSN code existence/rate cross-validation, and duplicate invoice detection), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, a document tagging system with user-provided and auto-generated tags from parsed invoice data, and a free tier allowing self-registration with per-user monthly document quotas. The architecture follows the hexagonal (ports & adapters) pattern.
 
 ## Key Commands
 
@@ -28,12 +28,12 @@ cmd/migrate/main.go          Migration CLI (up/down/steps/version)
 cmd/seedhsn/main.go         One-time Excel→SQL conversion for HSN codes
 
 internal/
-  config/config.go           Loads env vars (SATVOS_ prefix) via viper
+  config/config.go           Loads env vars (SATVOS_ prefix) via viper, includes FreeTierConfig
   domain/
     models.go                Tenant, User, FileMeta, Collection (with DocumentCount, computed via SQL subquery),
                              CollectionPermissionEntry, CollectionFile, Document (with Name, SecondaryParserModel, ParseAttempts, RetryAfter fields),
                              DocumentTag (with Source field), DocumentValidationRule structs
-    enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer), FileStatus,
+    enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer/free), FileStatus,
                              CollectionPermission (owner/editor/viewer),
                              ParsingStatus (pending/processing/completed/failed/queued),
                              ReviewStatus (pending/approved/rejected),
@@ -45,10 +45,10 @@ internal/
                              FieldValidationStatus (valid/invalid/unsure)
     errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrInsufficientRole, ErrCollectionNotFound,
                              ErrDocumentNotFound, ErrDocumentNotParsed, ErrValidationRuleNotFound,
-                             ErrInvalidStructuredData, etc.)
+                             ErrInvalidStructuredData, ErrQuotaExceeded, etc.)
   handler/
-    auth_handler.go          POST /auth/login, POST /auth/refresh
-    file_handler.go          POST /files/upload (optional collection_id), GET /files, GET /files/:id, DELETE /files/:id
+    auth_handler.go          POST /auth/login, POST /auth/refresh, POST /auth/register (free-tier self-registration)
+    file_handler.go          POST /files/upload (optional collection_id), GET /files (free: own files only), GET /files/:id (free: ownership check), DELETE /files/:id
     collection_handler.go    CRUD /collections, batch file upload, permission management,
                              GET /collections/:id/export/csv (CSV export)
     document_handler.go      POST /documents, GET /documents, GET /documents/:id,
@@ -71,7 +71,8 @@ internal/
     logger.go                Request ID injection, logging, panic recovery
   service/
     auth_service.go          Login (bcrypt verify), JWT generation/refresh
-    file_service.go          Upload (validate + S3 + DB), download URL, delete
+    registration_service.go  Free-tier self-registration (create user + personal collection + tokens)
+    file_service.go          Upload (validate + S3 + DB), download URL, delete, ListByUploader
     collection_service.go    Collection CRUD, batch upload, permission checking, file association,
                              EffectivePermission/EffectivePermissions (batch-optimized for List)
     document_service.go      Document CRUD, background LLM parsing, retry, review status,
@@ -80,14 +81,15 @@ internal/
                              tag management (ListTags, AddTags, DeleteTag, SearchByTag),
                              auto-tag extraction from parsed invoice data,
                              ParseDocument (core parse logic used by background and queue worker),
-                             handleParseError (rate-limit detection → queued status)
+                             handleParseError (rate-limit detection → queued status),
+                             per-user quota enforcement via userRepo.CheckAndIncrementQuota
     parse_queue_worker.go    Background worker that polls for queued documents and dispatches parsing
                              with bounded concurrency (semaphore) and clean shutdown (WaitGroup)
     stats_service.go         Aggregate stats (role-branching: tenant-wide vs user-scoped)
     user_service.go          User CRUD with tenant scoping
     tenant_service.go        Tenant CRUD
   port/
-    repository.go            TenantRepository, UserRepository, FileMetaRepository interfaces
+    repository.go            TenantRepository, UserRepository (incl. CheckAndIncrementQuota), FileMetaRepository (incl. ListByUploader) interfaces
     collection_repository.go CollectionRepository, CollectionPermissionRepository, CollectionFileRepository interfaces
     document_repository.go   DocumentRepository (incl. UpdateValidationResults, ClaimQueued),
                              DocumentTagRepository (incl. DeleteByDocumentAndSource),
@@ -100,8 +102,8 @@ internal/
   repository/postgres/
     db.go                    Database connection setup (sqlx + pgx)
     tenant_repo.go           Tenant SQL queries
-    user_repo.go             User SQL queries (tenant-scoped)
-    file_meta_repo.go        File metadata SQL queries
+    user_repo.go             User SQL queries (tenant-scoped), quota check+increment (atomic SQL)
+    file_meta_repo.go        File metadata SQL queries, ListByUploader
     collection_repo.go       Collection SQL queries (ListByUser joins permissions, ListByTenant for admin/manager/member)
     collection_permission_repo.go  Collection permission queries (upsert via ON CONFLICT)
     collection_file_repo.go  Collection-file association queries (joins file_metadata)
@@ -154,13 +156,14 @@ internal/
   mocks/                     Generated mocks (uber/mock) for testing
 
 tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
-db/migrations/               13 SQL migrations: tenants -> users -> file_metadata -> collections
+db/migrations/               14 SQL migrations: tenants -> users -> file_metadata -> collections
                              -> documents -> validation columns -> consolidated validation results
                              -> reconciliation tiering -> multi-parser fields
                              -> document name + tag source
                              -> secondary_parser_model + parse_attempts
                              -> parse queue (retry_after column + partial index)
                              -> hsn_codes reference table
+                             -> free tier (user quota columns)
 ```
 
 ## Data Flow
@@ -407,13 +410,16 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ## Key Conventions
 
-- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`. Queue worker config: `SATVOS_QUEUE_POLL_INTERVAL_SECS` (default 10), `SATVOS_QUEUE_MAX_RETRIES` (default 5), `SATVOS_QUEUE_CONCURRENCY` (default 5).
+- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`. Queue worker config: `SATVOS_QUEUE_POLL_INTERVAL_SECS` (default 10), `SATVOS_QUEUE_MAX_RETRIES` (default 5), `SATVOS_QUEUE_CONCURRENCY` (default 5). Free tier config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`).
 - **Response envelope**: All HTTP responses use `{"success": bool, "data": ..., "error": ..., "meta": ...}` defined in `handler/response.go`.
 - **Tenant isolation**: Every DB query includes `tenant_id` from JWT claims. Users authenticate with tenant slug + email + password.
 - **Error handling**: Domain errors in `domain/errors.go` are mapped to HTTP status codes in `handler/response.go`.
 - **File validation**: Extension whitelist (pdf/jpg/jpeg/png) + magic bytes content-type detection.
 - **S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
-- **Tenant roles**: 4-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
+- **Tenant roles**: 5-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access), free (level 0, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Free users have no implicit collection access but can be granted explicit permissions (e.g., owner on their personal collection). Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
+- **Free tier**: Self-registration on a shared "satvos" tenant via `POST /auth/register` (public, no auth). Free users get `role=free`, a personal collection (owner), and a per-user monthly document quota (default 5). Config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`). The shared tenant is auto-created at server startup if missing. Free users only see their own files (`GET /files` routes to `ListByUploader`, `GET /files/:id` checks ownership). Collections and documents are naturally isolated since free users have no implicit collection access — they only see collections where they have explicit grants. Quota enforcement: `userRepo.CheckAndIncrementQuota()` is called atomically in `CreateAndParse()` before document creation. Period resets after 30 days. `monthly_document_limit=0` means unlimited (all existing/paid users).
+- **Registration flow**: `POST /auth/register` accepts `{email, password, full_name}`. The `RegistrationService` looks up the shared tenant, creates a user (free role, quota), creates a personal collection ("{FullName}'s Invoices"), assigns owner permission, and returns JWT tokens via `authService.Login()`. Returns 201 with `{user, collection, tokens}`. Registration can be disabled by not passing a `RegistrationService` to `NewAuthHandler` (nil check).
+- **Quota enforcement**: `ErrQuotaExceeded` maps to HTTP 429 (code: `QUOTA_EXCEEDED`). The atomic SQL in `CheckAndIncrementQuota` handles period reset (>30 days) and increment in a single UPDATE with conditional WHERE. If `monthly_document_limit=0`, quota check returns immediately (no DB write).
 - **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read. `GET /collections` and `GET /collections/:id` include `current_user_permission` in responses (the user's effective permission). `EffectivePermissions` (batch) is optimized: admin/viewer short-circuit without DB queries; manager/member use a single `GetByUserForCollections` batch query.
 - **CSV export**: `GET /collections/:id/export/csv` streams all documents in a collection as CSV. 33 columns ordered for GST reconciliation (reconciliation-critical fields first, including IRN/Ack Number/Ack Date). UTF-8 BOM for Excel compatibility. Batched loading (200 docs/batch). Unparsed docs included with empty invoice columns. Viewer+ permission required. Logic in `internal/csvexport/` package, handler in `CollectionHandler.ExportCSV`.
 - **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
@@ -438,7 +444,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 
 ## Important Files for Common Tasks
 
-- **Adding an endpoint**: `internal/router/router.go` (routes), then create handler in `internal/handler/`, service in `internal/service/`
+- **Adding an endpoint**: `internal/router/router.go` (routes), then create handler in `internal/handler/`, service in `internal/service/`. If the route needs `free` role access, add `domain.RoleFree` to its `RequireRole` middleware.
 - **Adding a domain model**: `internal/domain/models.go`, then repo interface in `internal/port/`, implementation in `internal/repository/postgres/`
 - **Adding a migration**: `db/migrations/` (sequential numbered SQL files, up + down)
 - **Modifying config**: `internal/config/config.go` (struct + viper binding), `.env.example`
@@ -448,6 +454,7 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Adding a new document type**: Create typed model in `internal/validator/<type>/types.go`, implement validators, register in `cmd/server/main.go`
 - **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.
 - **Modifying CSV export columns**: `internal/csvexport/writer.go` — `columns` slice defines header, `documentToRow` maps document fields to row cells
+- **Modifying free tier**: Quota limit in `SATVOS_FREE_TIER_MONTHLY_LIMIT`. Registration flow in `internal/service/registration_service.go`. Quota enforcement in `internal/repository/postgres/user_repo.go` (`CheckAndIncrementQuota`). Free-role file isolation in `internal/handler/file_handler.go`.
 
 ## Gotchas & Past Issues
 
@@ -459,3 +466,6 @@ The system supports multiple LLM parser backends with an opt-in dual-parse merge
 - **Import shadow lint (`importShadow`)**: In `document_service.go`, constructor params for parsers must not be named `parser` since it shadows the imported `satvos/internal/parser` package — use `docParser`/`mergeDocParser`. Similarly, test files importing `parser` must use `p` for mock parser variables.
 - **Stale processing documents (known limitation)**: If the server crashes mid-parse, a document stays in `processing` status indefinitely. A staleness detector (timeout-based requeue) is a planned future enhancement.
 - **HSN lookup is loaded at startup**: The `hsn_codes` table is loaded into an in-memory `HSNLookup` map when the server starts. If the table is empty, HSN validators gracefully skip (no crash). To update HSN data, update the DB and restart the server. Future enhancement: admin endpoint for hot reload.
+- **Free tier shared tenant**: All free users share a single "satvos" tenant. Data isolation depends on: (1) `free` role having no implicit collection access, (2) file listing filtered by uploader in handler, (3) explicit collection grants only. The shared tenant is auto-created at startup — if tenant creation fails (e.g., already exists), it logs a warning but doesn't crash.
+- **Quota period is 30 days, not calendar month**: `CheckAndIncrementQuota` uses `NOW() - current_period_start > INTERVAL '30 days'` for period reset, not calendar month boundaries. This is simpler but means the reset date floats.
+- **Free role must be explicitly added to RequireRole**: The `free` role is only allowed on routes that explicitly include `domain.RoleFree` in `RequireRole`. Currently only `POST /files/upload` includes it. Collection creation, user management, etc. are blocked by default.
