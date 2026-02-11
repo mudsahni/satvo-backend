@@ -103,6 +103,10 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusBadRequest, "INVALID_STRUCTURED_DATA", "structured data does not match expected format"
 	case errors.Is(err, domain.ErrQuotaExceeded):
 		return http.StatusTooManyRequests, "QUOTA_EXCEEDED", "monthly document quota exceeded; upgrade for more"
+	case errors.Is(err, domain.ErrEmailNotVerified):
+		return http.StatusForbidden, "EMAIL_NOT_VERIFIED", "please verify your email before performing this action"
+	case errors.Is(err, domain.ErrPasswordResetTokenInvalid):
+		return http.StatusUnauthorized, "INVALID_RESET_TOKEN", "password reset token is invalid or has already been used"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}

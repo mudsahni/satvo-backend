@@ -56,12 +56,13 @@ func (s *userService) Create(ctx context.Context, tenantID uuid.UUID, input Crea
 	}
 
 	user := &domain.User{
-		TenantID:     tenantID,
-		Email:        input.Email,
-		PasswordHash: string(hash),
-		FullName:     input.FullName,
-		Role:         input.Role,
-		IsActive:     true,
+		TenantID:      tenantID,
+		Email:         input.Email,
+		PasswordHash:  string(hash),
+		FullName:      input.FullName,
+		Role:          input.Role,
+		IsActive:      true,
+		EmailVerified: true,
 	}
 
 	if err := s.repo.Create(ctx, user); err != nil {

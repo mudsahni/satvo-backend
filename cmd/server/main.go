@@ -13,6 +13,8 @@ import (
 
 	"satvos/internal/config"
 	"satvos/internal/domain"
+	"satvos/internal/email/noop"
+	"satvos/internal/email/ses"
 	"satvos/internal/handler"
 	"satvos/internal/parser"
 	claudeparser "satvos/internal/parser/claude"
@@ -201,7 +203,22 @@ func run() error {
 		log.Printf("Free tier tenant '%s' ready", cfg.FreeTier.TenantSlug)
 	}
 
-	registrationSvc := service.NewRegistrationService(tenantRepo, userRepo, collectionRepo, collectionPermRepo, authSvc, cfg.FreeTier)
+	// Initialize email sender
+	var emailSender port.EmailSender
+	switch cfg.Email.Provider {
+	case "ses":
+		emailSender, err = ses.NewSESSender(cfg.Email.Region, cfg.Email.FromAddress, cfg.Email.FromName, cfg.Email.FrontendURL)
+		if err != nil {
+			return fmt.Errorf("failed to initialize SES email sender: %w", err)
+		}
+		log.Println("Email sender: AWS SES")
+	default:
+		emailSender = noop.NewNoopSender(cfg.Email.FrontendURL)
+		log.Println("Email sender: noop (verification URLs logged to stdout)")
+	}
+
+	registrationSvc := service.NewRegistrationService(tenantRepo, userRepo, collectionRepo, collectionPermRepo, authSvc, emailSender, cfg.JWT, cfg.FreeTier)
+	passwordResetSvc := service.NewPasswordResetService(tenantRepo, userRepo, emailSender, cfg.JWT)
 
 	// Start parse queue worker
 	queueCfg := service.ParseQueueConfig{
@@ -215,7 +232,7 @@ func run() error {
 	go queueWorker.Start(queueCtx)
 
 	// Initialize handlers
-	authH := handler.NewAuthHandler(authSvc, registrationSvc)
+	authH := handler.NewAuthHandler(authSvc, registrationSvc, passwordResetSvc)
 	fileH := handler.NewFileHandler(fileSvc, collectionSvc)
 	tenantH := handler.NewTenantHandler(tenantSvc)
 	userH := handler.NewUserHandler(userSvc)
@@ -225,7 +242,7 @@ func run() error {
 	statsH := handler.NewStatsHandler(statsSvc)
 
 	// Setup router
-	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, cfg.CORS.AllowedOrigins)
+	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, cfg.CORS.AllowedOrigins, userRepo)
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {

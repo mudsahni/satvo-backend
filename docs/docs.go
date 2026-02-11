@@ -385,128 +385,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/auth/login": {
-            "post": {
-                "description": "Authenticate with tenant slug, email and password to receive JWT tokens",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Login to get access token",
-                "parameters": [
-                    {
-                        "description": "Login credentials",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.LoginRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Successfully authenticated",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/handler.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/handler.TokenResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Validation error",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponseBody"
-                        }
-                    },
-                    "401": {
-                        "description": "Invalid credentials",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponseBody"
-                        }
-                    },
-                    "403": {
-                        "description": "Tenant or user inactive",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponseBody"
-                        }
-                    }
-                }
-            }
-        },
-        "/auth/refresh": {
-            "post": {
-                "description": "Exchange a refresh token for a new access token pair",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Refresh access token",
-                "parameters": [
-                    {
-                        "description": "Refresh token",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.RefreshRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "New token pair",
-                        "schema": {
-                            "allOf": [
-                                {
-                                    "$ref": "#/definitions/handler.Response"
-                                },
-                                {
-                                    "type": "object",
-                                    "properties": {
-                                        "data": {
-                                            "$ref": "#/definitions/handler.TokenResponse"
-                                        }
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    "400": {
-                        "description": "Validation error",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponseBody"
-                        }
-                    },
-                    "401": {
-                        "description": "Invalid or expired refresh token",
-                        "schema": {
-                            "$ref": "#/definitions/handler.ErrorResponseBody"
-                        }
-                    }
-                }
-            }
-        },
         "/collections": {
             "get": {
                 "security": [
@@ -3542,6 +3420,12 @@ const docTemplate = `{
                 "email": {
                     "type": "string"
                 },
+                "email_verified": {
+                    "type": "boolean"
+                },
+                "email_verified_at": {
+                    "type": "string"
+                },
                 "full_name": {
                     "type": "string"
                 },
@@ -3953,28 +3837,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.LoginRequest": {
-            "type": "object",
-            "required": [
-                "email",
-                "password",
-                "tenant_slug"
-            ],
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "example": "admin@acme.com"
-                },
-                "password": {
-                    "type": "string",
-                    "example": "securepassword123"
-                },
-                "tenant_slug": {
-                    "type": "string",
-                    "example": "acme"
-                }
-            }
-        },
         "handler.MessageResponse": {
             "type": "object",
             "properties": {
@@ -4048,18 +3910,6 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.RefreshRequest": {
-            "type": "object",
-            "required": [
-                "refresh_token"
-            ],
-            "properties": {
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                }
-            }
-        },
         "handler.Response": {
             "type": "object",
             "properties": {
@@ -4107,23 +3957,6 @@ const docTemplate = `{
                 "user_id": {
                     "type": "string",
                     "example": "987fcdeb-51a2-3bc4-d567-890123456789"
-                }
-            }
-        },
-        "handler.TokenResponse": {
-            "type": "object",
-            "properties": {
-                "access_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-                },
-                "expires_at": {
-                    "type": "string",
-                    "example": "2025-01-15T10:30:00Z"
-                },
-                "refresh_token": {
-                    "type": "string",
-                    "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                 }
             }
         },

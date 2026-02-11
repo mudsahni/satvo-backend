@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"satvos/internal/domain"
+	"satvos/internal/port"
 	"satvos/internal/service"
 )
 
@@ -103,4 +104,52 @@ func GetRole(c *gin.Context) string {
 		return ""
 	}
 	return val.(string)
+}
+
+// RequireEmailVerified returns middleware that blocks unverified free-tier users.
+// Paid-tier users (admin, manager, member, viewer) skip verification check entirely.
+func RequireEmailVerified(userRepo port.UserRepository) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role := domain.UserRole(GetRole(c))
+		if role != domain.RoleFree {
+			c.Next()
+			return
+		}
+
+		tenantID, err := GetTenantID(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"error":   gin.H{"code": "UNAUTHORIZED", "message": "missing tenant context"},
+			})
+			return
+		}
+		userID, err := GetUserID(c)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"error":   gin.H{"code": "UNAUTHORIZED", "message": "missing user context"},
+			})
+			return
+		}
+
+		user, err := userRepo.GetByID(c.Request.Context(), tenantID, userID)
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
+				"success": false,
+				"error":   gin.H{"code": "UNAUTHORIZED", "message": "user not found"},
+			})
+			return
+		}
+
+		if !user.EmailVerified {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"error":   gin.H{"code": "EMAIL_NOT_VERIFIED", "message": "please verify your email before performing this action"},
+			})
+			return
+		}
+
+		c.Next()
+	}
 }

@@ -277,6 +277,10 @@ definitions:
         type: integer
       email:
         type: string
+      email_verified:
+        type: boolean
+      email_verified_at:
+        type: string
       full_name:
         type: string
       id:
@@ -563,22 +567,6 @@ definitions:
         example: 2500
         type: number
     type: object
-  handler.LoginRequest:
-    properties:
-      email:
-        example: admin@acme.com
-        type: string
-      password:
-        example: securepassword123
-        type: string
-      tenant_slug:
-        example: acme
-        type: string
-    required:
-    - email
-    - password
-    - tenant_slug
-    type: object
   handler.MessageResponse:
     properties:
       message:
@@ -630,14 +618,6 @@ definitions:
         example: Net 30
         type: string
     type: object
-  handler.RefreshRequest:
-    properties:
-      refresh_token:
-        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        type: string
-    required:
-    - refresh_token
-    type: object
   handler.Response:
     properties:
       data: {}
@@ -670,18 +650,6 @@ definitions:
     required:
     - permission
     - user_id
-    type: object
-  handler.TokenResponse:
-    properties:
-      access_token:
-        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        type: string
-      expires_at:
-        example: "2025-01-15T10:30:00Z"
-        type: string
-      refresh_token:
-        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-        type: string
     type: object
   handler.Totals:
     properties:
@@ -1057,81 +1025,6 @@ paths:
       summary: Update a tenant
       tags:
       - tenants
-  /auth/login:
-    post:
-      consumes:
-      - application/json
-      description: Authenticate with tenant slug, email and password to receive JWT
-        tokens
-      parameters:
-      - description: Login credentials
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handler.LoginRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Successfully authenticated
-          schema:
-            allOf:
-            - $ref: '#/definitions/handler.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/handler.TokenResponse'
-              type: object
-        "400":
-          description: Validation error
-          schema:
-            $ref: '#/definitions/handler.ErrorResponseBody'
-        "401":
-          description: Invalid credentials
-          schema:
-            $ref: '#/definitions/handler.ErrorResponseBody'
-        "403":
-          description: Tenant or user inactive
-          schema:
-            $ref: '#/definitions/handler.ErrorResponseBody'
-      summary: Login to get access token
-      tags:
-      - auth
-  /auth/refresh:
-    post:
-      consumes:
-      - application/json
-      description: Exchange a refresh token for a new access token pair
-      parameters:
-      - description: Refresh token
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handler.RefreshRequest'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: New token pair
-          schema:
-            allOf:
-            - $ref: '#/definitions/handler.Response'
-            - properties:
-                data:
-                  $ref: '#/definitions/handler.TokenResponse'
-              type: object
-        "400":
-          description: Validation error
-          schema:
-            $ref: '#/definitions/handler.ErrorResponseBody'
-        "401":
-          description: Invalid or expired refresh token
-          schema:
-            $ref: '#/definitions/handler.ErrorResponseBody'
-      summary: Refresh access token
-      tags:
-      - auth
   /collections:
     get:
       description: List collections the user has access to
