@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 
@@ -20,8 +21,19 @@ type sesSender struct {
 }
 
 // NewSESSender creates a new SES-backed EmailSender.
-func NewSESSender(region, fromAddress, fromName, frontendURL string) (port.EmailSender, error) {
-	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsconfig.WithRegion(region))
+// If accessKey and secretKey are provided, they are used as static credentials.
+// Otherwise, the default AWS credential chain is used (env vars, instance profile, etc.).
+func NewSESSender(region, fromAddress, fromName, frontendURL, accessKey, secretKey string) (port.EmailSender, error) {
+	var opts []func(*awsconfig.LoadOptions) error
+	opts = append(opts, awsconfig.WithRegion(region))
+
+	if accessKey != "" && secretKey != "" {
+		opts = append(opts, awsconfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(accessKey, secretKey, ""),
+		))
+	}
+
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background(), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("loading AWS config for SES: %w", err)
 	}
