@@ -207,7 +207,7 @@ func run() error {
 	var emailSender port.EmailSender
 	switch cfg.Email.Provider {
 	case "ses":
-		emailSender, err = ses.NewSESSender(cfg.Email.Region, cfg.Email.FromAddress, cfg.Email.FromName, cfg.Email.FrontendURL)
+		emailSender, err = ses.NewSESSender(cfg.Email.Region, cfg.Email.FromAddress, cfg.Email.FromName, cfg.Email.FrontendURL, cfg.Email.AccessKey, cfg.Email.SecretKey)
 		if err != nil {
 			return fmt.Errorf("failed to initialize SES email sender: %w", err)
 		}
