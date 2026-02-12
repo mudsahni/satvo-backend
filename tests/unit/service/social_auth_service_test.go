@@ -16,36 +16,40 @@ import (
 	"satvos/mocks"
 )
 
-func setupSocialAuth() (
-	*mocks.MockSocialTokenVerifier,
-	*mocks.MockTenantRepo,
-	*mocks.MockUserRepo,
-	*mocks.MockCollectionRepo,
-	*mocks.MockCollectionPermissionRepo,
-	*mocks.MockAuthService,
-	service.SocialAuthService,
-) {
-	verifier := new(mocks.MockSocialTokenVerifier)
-	tenantRepo := new(mocks.MockTenantRepo)
-	userRepo := new(mocks.MockUserRepo)
-	collRepo := new(mocks.MockCollectionRepo)
-	permRepo := new(mocks.MockCollectionPermissionRepo)
-	authSvc := new(mocks.MockAuthService)
+type socialAuthDeps struct {
+	verifier   *mocks.MockSocialTokenVerifier
+	tenantRepo *mocks.MockTenantRepo
+	userRepo   *mocks.MockUserRepo
+	collRepo   *mocks.MockCollectionRepo
+	permRepo   *mocks.MockCollectionPermissionRepo
+	authSvc    *mocks.MockAuthService
+	svc        service.SocialAuthService
+}
+
+func setupSocialAuth() *socialAuthDeps {
+	d := &socialAuthDeps{
+		verifier:   new(mocks.MockSocialTokenVerifier),
+		tenantRepo: new(mocks.MockTenantRepo),
+		userRepo:   new(mocks.MockUserRepo),
+		collRepo:   new(mocks.MockCollectionRepo),
+		permRepo:   new(mocks.MockCollectionPermissionRepo),
+		authSvc:    new(mocks.MockAuthService),
+	}
 
 	verifiers := map[string]port.SocialTokenVerifier{
-		"google": verifier,
+		"google": d.verifier,
 	}
 	freeTierCfg := config.FreeTierConfig{
 		TenantSlug:   "satvos",
 		MonthlyLimit: 5,
 	}
 
-	svc := service.NewSocialAuthService(verifiers, tenantRepo, userRepo, collRepo, permRepo, authSvc, freeTierCfg)
-	return verifier, tenantRepo, userRepo, collRepo, permRepo, authSvc, svc
+	d.svc = service.NewSocialAuthService(verifiers, d.tenantRepo, d.userRepo, d.collRepo, d.permRepo, d.authSvc, freeTierCfg)
+	return d
 }
 
 func TestSocialLogin_NewGoogleUser(t *testing.T) {
-	verifier, tenantRepo, userRepo, collRepo, permRepo, authSvc, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
 	tenantID := uuid.New()
 	tenant := &domain.Tenant{ID: tenantID, Slug: "satvos", IsActive: true}
@@ -55,21 +59,21 @@ func TestSocialLogin_NewGoogleUser(t *testing.T) {
 		ExpiresAt:    time.Now().Add(15 * time.Minute),
 	}
 
-	verifier.On("VerifyIDToken", mock.Anything, "valid-google-token").Return(&port.SocialAuthClaims{
+	d.verifier.On("VerifyIDToken", mock.Anything, "valid-google-token").Return(&port.SocialAuthClaims{
 		Subject:       "google-uid-123",
 		Email:         "newuser@gmail.com",
 		EmailVerified: true,
 		FullName:      "New User",
 	}, nil)
-	tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
-	userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-123").Return(nil, domain.ErrNotFound)
-	userRepo.On("GetByEmail", mock.Anything, tenantID, "newuser@gmail.com").Return(nil, domain.ErrNotFound)
-	userRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.User")).Return(nil)
-	collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
-	permRepo.On("Upsert", mock.Anything, mock.AnythingOfType("*domain.CollectionPermissionEntry")).Return(nil)
-	authSvc.On("GenerateTokenPairForUser", mock.AnythingOfType("*domain.User")).Return(tokens, nil)
+	d.tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
+	d.userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-123").Return(nil, domain.ErrNotFound)
+	d.userRepo.On("GetByEmail", mock.Anything, tenantID, "newuser@gmail.com").Return(nil, domain.ErrNotFound)
+	d.userRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.User")).Return(nil)
+	d.collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
+	d.permRepo.On("Upsert", mock.Anything, mock.AnythingOfType("*domain.CollectionPermissionEntry")).Return(nil)
+	d.authSvc.On("GenerateTokenPairForUser", mock.AnythingOfType("*domain.User")).Return(tokens, nil)
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "google",
 		IDToken:  "valid-google-token",
 	})
@@ -80,16 +84,16 @@ func TestSocialLogin_NewGoogleUser(t *testing.T) {
 	assert.NotNil(t, result.Tokens)
 	assert.Equal(t, "access-token", result.Tokens.AccessToken)
 
-	verifier.AssertExpectations(t)
-	tenantRepo.AssertExpectations(t)
-	userRepo.AssertExpectations(t)
-	collRepo.AssertExpectations(t)
-	permRepo.AssertExpectations(t)
-	authSvc.AssertExpectations(t)
+	d.verifier.AssertExpectations(t)
+	d.tenantRepo.AssertExpectations(t)
+	d.userRepo.AssertExpectations(t)
+	d.collRepo.AssertExpectations(t)
+	d.permRepo.AssertExpectations(t)
+	d.authSvc.AssertExpectations(t)
 }
 
 func TestSocialLogin_ExistingEmailUser_LinksProvider(t *testing.T) {
-	verifier, tenantRepo, userRepo, _, _, authSvc, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -111,20 +115,20 @@ func TestSocialLogin_ExistingEmailUser_LinksProvider(t *testing.T) {
 		ExpiresAt:    time.Now().Add(15 * time.Minute),
 	}
 
-	verifier.On("VerifyIDToken", mock.Anything, "valid-google-token").Return(&port.SocialAuthClaims{
+	d.verifier.On("VerifyIDToken", mock.Anything, "valid-google-token").Return(&port.SocialAuthClaims{
 		Subject:       "google-uid-456",
 		Email:         "existing@gmail.com",
 		EmailVerified: true,
 		FullName:      "Existing User",
 	}, nil)
-	tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
-	userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-456").Return(nil, domain.ErrNotFound)
-	userRepo.On("GetByEmail", mock.Anything, tenantID, "existing@gmail.com").Return(existingUser, nil)
-	userRepo.On("LinkProvider", mock.Anything, tenantID, userID, domain.AuthProviderGoogle, "google-uid-456").Return(nil)
-	userRepo.On("SetEmailVerified", mock.Anything, tenantID, userID).Return(nil)
-	authSvc.On("GenerateTokenPairForUser", existingUser).Return(tokens, nil)
+	d.tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
+	d.userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-456").Return(nil, domain.ErrNotFound)
+	d.userRepo.On("GetByEmail", mock.Anything, tenantID, "existing@gmail.com").Return(existingUser, nil)
+	d.userRepo.On("LinkProvider", mock.Anything, tenantID, userID, domain.AuthProviderGoogle, "google-uid-456").Return(nil)
+	d.userRepo.On("SetEmailVerified", mock.Anything, tenantID, userID).Return(nil)
+	d.authSvc.On("GenerateTokenPairForUser", existingUser).Return(tokens, nil)
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "google",
 		IDToken:  "valid-google-token",
 	})
@@ -134,12 +138,12 @@ func TestSocialLogin_ExistingEmailUser_LinksProvider(t *testing.T) {
 	assert.Nil(t, result.Collection)
 	assert.Equal(t, userID, result.User.ID)
 
-	userRepo.AssertCalled(t, "LinkProvider", mock.Anything, tenantID, userID, domain.AuthProviderGoogle, "google-uid-456")
-	userRepo.AssertCalled(t, "SetEmailVerified", mock.Anything, tenantID, userID)
+	d.userRepo.AssertCalled(t, "LinkProvider", mock.Anything, tenantID, userID, domain.AuthProviderGoogle, "google-uid-456")
+	d.userRepo.AssertCalled(t, "SetEmailVerified", mock.Anything, tenantID, userID)
 }
 
 func TestSocialLogin_ReturningGoogleUser(t *testing.T) {
-	verifier, tenantRepo, userRepo, _, _, authSvc, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -162,17 +166,17 @@ func TestSocialLogin_ReturningGoogleUser(t *testing.T) {
 		ExpiresAt:    time.Now().Add(15 * time.Minute),
 	}
 
-	verifier.On("VerifyIDToken", mock.Anything, "valid-google-token").Return(&port.SocialAuthClaims{
+	d.verifier.On("VerifyIDToken", mock.Anything, "valid-google-token").Return(&port.SocialAuthClaims{
 		Subject:       "google-uid-789",
 		Email:         "returning@gmail.com",
 		EmailVerified: true,
 		FullName:      "Returning User",
 	}, nil)
-	tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
-	userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-789").Return(existingUser, nil)
-	authSvc.On("GenerateTokenPairForUser", existingUser).Return(tokens, nil)
+	d.tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
+	d.userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-789").Return(existingUser, nil)
+	d.authSvc.On("GenerateTokenPairForUser", existingUser).Return(tokens, nil)
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "google",
 		IDToken:  "valid-google-token",
 	})
@@ -183,20 +187,20 @@ func TestSocialLogin_ReturningGoogleUser(t *testing.T) {
 	assert.Equal(t, userID, result.User.ID)
 
 	// Should NOT call GetByEmail or Create
-	userRepo.AssertNotCalled(t, "GetByEmail")
-	userRepo.AssertNotCalled(t, "Create")
+	d.userRepo.AssertNotCalled(t, "GetByEmail")
+	d.userRepo.AssertNotCalled(t, "Create")
 }
 
 func TestSocialLogin_InvalidToken(t *testing.T) {
-	verifier, tenantRepo, _, _, _, _, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
 	tenantID := uuid.New()
 	tenant := &domain.Tenant{ID: tenantID, Slug: "satvos", IsActive: true}
 
-	verifier.On("VerifyIDToken", mock.Anything, "invalid-token").Return(nil, domain.ErrSocialAuthTokenInvalid)
-	tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil).Maybe()
+	d.verifier.On("VerifyIDToken", mock.Anything, "invalid-token").Return(nil, domain.ErrSocialAuthTokenInvalid)
+	d.tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil).Maybe()
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "google",
 		IDToken:  "invalid-token",
 	})
@@ -206,9 +210,9 @@ func TestSocialLogin_InvalidToken(t *testing.T) {
 }
 
 func TestSocialLogin_UnsupportedProvider(t *testing.T) {
-	_, _, _, _, _, _, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "facebook",
 		IDToken:  "some-token",
 	})
@@ -219,7 +223,7 @@ func TestSocialLogin_UnsupportedProvider(t *testing.T) {
 }
 
 func TestSocialLogin_InactiveUser(t *testing.T) {
-	verifier, tenantRepo, userRepo, _, _, _, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
 	tenantID := uuid.New()
 	tenant := &domain.Tenant{ID: tenantID, Slug: "satvos", IsActive: true}
@@ -233,16 +237,16 @@ func TestSocialLogin_InactiveUser(t *testing.T) {
 		ProviderUserID: &sub,
 	}
 
-	verifier.On("VerifyIDToken", mock.Anything, "valid-token").Return(&port.SocialAuthClaims{
+	d.verifier.On("VerifyIDToken", mock.Anything, "valid-token").Return(&port.SocialAuthClaims{
 		Subject:       "google-uid-inactive",
 		Email:         "inactive@gmail.com",
 		EmailVerified: true,
 		FullName:      "Inactive User",
 	}, nil)
-	tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
-	userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-inactive").Return(inactiveUser, nil)
+	d.tenantRepo.On("GetBySlug", mock.Anything, "satvos").Return(tenant, nil)
+	d.userRepo.On("GetByProviderID", mock.Anything, tenantID, domain.AuthProviderGoogle, "google-uid-inactive").Return(inactiveUser, nil)
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "google",
 		IDToken:  "valid-token",
 	})
@@ -252,16 +256,16 @@ func TestSocialLogin_InactiveUser(t *testing.T) {
 }
 
 func TestSocialLogin_EmailNotVerifiedByGoogle(t *testing.T) {
-	verifier, _, _, _, _, _, svc := setupSocialAuth()
+	d := setupSocialAuth()
 
-	verifier.On("VerifyIDToken", mock.Anything, "unverified-email-token").Return(&port.SocialAuthClaims{
+	d.verifier.On("VerifyIDToken", mock.Anything, "unverified-email-token").Return(&port.SocialAuthClaims{
 		Subject:       "google-uid-unverified",
 		Email:         "unverified@gmail.com",
 		EmailVerified: false,
 		FullName:      "Unverified User",
 	}, nil)
 
-	result, err := svc.SocialLogin(context.Background(), service.SocialLoginInput{
+	result, err := d.svc.SocialLogin(context.Background(), service.SocialLoginInput{
 		Provider: "google",
 		IDToken:  "unverified-email-token",
 	})
