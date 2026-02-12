@@ -107,6 +107,10 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusForbidden, "EMAIL_NOT_VERIFIED", "please verify your email before performing this action"
 	case errors.Is(err, domain.ErrPasswordResetTokenInvalid):
 		return http.StatusUnauthorized, "INVALID_RESET_TOKEN", "password reset token is invalid or has already been used"
+	case errors.Is(err, domain.ErrSocialAuthTokenInvalid):
+		return http.StatusUnauthorized, "INVALID_SOCIAL_TOKEN", "social authentication token is invalid or expired"
+	case errors.Is(err, domain.ErrPasswordLoginNotAllowed):
+		return http.StatusBadRequest, "PASSWORD_LOGIN_NOT_ALLOWED", "this account uses social login; use your social provider to sign in"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}

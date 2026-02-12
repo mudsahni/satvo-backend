@@ -35,13 +35,14 @@ func (r *userRepo) Create(ctx context.Context, user *domain.User) error {
 
 	query := `INSERT INTO users (id, tenant_id, email, password_hash, full_name, role, is_active,
 		monthly_document_limit, documents_used_this_period, current_period_start,
-		email_verified, email_verified_at, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
+		email_verified, email_verified_at, auth_provider, provider_user_id, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`
 
 	_, err := r.db.ExecContext(ctx, query,
 		user.ID, user.TenantID, user.Email, user.PasswordHash, user.FullName,
 		user.Role, user.IsActive, user.MonthlyDocumentLimit, user.DocumentsUsedThisPeriod,
 		user.CurrentPeriodStart, user.EmailVerified, user.EmailVerifiedAt,
+		user.AuthProvider, user.ProviderUserID,
 		user.CreatedAt, user.UpdatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
@@ -215,6 +216,35 @@ func (r *userRepo) ResetPassword(ctx context.Context, tenantID, userID uuid.UUID
 	rows, _ := result.RowsAffected()
 	if rows == 0 {
 		return domain.ErrPasswordResetTokenInvalid
+	}
+	return nil
+}
+
+func (r *userRepo) GetByProviderID(ctx context.Context, tenantID uuid.UUID, provider domain.AuthProvider, providerUserID string) (*domain.User, error) {
+	var user domain.User
+	err := r.db.GetContext(ctx, &user,
+		"SELECT * FROM users WHERE tenant_id = $1 AND auth_provider = $2 AND provider_user_id = $3",
+		tenantID, provider, providerUserID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, fmt.Errorf("userRepo.GetByProviderID: %w", err)
+	}
+	return &user, nil
+}
+
+func (r *userRepo) LinkProvider(ctx context.Context, tenantID, userID uuid.UUID, provider domain.AuthProvider, providerUserID string) error {
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE users SET auth_provider = $1, provider_user_id = $2, updated_at = NOW()
+		 WHERE id = $3 AND tenant_id = $4`,
+		provider, providerUserID, userID, tenantID)
+	if err != nil {
+		return fmt.Errorf("userRepo.LinkProvider: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrNotFound
 	}
 	return nil
 }

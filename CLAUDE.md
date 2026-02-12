@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant document processing service written in Go. It provides tenant-isolated file management with JWT authentication, role-based access control (admin/manager/member/viewer/free), and AWS S3 storage. It supports document collections with permission-based access control (owner/editor/viewer) for grouping files, LLM-powered document parsing that extracts structured invoice data from uploaded PDFs and images (with multi-provider support and optional dual-parse merge mode), an automated validation engine with 59 registered GST invoice rules (56 built-in + 2 HSN-based + 1 duplicate detection, including IRN/e-invoice validation, HSN code existence/rate cross-validation, and duplicate invoice detection), reconciliation tiering that classifies validation rules as reconciliation-critical for GSTR-2A/2B matching, a document tagging system with user-provided and auto-generated tags from parsed invoice data, a free tier allowing self-registration with per-user monthly document quotas and email verification, email verification for free-tier users (JWT-based token, AWS SES or noop sender), and password reset for all users (JWT-based single-use token with 1h expiry, no email enumeration). The architecture follows the hexagonal (ports & adapters) pattern.
+SATVOS is a multi-tenant GST document processing service in Go (hexagonal architecture). JWT auth, 5-tier RBAC (admin/manager/member/viewer/free), AWS S3 storage, LLM-powered invoice parsing (multi-provider with dual-parse merge), 59-rule validation engine with reconciliation tiering, document tagging, free-tier self-registration with quotas and email verification, password reset, and Google social login.
 
 ## Key Commands
 
@@ -16,479 +16,194 @@ make migrate-up       # Apply database migrations
 make migrate-down     # Rollback one migration
 make docker-up        # Start full stack via Docker Compose
 make docker-down      # Stop Docker Compose stack
-make generate-hsn-seed # Generate db/seeds/hsn_codes.sql from Excel
 make seed-hsn         # Load HSN seed data into database
 ```
 
 ## Architecture & Code Layout
 
 ```
-cmd/server/main.go           Entry point — wires config, DB, storage, services, validator engine (incl. HSN), router
+cmd/server/main.go           Entry point — wires config, DB, storage, services, validator engine, router
 cmd/migrate/main.go          Migration CLI (up/down/steps/version)
-cmd/seedhsn/main.go         One-time Excel→SQL conversion for HSN codes
+cmd/seedhsn/main.go          One-time Excel→SQL conversion for HSN codes
 
 internal/
-  config/config.go           Loads env vars (SATVOS_ prefix) via viper, includes FreeTierConfig
+  config/config.go           Loads env vars (SATVOS_ prefix) via viper
   domain/
-    models.go                Tenant, User, FileMeta, Collection (with DocumentCount, computed via SQL subquery),
-                             CollectionPermissionEntry, CollectionFile, Document (with Name, SecondaryParserModel, ParseAttempts, RetryAfter fields),
-                             DocumentTag (with Source field), DocumentValidationRule structs
-    enums.go                 FileType (pdf/jpg/png), UserRole (admin/manager/member/viewer/free), FileStatus,
-                             CollectionPermission (owner/editor/viewer),
-                             ParsingStatus (pending/processing/completed/failed/queued),
-                             ReviewStatus (pending/approved/rejected),
-                             ValidationStatus (pending/valid/warning/invalid),
-                             ReconciliationStatus (pending/valid/warning/invalid),
-                             ParseMode (single/dual),
-                             ValidationSeverity (error/warning),
-                             ValidationRuleType (required_field/regex/sum_check/cross_field/custom),
-                             FieldValidationStatus (valid/invalid/unsure)
-    errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrInsufficientRole, ErrCollectionNotFound,
-                             ErrDocumentNotFound, ErrDocumentNotParsed, ErrValidationRuleNotFound,
-                             ErrInvalidStructuredData, ErrQuotaExceeded, etc.)
+    models.go                Tenant, User, FileMeta, Collection, Document, DocumentTag, DocumentValidationRule
+    enums.go                 All enums: FileType, UserRole, FileStatus, CollectionPermission, ParsingStatus,
+                             ReviewStatus, ValidationStatus, ReconciliationStatus, ParseMode, AuthProvider, etc.
+    errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrQuotaExceeded, etc.)
   handler/
-    auth_handler.go          POST /auth/login, POST /auth/refresh, POST /auth/register (free-tier self-registration),
-                             GET /auth/verify-email (public, token in query param),
-                             POST /auth/resend-verification (authenticated),
-                             POST /auth/forgot-password (public, no email enumeration),
-                             POST /auth/reset-password (public, single-use token)
-    file_handler.go          POST /files/upload (optional collection_id), GET /files (free: own files only), GET /files/:id (free: ownership check), DELETE /files/:id
-    collection_handler.go    CRUD /collections, batch file upload, permission management,
-                             GET /collections/:id/export/csv (CSV export)
-    document_handler.go      POST /documents, GET /documents, GET /documents/:id,
-                             PUT /documents/:id (edit structured data),
-                             POST /documents/:id/retry, PUT /documents/:id/review,
-                             PUT /documents/:id/structured-data (alias),
-                             POST /documents/:id/validate, GET /documents/:id/validation,
-                             GET /documents/:id/tags, POST /documents/:id/tags,
-                             DELETE /documents/:id/tags/:tagId,
-                             GET /documents/search/tags, DELETE /documents/:id
-    user_handler.go          CRUD /users, /users/:id
-    tenant_handler.go        CRUD /admin/tenants, /admin/tenants/:id
-    stats_handler.go         GET /stats (tenant-scoped aggregate counts, role-filtered)
+    auth_handler.go          login, refresh, register, verify-email, resend-verification, forgot/reset-password, social-login
+    file_handler.go          upload, list, get, delete (free: own files only)
+    collection_handler.go    CRUD, batch upload, permissions, CSV export
+    document_handler.go      CRUD, retry, review, validation, tags, search, structured-data edit
+    user_handler.go          CRUD /users
+    tenant_handler.go        CRUD /admin/tenants
+    stats_handler.go         GET /stats (tenant-scoped, role-filtered)
     health_handler.go        GET /healthz, GET /readyz
     response.go              Standard envelope (success/data/error/meta) + error mapping
   middleware/
-    auth.go                  JWT validation, injects tenant_id/user_id/role into context
-    cors.go                  CORS handling with configurable allowed origins (SATVOS_CORS_ALLOWED_ORIGINS)
+    auth.go                  JWT validation + tenant/user/role injection, RequireEmailVerified
+    cors.go                  CORS (SATVOS_CORS_ALLOWED_ORIGINS)
     tenant.go                Tenant context guard
-    logger.go                Request ID injection, logging, panic recovery
+    logger.go                Request ID, logging, panic recovery
   service/
-    auth_service.go          Login (bcrypt verify), JWT generation/refresh
-    registration_service.go  Free-tier self-registration (create user + personal collection + tokens),
-                             email verification (VerifyEmail, ResendVerification)
-    password_reset_service.go Password reset for all users (ForgotPassword, ResetPassword),
-                             JWT token with "password-reset" audience, 1h expiry, single-use via DB jti
+    auth_service.go          Login (bcrypt), JWT generation/refresh, GenerateTokenPairForUser
+    social_auth_service.go   Google social login (verify token, auto-link, auto-register)
+    registration_service.go  Free-tier registration, email verification (VerifyEmail, ResendVerification)
+    password_reset_service.go ForgotPassword, ResetPassword (JWT "password-reset" audience, 1h, single-use jti)
     file_service.go          Upload (validate + S3 + DB), download URL, delete, ListByUploader
-    collection_service.go    Collection CRUD, batch upload, permission checking, file association,
-                             EffectivePermission/EffectivePermissions (batch-optimized for List)
-    document_service.go      Document CRUD, background LLM parsing, retry, review status,
-                             validation orchestration (ValidateDocument, GetValidation),
-                             collection permission checks via collectionPermRepo,
-                             tag management (ListTags, AddTags, DeleteTag, SearchByTag),
-                             auto-tag extraction from parsed invoice data,
-                             ParseDocument (core parse logic used by background and queue worker),
-                             handleParseError (rate-limit detection → queued status),
-                             per-user quota enforcement via userRepo.CheckAndIncrementQuota
-    parse_queue_worker.go    Background worker that polls for queued documents and dispatches parsing
-                             with bounded concurrency (semaphore) and clean shutdown (WaitGroup)
-    stats_service.go         Aggregate stats (role-branching: tenant-wide vs user-scoped)
-    user_service.go          User CRUD with tenant scoping
+    collection_service.go    CRUD, batch upload, permission checking, EffectivePermission(s)
+    document_service.go      CRUD, background LLM parsing, retry, review, validation, tags, quota enforcement
+    parse_queue_worker.go    Polls queued docs, bounded concurrency, graceful shutdown
+    stats_service.go         Aggregate stats (role-branching)
+    user_service.go          User CRUD (tenant-scoped)
     tenant_service.go        Tenant CRUD
   port/
-    repository.go            TenantRepository, UserRepository (incl. CheckAndIncrementQuota), FileMetaRepository (incl. ListByUploader) interfaces
-    collection_repository.go CollectionRepository, CollectionPermissionRepository, CollectionFileRepository interfaces
-    document_repository.go   DocumentRepository (incl. UpdateValidationResults, ClaimQueued),
-                             DocumentTagRepository (incl. DeleteByDocumentAndSource),
-                             DocumentValidationRuleRepository interfaces
-    stats_repository.go      StatsRepository interface (GetTenantStats, GetUserStats)
+    repository.go            TenantRepo, UserRepo (CheckAndIncrementQuota, GetByProviderID, LinkProvider), FileMetaRepo interfaces
+    social_auth.go           SocialTokenVerifier interface, SocialAuthClaims DTO
+    collection_repository.go CollectionRepo, CollectionPermissionRepo, CollectionFileRepo interfaces
+    document_repository.go   DocumentRepo (UpdateValidationResults, ClaimQueued), DocTagRepo, DocValidationRuleRepo
+    stats_repository.go      StatsRepository interface
     email.go                 EmailSender interface (SendVerificationEmail, SendPasswordResetEmail)
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
-    hsn_repository.go        HSNEntry DTO + HSNRepository interface (LoadAll for in-memory cache)
-    duplicate_finder.go      DuplicateMatch DTO + DuplicateInvoiceFinder interface
+    hsn_repository.go        HSNRepository interface (LoadAll for in-memory cache)
+    duplicate_finder.go      DuplicateInvoiceFinder interface
     storage.go               ObjectStorage interface (Upload, Download, Delete, GetPresignedURL)
-  repository/postgres/
-    db.go                    Database connection setup (sqlx + pgx)
-    tenant_repo.go           Tenant SQL queries
-    user_repo.go             User SQL queries (tenant-scoped), quota check+increment (atomic SQL)
-    file_meta_repo.go        File metadata SQL queries, ListByUploader
-    collection_repo.go       Collection SQL queries (ListByUser joins permissions, ListByTenant for admin/manager/member)
-    collection_permission_repo.go  Collection permission queries (upsert via ON CONFLICT)
-    collection_file_repo.go  Collection-file association queries (joins file_metadata)
-    document_repo.go         Document CRUD queries (incl. UpdateValidationResults, ClaimQueued)
-    document_tag_repo.go     Document tag queries (batch create, search by tag)
-    document_validation_rule_repo.go  Validation rule queries (builtin key listing, scoped loading)
-    hsn_repo.go              HSN codes bulk loader (LoadAll for startup cache)
-    duplicate_finder_repo.go Duplicate invoice finder (JSONB @> containment query)
-    stats_repo.go            Aggregate stats queries (conditional COUNTs on documents + collections)
+  repository/postgres/       SQL implementations for all port interfaces
   email/
-    ses/ses_sender.go        AWS SES v2 implementation of EmailSender
-    noop/noop_sender.go      No-op implementation (logs verification URL to stdout)
-  csvexport/
-    writer.go                CSV export for collections (Writer, SanitizeFilename, BuildFilename)
-  storage/s3/
-    s3_client.go             S3 implementation (supports LocalStack endpoint)
+    ses/ses_sender.go        AWS SES v2 EmailSender implementation
+    noop/noop_sender.go      No-op EmailSender (logs URL to stdout)
+  csvexport/writer.go        CSV export (33 columns, UTF-8 BOM, batched)
+  storage/s3/s3_client.go    S3 implementation (supports LocalStack)
+  auth/google/verifier.go    Google ID token verification via tokeninfo endpoint
   parser/
-    factory.go               Parser provider registry and factory (RegisterProvider, NewParser)
-    prompt.go                Shared GST invoice extraction prompt (BuildGSTInvoicePrompt)
-    merge.go                 MergeParser — wraps two DocumentParsers, runs in parallel, merges results
-    fallback.go              FallbackParser — tries parsers in order with per-parser circuit breaker
-    errors.go                RateLimitError type + ParseRetryAfterHeader helper
-    claude/
-      claude_parser.go       Anthropic Messages API parser (PDF as document blocks, images as image blocks)
-    gemini/
-      gemini_parser.go       Google Gemini parser (Gemini REST API)
-    openai/
-      openai_parser.go       OpenAI Chat Completions API parser (images as data URI, JSON mode)
+    factory.go               Provider registry (RegisterProvider, NewParser)
+    prompt.go                Shared GST invoice extraction prompt
+    merge.go                 MergeParser — dual-parse, parallel, field-by-field merge
+    fallback.go              FallbackParser — ordered failover with per-parser circuit breaker
+    errors.go                RateLimitError type + ParseRetryAfterHeader
+    claude/                  Anthropic Messages API parser
+    gemini/                  Google Gemini REST API parser
+    openai/                  OpenAI Chat Completions API parser
   validator/
-    engine.go                Validation orchestrator — loads rules, runs validators, computes
-                             validation_status + reconciliation_status, auto-seeds builtin rules,
-                             returns ValidationResponse with reconciliation summary
-    validator.go             Validator interface (Validate, RuleKey, RuleName, RuleType, Severity,
-                             ReconciliationCritical)
-    registry.go              Map-based validator registry (Register, Get, All)
-    field_status.go          Computes per-field status from rule results + confidence scores
-    invoice/                 GST invoice validators (56 built-in + 2 HSN-based + 1 duplicate detection):
-      types.go               GSTInvoice, Party, LineItem, Totals, Payment, ConfidenceScores structs
-      builtin_rules.go       AllBuiltinValidators() — collects all validators into BuiltinValidator wrappers
-      required.go            12 required field validators (invoice number, GSTIN, state codes, etc.)
-      format.go              13 format validators (GSTIN regex, PAN, IFSC, HSN/SAC, dates, currency, state codes)
-      math.go                11 mathematical validators (line item arithmetic, totals reconciliation)
-      crossfield.go          7 cross-field validators (GSTIN-state match, GSTIN-PAN match, tax type consistency)
-      logical.go             7 logical validators (non-negative amounts, valid GST rates, exclusive tax type)
-      irn.go                 5 IRN validators (format, ack number/date, hash verification, missing IRN warning)
-                             + DeriveFinancialYear/ComputeIRNHash helpers
-      hsn_lookup.go          In-memory HSN code lookup (loaded from DB at startup, prefix fallback)
-      hsn.go                 2 HSN validators (existence check + rate cross-validation) via closure-captured lookup
-      context.go             Validation context helpers (WithValidationContext, TenantIDFromContext, DocumentIDFromContext)
-      duplicate.go           Duplicate invoice detection validator via closure-captured DuplicateInvoiceFinder
-  router/
-    router.go                Route definitions, middleware wiring
-  mocks/                     Generated mocks (uber/mock) for testing
+    engine.go                Orchestrator: load rules, run validators, compute statuses, auto-seed builtins
+    validator.go             Validator interface
+    registry.go              Map-based validator registry
+    field_status.go          Per-field status from rule results + confidence scores
+    invoice/                 59 GST validators: required(12), format(13), math(11), crossfield(7),
+                             logical(7), IRN(5), HSN(2), duplicate(1)
+      types.go               GSTInvoice, Party, LineItem, Totals, Payment, ConfidenceScores
+      builtin_rules.go       AllBuiltinValidators() collects all into BuiltinValidator wrappers
+      context.go             WithValidationContext (injects tenantID, docID for data-dependent validators)
+  router/router.go           Route definitions, middleware wiring
+  mocks/                     Hand-written mocks for testing
 
-tests/unit/                  Unit tests for handlers, services, middleware, validators, parsers, config
-db/migrations/               16 SQL migrations: tenants -> users -> file_metadata -> collections
-                             -> documents -> validation columns -> consolidated validation results
-                             -> reconciliation tiering -> multi-parser fields
-                             -> document name + tag source
-                             -> secondary_parser_model + parse_attempts
-                             -> parse queue (retry_after column + partial index)
-                             -> hsn_codes reference table
-                             -> free tier (user quota columns)
-                             -> email verification (email_verified, email_verified_at columns)
-                             -> password reset (password_reset_token_id column)
+tests/unit/                  Unit tests for all packages
+db/migrations/               17 SQL migrations (tenants → users → files → collections → documents
+                             → validation → reconciliation → multi-parser → tags → queue → hsn
+                             → free-tier → email-verification → password-reset → social-auth)
 ```
 
 ## Data Flow
 
 ```
-Request -> Gin Router -> Middleware (Logger -> Auth -> TenantGuard)
-  -> Handler -> Service -> Repository/Storage -> PostgreSQL/S3
+Request → Gin Router → Middleware (Logger → Auth → TenantGuard) → Handler → Service → Repository/Storage → PostgreSQL/S3
 ```
 
-## Document Processing Pipeline
+## Document Lifecycle
 
-```
-                              ┌─────────────────────────────────────────┐
-                              │            DOCUMENT LIFECYCLE           │
-                              └─────────────────────────────────────────┘
+1. **Upload**: `POST /files/upload` → S3 + DB (optional `collection_id`)
+2. **Create & Parse**: `POST /documents` → creates doc (pending) → background goroutine downloads from S3, sends to LLM, saves structured_data + confidence_scores + field_provenance, extracts auto-tags → completed/failed/queued
+3. **Rate-limit retry**: If all parsers return 429, doc is queued with `retry_after`. `ParseQueueWorker` polls every 10s, re-dispatches with bounded concurrency (max 5 attempts)
+4. **Validate**: Auto-triggered after parse. Engine auto-seeds builtin rules, runs 59 validators, computes `validation_status` and `reconciliation_status` independently, saves JSONB results
+5. **Review**: `PUT /documents/:id/review` → approve/reject with notes
+6. **Manual edit**: `PUT /documents/:id` → validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation
 
-  POST /files/upload          POST /documents              Background Goroutine
-  ┌──────────────┐           ┌──────────────┐           ┌──────────────────────────┐
-  │ Upload File  │──────────>│ Create Doc   │──────────>│ Parse (LLM)              │
-  │ to S3        │           │ parsing:     │  go func  │ parsing: processing      │
-  │              │           │ pending      │           │                          │
-  └──────────────┘           └──────────────┘           │ 1. Download from S3      │
-                                                        │ 2. Send to LLM parser    │
-                                                        │ 3. Save structured_data  │
-                                                        │ 4. Save confidence_scores│
-                                                        │ 5. Extract auto-tags     │
-                                                        │ parsing: completed       │
-                                                        │         /failed/queued   │
-                                                        └──────┬──────────┬────────┘
-                                                               │          │
-                                                   on success  │          │ on RateLimitError
-                                                               │          │ (all parsers 429)
-                                                               │          v
-                                                               │  ┌──────────────────┐
-                                                               │  │ Queue for Retry   │
-                                                               │  │ parsing: queued   │
-                                                               │  │ retry_after: T+Ns │
-                                                               │  └────────┬─────────┘
-                                                               │           │
-                                                               │  ParseQueueWorker    │
-                                                               │  (polls every 10s)   │
-                                                               │           │
-                                                               │           v
-                                                               │  ┌──────────────────┐
-                                                               │  │ Re-dispatch Parse │
-                                                               │  │ (bounded concurr.)│
-                                                               │  │ max 5 attempts    │
-                                                               │  └──────────────────┘
-                                                               │
-                                                     auto-trigger
-                                                        ┌──────v──────────────────┐
-  GET /documents/:id/validation                         │ Validate                │
-  ┌──────────────┐                                      │ validation: pending     │
-  │ View Results │<─────────────────────────────────────│                         │
-  │ per-rule     │                                      │ 1. Ensure builtin rules │
-  │ per-field    │                                      │ 2. Load active rules    │
-  │ summary      │                                      │ 3. Run 56 validators    │
-  └──────────────┘                                      │ 4. Compute field status │
-                                                        │ 5. Save JSONB results   │
-  PUT /documents/:id/review                             │ validation: valid/      │
-  ┌──────────────┐                                      │   warning/invalid       │
-  │ Approve or   │                                      └─────────────────────────┘
-  │ Reject       │                                                 ^
-  │ review:      │                                                 │
-  │ approved/    │                                                 │ re-validate
-  │ rejected     │                                                 │
-  └──────────────┘           PUT /documents/:id                     │
-                             PUT /documents/:id/structured-data    │
-                             ┌──────────────────────────┐          │
-                             │ Manual Edit              │──────────┘
-                             │ 1. Validate JSON schema  │
-                             │ 2. Set confidence → 1.0  │
-                             │ 3. Reset review status   │
-                             │ 4. Re-extract auto-tags  │
-                             │ 5. Re-run validation     │
-                             │ provenance: manual_edit   │
-                             └──────────────────────────┘
-```
+## Validation Engine
 
-## Validation Engine Architecture
+- **59 rules**: 56 built-in (`AllBuiltinValidators()`) + 2 HSN (closure-captured in-memory lookup) + 1 duplicate (closure-captured `DuplicateInvoiceFinder` with JSONB `@>` query)
+- **Auto-seeding**: `EnsureBuiltinRules()` creates missing rules per tenant, unique index prevents duplicates
+- **Status logic**: Any error failure → invalid; only warnings → warning; all pass → valid
+- **Reconciliation**: 22 rules marked `reconciliation_critical` for GSTR-2A/2B matching. Computed independently — non-critical failures don't affect `reconciliation_status`
+- **Field status**: error failure → `invalid`; warning failure → `unsure`; confidence ≤ 0.5 → `unsure`; else → `valid`
+- **Storage**: JSONB on `documents.validation_results` (not a separate table)
+- **Context injection**: Engine calls `WithValidationContext(ctx, tenantID, docID)` so data-dependent validators can access them
 
-```
-  ┌─────────────────────────────────────────────────────────────────┐
-  │                    validator.Engine                              │
-  │                                                                 │
-  │  ValidateDocument(ctx, tenantID, docID)                        │
-  │    1. EnsureBuiltinRules() — auto-seed missing rules           │
-  │    2. Load active rules from document_validation_rules table    │
-  │    3. For each rule:                                            │
-  │       - Look up validator in Registry by builtin_rule_key       │
-  │       - Run Validator.Validate(ctx, *GSTInvoice)               │
-  │       - Collect ValidationResult (passed, field_path, message)  │
-  │       - Track reconciliation_critical flag per result           │
-  │    4. Determine overall validation_status:                      │
-  │       - Any error failure → ValidationStatusInvalid             │
-  │       - Only warning failures → ValidationStatusWarning         │
-  │       - All passed → ValidationStatusValid                      │
-  │    5. Determine reconciliation_status (from critical rules only)│
-  │       - Any recon-critical error → ReconciliationStatusInvalid  │
-  │       - Only recon-critical warnings → Warning                  │
-  │       - All recon-critical passed → ReconciliationStatusValid   │
-  │    6. Save results as JSONB to documents.validation_results     │
-  │                                                                 │
-  │  GetValidation(ctx, tenantID, docID)                           │
-  │    1. Load document (structured_data, confidence_scores, etc.)  │
-  │    2. Load validation rules                                     │
-  │    3. ComputeFieldStatuses (results + confidence → per-field)   │
-  │    4. Return ValidationResponse (summary, reconciliation        │
-  │       summary, results with reconciliation_critical flag,       │
-  │       field statuses)                                           │
-  └─────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              v               v               v
-  ┌───────────────┐  ┌──────────────┐  ┌──────────────┐
-  │   Registry    │  │  Rule Repo   │  │  Doc Repo    │
-  │ map[key]      │  │ (PostgreSQL) │  │ (PostgreSQL) │
-  │  Validator    │  │              │  │              │
-  └───────────────┘  └──────────────┘  └──────────────┘
-```
+### Validator Categories
 
-### Validator Categories (56 built-in + 3 data-dependent rules)
+| Category | Count | Key Prefix | File |
+|----------|-------|------------|------|
+| Required Fields | 12 | `req.*` | `invoice/required.go` |
+| Format | 13 | `fmt.*` | `invoice/format.go` |
+| Mathematical | 11 | `math.*` | `invoice/math.go` |
+| Cross-field | 7 | `xf.*` | `invoice/crossfield.go` |
+| Logical | 7 | `logic.*` | `invoice/logical.go` |
+| IRN | 5 | `fmt.invoice.*`, `xf.invoice.*`, `logic.invoice.*` | `invoice/irn.go` |
+| HSN | 2 | `logic.line_item.hsn_exists`, `xf.line_item.hsn_rate` | `invoice/hsn.go` |
+| Duplicate | 1 | `logic.invoice.duplicate` | `invoice/duplicate.go` |
 
-| Category | Count | Rule Type | Severity | Key Prefix | File |
-|----------|-------|-----------|----------|------------|------|
-| Required Fields | 12 | `required_field` | Error/Warning | `req.*` | `invoice/required.go` |
-| Format | 13 | `regex` | Error/Warning | `fmt.*` | `invoice/format.go` |
-| Mathematical | 11 | `sum_check` | Error/Warning | `math.*` | `invoice/math.go` |
-| Cross-field | 7 | `cross_field` | Error/Warning | `xf.*` | `invoice/crossfield.go` |
-| Logical | 7 | `custom` | Error/Warning | `logic.*` | `invoice/logical.go` |
-| IRN Format | 3 | `regex` | Error/Warning | `fmt.invoice.*` | `invoice/irn.go` |
-| IRN Cross-field | 1 | `cross_field` | Warning | `xf.invoice.*` | `invoice/irn.go` |
-| IRN Logical | 1 | `custom` | Warning | `logic.invoice.*` | `invoice/irn.go` |
-| HSN Existence | 1 | `custom` | Warning | `logic.line_item.hsn_exists` | `invoice/hsn.go` |
-| HSN Rate | 1 | `cross_field` | Warning | `xf.line_item.hsn_rate` | `invoice/hsn.go` |
-| Duplicate Detection | 1 | `custom` | Warning | `logic.invoice.duplicate` | `invoice/duplicate.go` |
+## Multi-Parser Architecture
 
-### Field Status Computation (`field_status.go`)
-
-Per-field status is determined by combining validation results and confidence scores:
-- Any **error**-severity rule fails for field → `invalid`
-- Any **warning**-severity rule fails for field → `unsure`
-- Confidence score ≤ 0.5 (even if rules pass) → `unsure`
-- Otherwise → `valid`
-
-### GST Invoice Type Model (`invoice/types.go`)
-
-The `GSTInvoice` struct mirrors the LLM parser output:
-- `Invoice` — header (number, date, due_date, type, currency, place_of_supply, reverse_charge, irn, acknowledgement_number, acknowledgement_date, qr_code_data)
-- `Seller` / `Buyer` — party (name, address, gstin, pan, state, state_code)
-- `LineItems[]` — (description, hsn_sac_code, quantity, unit, unit_price, discount, taxable_amount, cgst/sgst/igst rate+amount, total)
-- `Totals` — (subtotal, total_discount, taxable_amount, cgst, sgst, igst, cess, round_off, total, amount_in_words)
-- `Payment` — (bank_name, account_number, ifsc_code, payment_terms)
-- Parallel `ConfidenceScores` struct with 0.0-1.0 float64 per field
-
-### Auto-seeding Builtin Rules
-
-On first validation for a tenant+document_type:
-1. `EnsureBuiltinRules()` queries existing `builtin_rule_key` values
-2. For each registered validator not yet in DB, creates a `DocumentValidationRule` row
-3. Uses unique index `(tenant_id, builtin_rule_key)` to prevent duplicates
-4. Rules are tenant-scoped and can be individually toggled (`is_active`)
-
-### Validation Result Storage
-
-Results are stored as JSONB directly on the `documents` table (`validation_results` column), not in a separate table. Each entry:
-```json
-{"rule_id": "uuid", "passed": true, "field_path": "seller.gstin",
- "expected_value": "non-empty", "actual_value": "29ABCDE1234F1Z5",
- "message": "...", "reconciliation_critical": true,
- "validated_at": "2025-01-15T10:30:00Z"}
-```
-
-### Reconciliation Tiering
-
-22 of the 56 validation rules are classified as **reconciliation-critical** for GSTR-2A/2B matching. These are the fields the GST portal uses for invoice matching: supplier GSTIN, invoice number/date, total value, taxable value, CGST/SGST/IGST amounts, place of supply, reverse charge, and IRN hash verification.
-
-The `reconciliation_status` field on documents is computed independently from `validation_status`:
-- Only reconciliation-critical rule failures affect `reconciliation_status`
-- Non-critical failures (e.g., missing PAN, payment details, HSN codes) affect `validation_status` but leave `reconciliation_status` valid
-
-Each validator implements `ReconciliationCritical() bool`. Each `DocumentValidationRule` row has a `reconciliation_critical` boolean. The engine tracks recon errors/warnings separately and saves the result to `documents.reconciliation_status`.
-
-**Reconciliation-critical rule keys** (22 total): `req.invoice.number`, `req.invoice.date`, `req.invoice.place_of_supply`, `req.seller.name`, `req.seller.gstin`, `req.buyer.gstin`, `fmt.seller.gstin`, `fmt.buyer.gstin`, `fmt.seller.state_code`, `fmt.buyer.state_code`, `math.totals.taxable_amount`, `math.totals.cgst`, `math.totals.sgst`, `math.totals.igst`, `math.totals.grand_total`, `xf.seller.gstin_state`, `xf.buyer.gstin_state`, `xf.tax_type.intrastate`, `xf.tax_type.interstate`, `logic.line_items.at_least_one`, `logic.line_item.exclusive_tax`, `xf.invoice.irn_hash`.
-
-### Multi-Parser Architecture
-
-The system supports multiple LLM parser backends with an opt-in dual-parse merge mode:
-
-```
-  ParserConfig (config.go)
-    Primary + Secondary + Tertiary
-         │
-  Parser Factory (factory.go)
-    RegisterProvider() / NewParser()
-         │
-    ┌────┼────┐
-    │    │    │
-  Claude Gemini OpenAI
-  (live) (live) (live)
-         │
-  FallbackParser (fallback.go)
-    tries parsers in order
-    per-parser circuit breaker
-    skips rate-limited parsers
-         │
-  MergeParser (merge.go)
-    wraps 2 FallbackParsers
-    runs both in parallel
-    merges field-by-field
-```
-
-**Parse modes** (`parse_mode` field on documents):
-- `single` (default): Uses FallbackParser wrapping [primary, secondary, tertiary]
-- `dual`: Uses MergeParser wrapping two FallbackParsers: [primary, tertiary] + [secondary, tertiary]
-
-**Merge strategy** (in `internal/parser/merge.go`):
-- **Agreement**: Both extract same value → use it, confidence boosted by 20%
-- **One empty**: Use the non-empty value with its confidence
-- **Disagreement**: Prefer value matching expected format (e.g., GSTIN regex), reduce confidence, record provenance
-- **Line items**: Pick the array from whichever parser has more items (no per-item merging)
-
-**Field provenance** (`field_provenance` JSONB on documents): Records which model provided each field — `"agree"`, `"primary"`, `"secondary"`, `"primary_format"`, `"secondary_format"`, or `"disagreement"`.
-
-**FallbackParser** (in `internal/parser/fallback.go`):
-- Tries parsers in order; on any error, falls back to the next parser
-- On `RateLimitError` (HTTP 429), opens a per-parser circuit breaker with `RetryAfter` duration
-- Open circuits are automatically skipped until `time.Now()` passes `resetAt`
-- If all parsers are rate-limited, returns a `RateLimitError` with the earliest retry time
-- If all parsers fail with non-rate-limit errors, returns `"all parsers failed: <last error>"`
-- Thread-safe via `sync.RWMutex` per circuit; in-memory state (no DB persistence)
-
-**RateLimitError** (in `internal/parser/errors.go`):
-- Wraps underlying error with `Provider`, `RetryAfter`, and `Unwrap()` support
-- `ParseRetryAfterHeader()` parses `Retry-After` response headers (shared across providers)
-- Defaults to 60s retry if header is missing or unparseable
-
-**Config** (`ParserConfig` in `config.go`):
-- Legacy flat fields (`SATVOS_PARSER_PROVIDER`, etc.) still work via `PrimaryConfig()` fallback
-- Multi-provider: `SATVOS_PARSER_PRIMARY_PROVIDER`, `SATVOS_PARSER_PRIMARY_API_KEY`, `SATVOS_PARSER_SECONDARY_PROVIDER`, `SATVOS_PARSER_TERTIARY_PROVIDER`, etc.
-- `TertiaryConfig()` returns nil if `SATVOS_PARSER_TERTIARY_PROVIDER` is not set
-- If no secondary configured, dual parse mode falls back to single with log warning
+- **Providers**: Claude, Gemini, OpenAI — registered via `parser.RegisterProvider()` in `main.go`
+- **FallbackParser**: Tries parsers in order; on 429, opens per-parser circuit breaker (skipped until `resetAt`). If all rate-limited, returns `RateLimitError` with earliest retry. Thread-safe via `sync.RWMutex`
+- **MergeParser**: Wraps two FallbackParsers, runs in parallel, merges field-by-field. Agreement → boosted confidence; one empty → use non-empty; disagreement → prefer format-matching value. Line items: pick longer array
+- **Parse modes**: `single` (FallbackParser [primary, secondary, tertiary]) or `dual` (MergeParser of two FallbackParsers)
+- **Field provenance**: JSONB recording `"agree"`, `"primary"`, `"secondary"`, `"primary_format"`, `"secondary_format"`, `"disagreement"`, or `"manual_edit"`
+- **Config**: `SATVOS_PARSER_{PRIMARY,SECONDARY,TERTIARY}_{PROVIDER,API_KEY,MODEL}`. Legacy flat fields still work
 
 ## Key Conventions
 
-- **Environment config**: All vars prefixed with `SATVOS_` (e.g., `SATVOS_DB_HOST`). Loaded by viper in `internal/config/config.go`. Queue worker config: `SATVOS_QUEUE_POLL_INTERVAL_SECS` (default 10), `SATVOS_QUEUE_MAX_RETRIES` (default 5), `SATVOS_QUEUE_CONCURRENCY` (default 5). Free tier config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`). Email config: `SATVOS_EMAIL_PROVIDER` (default `"noop"`), `SATVOS_EMAIL_REGION` (default `"ap-south-1"`), `SATVOS_EMAIL_FROM_ADDRESS` (default `"noreply@satvos.com"`), `SATVOS_EMAIL_FROM_NAME` (default `"SATVOS"`), `SATVOS_EMAIL_FRONTEND_URL` (default `"http://localhost:3000"`).
-- **Response envelope**: All HTTP responses use `{"success": bool, "data": ..., "error": ..., "meta": ...}` defined in `handler/response.go`.
-- **Tenant isolation**: Every DB query includes `tenant_id` from JWT claims. Users authenticate with tenant slug + email + password.
-- **Error handling**: Domain errors in `domain/errors.go` are mapped to HTTP status codes in `handler/response.go`.
-- **File validation**: Extension whitelist (pdf/jpg/jpeg/png) + magic bytes content-type detection.
-- **S3 key format**: `tenants/{tenant_id}/files/{file_id}/{original_filename}`
-- **Tenant roles**: 5-tier hierarchy — admin (level 4, implicit owner), manager (level 3, implicit editor), member (level 2, implicit viewer), viewer (level 1, no implicit access), free (level 0, no implicit access). Effective permission = `max(implicit_from_role, explicit_collection_perm)`. Viewer role is capped at viewer-level regardless of explicit grants. Free users have no implicit collection access but can be granted explicit permissions (e.g., owner on their personal collection). Helper functions in `domain/enums.go`: `RoleLevel()`, `ImplicitCollectionPerm()`, `ValidUserRoles`.
-- **Free tier**: Self-registration on a shared "satvos" tenant via `POST /auth/register` (public, no auth). Free users get `role=free`, a personal collection (owner), and a per-user monthly document quota (default 5). Config: `SATVOS_FREE_TIER_TENANT_SLUG` (default `"satvos"`), `SATVOS_FREE_TIER_MONTHLY_LIMIT` (default `5`). The shared tenant is auto-created at server startup if missing. Free users only see their own files (`GET /files` routes to `ListByUploader`, `GET /files/:id` checks ownership). Collections and documents are naturally isolated since free users have no implicit collection access — they only see collections where they have explicit grants. Quota enforcement: `userRepo.CheckAndIncrementQuota()` is called atomically in `CreateAndParse()` before document creation. Period resets after 30 days. `monthly_document_limit=0` means unlimited (all existing/paid users).
-- **Registration flow**: `POST /auth/register` accepts `{email, password, full_name}`. The `RegistrationService` looks up the shared tenant, creates a user (free role, quota, `email_verified=false`), creates a personal collection ("{FullName}'s Invoices"), assigns owner permission, returns JWT tokens via `authService.Login()`, and sends a verification email (non-blocking — failure doesn't fail registration). Returns 201 with `{user, collection, tokens}`. Registration can be disabled by not passing a `RegistrationService` to `NewAuthHandler` (nil check).
-- **Email verification**: Free-tier users must verify their email before performing resource-consuming actions (file upload, document creation). Verification uses a JWT token with `"email-verification"` audience and 24h expiry. `GET /auth/verify-email?token=...` is a public endpoint. `POST /auth/resend-verification` is authenticated. Admin-created users are pre-verified (`email_verified=true`). The `RequireEmailVerified` middleware checks the `email_verified` column for `free` role users only — paid users skip the check. Email is sent via `port.EmailSender` interface with AWS SES (`ses`) and noop (`noop`, default) implementations. Config: `SATVOS_EMAIL_PROVIDER` (default `"noop"`), `SATVOS_EMAIL_REGION`, `SATVOS_EMAIL_FROM_ADDRESS`, `SATVOS_EMAIL_FROM_NAME`, `SATVOS_EMAIL_FRONTEND_URL`.
-- **Password reset**: All users (any tenant/role) can reset their password via `POST /auth/forgot-password` and `POST /auth/reset-password` (both public, no auth required). Uses JWT with `"password-reset"` audience and 1h expiry. Single-use enforcement via `password_reset_token_id` column storing the JWT `jti`. `ForgotPassword` always returns 200 (no email enumeration). Generating a new reset token overwrites the old `jti`, invalidating previous links. Atomic DB update with `WHERE password_reset_token_id = $4` prevents TOCTOU races. `ErrPasswordResetTokenInvalid` maps to HTTP 401 (code: `INVALID_RESET_TOKEN`). Service: `PasswordResetService` in `internal/service/password_reset_service.go`. Email send failure doesn't fail the forgot-password flow. **Known limitation**: Password reset does not invalidate existing access/refresh tokens.
-- **Quota enforcement**: `ErrQuotaExceeded` maps to HTTP 429 (code: `QUOTA_EXCEEDED`). The atomic SQL in `CheckAndIncrementQuota` handles period reset (>30 days) and increment in a single UPDATE with conditional WHERE. If `monthly_document_limit=0`, quota check returns immediately (no DB write).
-- **Collections**: Permission-based access (owner/editor/viewer) combined with tenant role hierarchy. Owner can manage permissions and delete. Editor can add/remove files. Viewer can read. Admin bypasses all permission checks. Files can belong to multiple collections or none. Deleting a collection preserves files. `document_count` is computed dynamically via SQL subquery (not a stored column) — always fresh on read. `GET /collections` and `GET /collections/:id` include `current_user_permission` in responses (the user's effective permission). `EffectivePermissions` (batch) is optimized: admin/viewer short-circuit without DB queries; manager/member use a single `GetByUserForCollections` batch query.
-- **CSV export**: `GET /collections/:id/export/csv` streams all documents in a collection as CSV. 33 columns ordered for GST reconciliation (reconciliation-critical fields first, including IRN/Ack Number/Ack Date). UTF-8 BOM for Excel compatibility. Batched loading (200 docs/batch). Unparsed docs included with empty invoice columns. Viewer+ permission required. Logic in `internal/csvexport/` package, handler in `CollectionHandler.ExportCSV`.
-- **Batch upload**: `POST /collections/:id/files` accepts multiple files via multipart `"files"` field. Returns per-file results (207 on partial success).
-- **Document parsing**: Background goroutine downloads file from S3, sends to LLM, saves structured JSON + confidence scores + field provenance, then extracts auto-tags from parsed data. Status progresses: pending -> processing -> completed/failed/queued. Supports `parse_mode`: `single` (default, primary parser) or `dual` (MergeParser runs primary + secondary in parallel). `parse_attempts` is incremented on each parse/retry attempt. `secondary_parser_model` records the secondary model name in dual-parse mode (from `ParseOutput.SecondaryModel`). Core parse logic lives in `ParseDocument` (called by both `parseInBackground` and `ParseQueueWorker`). **Important**: `CreateAndParse` and `RetryParse` return a copy of the document struct to avoid data races with the background goroutine.
-- **Parse queue (rate-limit retry)**: When all LLM parsers return `RateLimitError` (HTTP 429), `handleParseError` sets `parsing_status=queued` and `retry_after` to the earliest retry time (instead of permanently failing). A `ParseQueueWorker` polls the DB every 10s via `ClaimQueued` (atomic `UPDATE ... FOR UPDATE SKIP LOCKED`), re-dispatches queued documents with bounded concurrency (semaphore, default 5). Each document gets up to `max_retries` (default 5) parse attempts before permanent failure. Each worker goroutine uses `context.WithTimeout(context.Background(), 5min)` so in-flight parses complete even during shutdown. Config: `SATVOS_QUEUE_POLL_INTERVAL_SECS`, `SATVOS_QUEUE_MAX_RETRIES`, `SATVOS_QUEUE_CONCURRENCY`. **Known limitation**: If the server crashes mid-parse, a document may stay in `processing` indefinitely (staleness detector is a future enhancement).
-- **Document naming**: Documents have a `name` field. If not provided at creation, defaults to the uploaded file's `OriginalName`.
-- **Document tags**: Key-value pairs with a `source` field (`user` or `auto`). User tags are provided at document creation or via `POST /documents/:id/tags`. Auto-tags are extracted from parsed invoice data (invoice_number, invoice_date, seller_name, seller_gstin, buyer_name, buyer_gstin, invoice_type, place_of_supply, total_amount, irn) after successful parsing. Auto-tags are deleted and regenerated on retry or manual edit. Tags support search via `GET /documents/search/tags?key=...&value=...`.
-- **Manual editing**: `PUT /documents/:id` (or alias `PUT /documents/:id/structured-data`) allows users to manually edit parsed invoice data. Validates JSON against GSTInvoice schema, sets all confidence scores to 1.0 (human-verified), resets review status to pending, re-extracts auto-tags, and synchronously re-runs validation. Sets `field_provenance` to `{"source":"manual_edit"}`.
-- **Parser abstraction**: `DocumentParser` interface in `port/document_parser.go`. `ParseOutput` includes `FieldProvenance` (map of field → source) and `SecondaryModel` (for audit trail). Claude implementation in `parser/claude/`, Gemini implementation in `parser/gemini/`, OpenAI implementation in `parser/openai/`. New providers register via `parser.RegisterProvider()` in `internal/parser/factory.go`. Shared GST extraction prompt in `parser/prompt.go`. `FallbackParser` in `parser/fallback.go` provides rate-limit-aware failover across providers.
-- **Validation**: Runs automatically after parsing completes. 59 registered GST invoice rules (56 built-in via `AllBuiltinValidators()` + 2 HSN-based via `HSNValidators()` + 1 duplicate detection via `DuplicateInvoiceValidator()`) across 11 categories (including IRN format, cross-field hash verification, missing-IRN warning, HSN code existence, HSN-to-rate cross-validation, and duplicate invoice detection). HSN validators use a closure-captured in-memory lookup loaded from `hsn_codes` table at startup. The duplicate validator uses a closure-captured `DuplicateInvoiceFinder` that queries the DB via JSONB containment (`@>`). The validation engine injects `(tenantID, docID)` into the context via `invoice.WithValidationContext()` so validators like duplicate detection can access them. Rules stored in `document_validation_rules` table (per-tenant, optionally per-collection, with `reconciliation_critical` flag). Results stored as JSONB on `documents.validation_results`. Status: pending -> valid/warning/invalid. Reconciliation status computed independently from only reconciliation-critical rules: pending -> valid/warning/invalid.
-- **Review workflow**: Documents start with `review_status=pending`. After parsing completes, users can approve or reject with notes.
-- **Pagination**: `offset` and `limit` query params on list endpoints.
-- **Testing**: Unit tests use testify assertions and uber/mock for interface mocking. Tests run with `-race` flag in CI.
-- **Database**: PostgreSQL with sqlx for query mapping and pgx/v5 as the driver. Parameterized queries throughout.
-- **Passwords**: bcrypt with cost 12, minimum 8 characters.
-- **JWT**: HS256 signing. Access token 15m, refresh token 7d. Claims carry tenant_id, user_id, email, role.
-- **Concurrency safety**: Background goroutines (parsing) operate on their own document pointers. Callers receive a copy to prevent shared state. The `go` statement provides a happens-before edge for the copy.
+- **Env config**: All `SATVOS_` prefixed. See `internal/config/config.go` for all vars and defaults
+- **Response envelope**: `{"success": bool, "data": ..., "error": ..., "meta": ...}` from `handler/response.go`
+- **Tenant isolation**: Every DB query includes `tenant_id` from JWT claims
+- **Error mapping**: Domain errors → HTTP codes in `handler/response.go`
+- **Tenant roles**: admin (level 4, implicit owner) > manager (3, editor) > member (2, viewer) > viewer (1, no implicit) > free (0, no implicit). Effective perm = `max(implicit, explicit)`. Helpers: `RoleLevel()`, `ImplicitCollectionPerm()`
+- **Free tier**: Self-registration → shared "satvos" tenant, `free` role, personal collection (owner), per-user monthly quota (default 5). File listing filtered by uploader. Quota: `CheckAndIncrementQuota()` atomic SQL, 30-day period, `limit=0` → unlimited
+- **Registration**: `POST /auth/register` → `RegistrationService` creates user + collection + tokens + sends verification email. Email failure doesn't fail registration. Disable by passing nil `RegistrationService` to `NewAuthHandler`
+- **Email verification**: JWT `"email-verification"` audience, 24h expiry. `RequireEmailVerified` middleware checks DB for `free` role only. Gates: `POST /files/upload`, `POST /documents`. Config: `SATVOS_EMAIL_PROVIDER` ("ses"/"noop"), `SATVOS_EMAIL_FROM_ADDRESS`, `SATVOS_EMAIL_FRONTEND_URL`
+- **Password reset**: `POST /auth/forgot-password` (always 200, no enumeration) → `POST /auth/reset-password` (single-use via `password_reset_token_id` jti). Does NOT invalidate existing tokens
+- **Social login**: `POST /auth/social-login` (Google only). Frontend sends ID token → backend validates via `SocialTokenVerifier`. Auto-links if email matches existing user. Auto-verifies email. New users get personal collection. Config: `SATVOS_GOOGLE_AUTH_CLIENT_ID` (empty = disabled). Only for free-tier tenant. OAuth-only users (`password_hash=""`) blocked from password login (`ErrPasswordLoginNotAllowed`)
+- **Collections**: Permission-based (owner/editor/viewer) + role hierarchy. `document_count` computed via SQL subquery. `EffectivePermissions` batch-optimized
+- **CSV export**: `GET /collections/:id/export/csv` — 33 columns, reconciliation fields first, UTF-8 BOM, batched 200 docs
+- **Document parsing**: Background goroutine. `CreateAndParse`/`RetryParse` return **copies** to prevent data races. Status: pending → processing → completed/failed/queued
+- **Document tags**: Key-value pairs with `source` (user/auto). Auto-tags extracted from parsed data, regenerated on retry/edit
+- **Manual edit**: Validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation, sets provenance to `manual_edit`
+- **Passwords**: bcrypt cost 12, min 8 chars. **JWT**: HS256, access 15m, refresh 7d
+- **Testing**: testify + hand-written mocks in `/mocks/`. CI runs with `-race` flag
 
 ## Tech Stack
 
-- Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), AWS SES v2 (email verification), JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Docker Compose, LocalStack (dev S3), Anthropic Claude API (document parsing), Google Gemini API (document parsing), OpenAI API (document parsing)
+Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), AWS SES v2, JWT (golang-jwt/v5), bcrypt, Viper, golang-migrate, Docker/Compose, LocalStack, Claude/Gemini/OpenAI APIs
 
 ## Important Files for Common Tasks
 
-- **Adding an endpoint**: `internal/router/router.go` (routes), then create handler in `internal/handler/`, service in `internal/service/`. If the route needs `free` role access, add `domain.RoleFree` to its `RequireRole` middleware.
-- **Adding a domain model**: `internal/domain/models.go`, then repo interface in `internal/port/`, implementation in `internal/repository/postgres/`
-- **Adding a migration**: `db/migrations/` (sequential numbered SQL files, up + down)
-- **Modifying config**: `internal/config/config.go` (struct + viper binding), `.env.example`
-- **Adding middleware**: `internal/middleware/`, wire it in `internal/router/router.go`
-- **Adding a new parser provider**: Implement `port.DocumentParser` interface in `internal/parser/<provider>/`, register via `parser.RegisterProvider()` in `cmd/server/main.go`, use shared prompt from `parser.BuildGSTInvoicePrompt()`
-- **Adding a new validation rule**: Create validator in `internal/validator/invoice/`, add to the appropriate `*Validators()` function, it auto-registers via `AllBuiltinValidators()`. For data-dependent validators (like HSN, duplicate detection), use the closure-capture pattern: inject a dependency (lookup struct or finder interface) into a factory function that returns `*BuiltinValidator` or `[]*BuiltinValidator`, register separately in `main.go`. Validators needing tenant/document context can use `invoice.TenantIDFromContext(ctx)` / `invoice.DocumentIDFromContext(ctx)` (injected by the engine via `WithValidationContext`)
-- **Adding a new document type**: Create typed model in `internal/validator/<type>/types.go`, implement validators, register in `cmd/server/main.go`
-- **Modifying validation behavior**: Rules can be toggled per-tenant in `document_validation_rules` table (`is_active` flag). Collection-scoped rules use `collection_id`.
-- **Modifying CSV export columns**: `internal/csvexport/writer.go` — `columns` slice defines header, `documentToRow` maps document fields to row cells
-- **Modifying free tier**: Quota limit in `SATVOS_FREE_TIER_MONTHLY_LIMIT`. Registration flow in `internal/service/registration_service.go`. Quota enforcement in `internal/repository/postgres/user_repo.go` (`CheckAndIncrementQuota`). Free-role file isolation in `internal/handler/file_handler.go`.
-- **Modifying email verification**: Verification flow in `internal/service/registration_service.go` (`VerifyEmail`, `ResendVerification`). Middleware in `internal/middleware/auth.go` (`RequireEmailVerified`). Email sender interface in `internal/port/email.go`. SES implementation in `internal/email/ses/ses_sender.go`. Noop implementation in `internal/email/noop/noop_sender.go`. Routes gated by verification: `POST /files/upload`, `POST /documents` (configured in `internal/router/router.go`).
-- **Modifying password reset**: Service in `internal/service/password_reset_service.go` (`ForgotPassword`, `ResetPassword`). DB column: `password_reset_token_id` on users table (migration 16). Repository methods: `SetPasswordResetToken`, `ResetPassword` in `internal/repository/postgres/user_repo.go`. Email sender: `SendPasswordResetEmail` in `internal/port/email.go`. Handler: `ForgotPassword`, `ResetPassword` in `internal/handler/auth_handler.go`. Routes: `POST /auth/forgot-password`, `POST /auth/reset-password` (public, in `internal/router/router.go`).
+- **Adding an endpoint**: `router/router.go` → handler in `handler/` → service in `service/`. Add `domain.RoleFree` to `RequireRole` if free role needs access
+- **Adding a domain model**: `domain/models.go` → port in `port/` → repo in `repository/postgres/`
+- **Adding a migration**: `db/migrations/` (sequential numbered SQL, up + down)
+- **Modifying config**: `config/config.go` (struct + viper binding)
+- **Adding a parser provider**: Implement `port.DocumentParser` in `parser/<provider>/`, register via `parser.RegisterProvider()` in `main.go`, use `parser.BuildGSTInvoicePrompt()`
+- **Adding a validation rule**: Create in `validator/invoice/`, add to `*Validators()` function. Data-dependent validators use closure-capture pattern (see HSN/duplicate). Context available via `invoice.TenantIDFromContext(ctx)` / `DocumentIDFromContext(ctx)`
+- **Modifying CSV columns**: `csvexport/writer.go` — `columns` slice + `documentToRow`
+- **Modifying free tier**: Quota in `SATVOS_FREE_TIER_MONTHLY_LIMIT`. Registration in `service/registration_service.go`. Quota SQL in `repository/postgres/user_repo.go`. File isolation in `handler/file_handler.go`
+- **Modifying email verification**: Service in `registration_service.go`. Middleware in `middleware/auth.go`. Sender in `port/email.go` → `email/ses/` or `email/noop/`
+- **Modifying password reset**: Service in `service/password_reset_service.go`. Repo in `repository/postgres/user_repo.go`. Handler in `handler/auth_handler.go`
+- **Adding a social login provider**: Implement `port.SocialTokenVerifier` in `auth/<provider>/`, register in `main.go` verifiers map, add `AuthProvider` const in `domain/enums.go`
 
-## Gotchas & Past Issues
+## Gotchas
 
-- **Data races in tests**: The `RetryParse` and `CreateAndParse` methods launch background goroutines. The mock repository returns the same pointer for `GetByID`, so both the caller and goroutine share memory. Fixed by copying the document struct *before* `go` to ensure the caller's value is independent. The `go` statement provides a happens-before edge for the copy.
-- **Range value copies**: LineItem (136 bytes), DocumentValidationRule (208 bytes) — always use `for i := range` with pointer indexing (`item := &slice[i]`) to avoid per-iteration copies. Enforced by golangci-lint `gocritic.rangeValCopy`.
-- **Builtin shadowing**: Avoid naming parameters `max`, `min`, `len`, `cap`, etc. — Go's `gocritic.builtinShadow` catches these.
-- **CI runs tests with `-race`**: The GitHub Actions CI enables the Go race detector. Tests that pass locally without `-race` may fail in CI.
-- **Validation results are JSONB, not a separate table**: Migration 007 consolidated results from a separate `document_validation_results` table into `documents.validation_results` JSONB column.
-- **Import shadow lint (`importShadow`)**: In `document_service.go`, constructor params for parsers must not be named `parser` since it shadows the imported `satvos/internal/parser` package — use `docParser`/`mergeDocParser`. Similarly, test files importing `parser` must use `p` for mock parser variables.
-- **Stale processing documents (known limitation)**: If the server crashes mid-parse, a document stays in `processing` status indefinitely. A staleness detector (timeout-based requeue) is a planned future enhancement.
-- **HSN lookup is loaded at startup**: The `hsn_codes` table is loaded into an in-memory `HSNLookup` map when the server starts. If the table is empty, HSN validators gracefully skip (no crash). To update HSN data, update the DB and restart the server. Future enhancement: admin endpoint for hot reload.
-- **Free tier shared tenant**: All free users share a single "satvos" tenant. Data isolation depends on: (1) `free` role having no implicit collection access, (2) file listing filtered by uploader in handler, (3) explicit collection grants only. The shared tenant is auto-created at startup — if tenant creation fails (e.g., already exists), it logs a warning but doesn't crash.
-- **Quota period is 30 days, not calendar month**: `CheckAndIncrementQuota` uses `NOW() - current_period_start > INTERVAL '30 days'` for period reset, not calendar month boundaries. This is simpler but means the reset date floats.
-- **Free role must be explicitly added to RequireRole**: The `free` role is only allowed on routes that explicitly include `domain.RoleFree` in `RequireRole`. Currently only `POST /files/upload` includes it. Collection creation, user management, etc. are blocked by default.
-- **Email verification middleware does a DB lookup per request for free users**: `RequireEmailVerified` queries the user table on every request for `free` role users to check `email_verified`. Paid users skip the check entirely. This is acceptable for the free tier volume. Future optimization: cache verification status in JWT claims.
-- **Email send failure doesn't fail registration**: The verification email send in `Register()` is non-blocking — if it fails, the registration still succeeds and the user can use `POST /auth/resend-verification` to retry.
-- **Migration 15 defaults `email_verified=true`**: All existing users (paid tenants) are unaffected. Only new free-tier registrations explicitly set `email_verified=false`.
-- **Password reset does not invalidate existing sessions**: After a password reset, existing access/refresh tokens remain valid until they expire naturally. Token revocation is a future enhancement.
-- **`NewAuthHandler` takes 3 params**: `(authService, registrationService, passwordResetService)` — any can be nil to disable the corresponding feature.
-- **Migration 16 adds `password_reset_token_id`**: Nullable VARCHAR column on users table. Stores the JWT `jti` for single-use enforcement. Overwritten on each new forgot-password request.
+- **Data races**: `CreateAndParse`/`RetryParse` copy the document struct before `go` — mock repos return same pointer, so both caller and goroutine would share memory without the copy
+- **Range value copies**: LineItem (136B), DocumentValidationRule (208B) — use `&slice[i]`, enforced by `gocritic.rangeValCopy`
+- **Import shadow**: In `document_service.go`, parser params must be `docParser`/`mergeDocParser` (not `parser`). Test files use `p` for mock parsers
+- **Builtin shadowing**: Don't name params `max`, `min`, `len`, `cap` — caught by `gocritic.builtinShadow`
+- **CI race detector**: Tests must be race-safe. `-race` flag in CI
+- **Validation results**: JSONB on `documents` table, NOT a separate table (migrated in 007)
+- **HSN loaded at startup**: In-memory map from `hsn_codes` table. Empty table = validators skip gracefully. Restart to reload
+- **Free tier isolation**: Shared "satvos" tenant. Isolation via: (1) no implicit collection access, (2) file listing filtered by uploader, (3) explicit grants only
+- **Quota period is 30 days**, not calendar month — reset date floats
+- **Free role in RequireRole**: Must be explicitly added. Currently allowed on: `POST /files/upload`, `POST /documents`
+- **Email verification does DB lookup per request** for free users (acceptable for free-tier volume)
+- **Password reset doesn't invalidate sessions** — tokens expire naturally
+- **`NewAuthHandler` takes 4 params**: `(authService, registrationService, passwordResetService, socialAuthService)` — any can be nil
+- **Stale processing docs**: Server crash mid-parse → doc stuck in `processing` (no staleness detector yet)

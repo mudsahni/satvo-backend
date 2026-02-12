@@ -11,16 +11,22 @@ import (
 
 // Config holds all application configuration.
 type Config struct {
-	Server   ServerConfig
-	DB       DBConfig
-	JWT      JWTConfig
-	S3       S3Config
-	Log      LogConfig
-	Parser   ParserConfig
-	CORS     CORSConfig
-	Queue    QueueConfig
-	FreeTier FreeTierConfig
-	Email    EmailConfig
+	Server     ServerConfig
+	DB         DBConfig
+	JWT        JWTConfig
+	S3         S3Config
+	Log        LogConfig
+	Parser     ParserConfig
+	CORS       CORSConfig
+	Queue      QueueConfig
+	FreeTier   FreeTierConfig
+	Email      EmailConfig
+	GoogleAuth GoogleAuthConfig
+}
+
+// GoogleAuthConfig holds Google OAuth settings.
+type GoogleAuthConfig struct {
+	ClientID string `mapstructure:"client_id"`
 }
 
 // EmailConfig holds email delivery settings.
@@ -216,6 +222,9 @@ func Load() (*Config, error) {
 	v.SetDefault("email.access_key", "")
 	v.SetDefault("email.secret_key", "")
 
+	// Google Auth defaults
+	v.SetDefault("google_auth.client_id", "")
+
 	// Free tier defaults
 	v.SetDefault("free_tier.tenant_slug", "satvos")
 	v.SetDefault("free_tier.monthly_limit", 5)
@@ -304,6 +313,7 @@ func Load() (*Config, error) {
 		"email.secret_key":               "SATVOS_EMAIL_SECRET_KEY",
 		"free_tier.tenant_slug":          "SATVOS_FREE_TIER_TENANT_SLUG",
 		"free_tier.monthly_limit":        "SATVOS_FREE_TIER_MONTHLY_LIMIT",
+		"google_auth.client_id":          "SATVOS_GOOGLE_AUTH_CLIENT_ID",
 	}
 	for key, env := range envBindings {
 		_ = v.BindEnv(key, env)
@@ -412,6 +422,10 @@ func Load() (*Config, error) {
 		FrontendURL: v.GetString("email.frontend_url"),
 		AccessKey:   v.GetString("email.access_key"),
 		SecretKey:   v.GetString("email.secret_key"),
+	}
+
+	cfg.GoogleAuth = GoogleAuthConfig{
+		ClientID: v.GetString("google_auth.client_id"),
 	}
 
 	return cfg, nil

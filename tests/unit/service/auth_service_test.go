@@ -237,6 +237,35 @@ func TestAuthService_ValidateToken_InvalidSignature(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestAuthService_Login_OAuthOnlyUser(t *testing.T) {
+	tenantRepo := new(mocks.MockTenantRepo)
+	userRepo := new(mocks.MockUserRepo)
+	cfg := testJWTConfig()
+	svc := service.NewAuthService(userRepo, tenantRepo, cfg)
+
+	tenantID := uuid.New()
+	tenant := &domain.Tenant{ID: tenantID, Slug: "test-tenant", IsActive: true}
+	user := &domain.User{
+		ID:           uuid.New(),
+		TenantID:     tenantID,
+		Email:        "oauth@test.com",
+		PasswordHash: "", // OAuth-only — no password
+		IsActive:     true,
+	}
+
+	tenantRepo.On("GetBySlug", mock.Anything, "test-tenant").Return(tenant, nil)
+	userRepo.On("GetByEmail", mock.Anything, tenantID, "oauth@test.com").Return(user, nil)
+
+	result, err := svc.Login(context.Background(), service.LoginInput{
+		TenantSlug: "test-tenant",
+		Email:      "oauth@test.com",
+		Password:   "anypassword",
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrPasswordLoginNotAllowed)
+}
+
 func TestAuthService_RefreshToken_Success(t *testing.T) {
 	tenantRepo := new(mocks.MockTenantRepo)
 	userRepo := new(mocks.MockUserRepo)

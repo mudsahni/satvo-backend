@@ -28,4 +28,6 @@ var (
 	ErrQuotaExceeded           = errors.New("monthly document quota exceeded")
 	ErrEmailNotVerified            = errors.New("email not verified")
 	ErrPasswordResetTokenInvalid   = errors.New("password reset token is invalid or expired")
+	ErrSocialAuthTokenInvalid      = errors.New("social auth token is invalid or expired")
+	ErrPasswordLoginNotAllowed     = errors.New("this account uses social login; password login is not available")
 )

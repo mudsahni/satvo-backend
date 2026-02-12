@@ -53,6 +53,7 @@ func Setup(
 	auth.GET("/verify-email", authH.VerifyEmail)
 	auth.POST("/forgot-password", authH.ForgotPassword)
 	auth.POST("/reset-password", authH.ResetPassword)
+	auth.POST("/social-login", authH.SocialLogin)
 
 	// Protected routes - require valid JWT
 	protected := v1.Group("")

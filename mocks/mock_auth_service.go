@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
+	"satvos/internal/domain"
 	"satvos/internal/service"
 )
 
@@ -35,4 +36,12 @@ func (m *MockAuthService) ValidateToken(tokenString string) (*service.Claims, er
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*service.Claims), args.Error(1)
+}
+
+func (m *MockAuthService) GenerateTokenPairForUser(user *domain.User) (*service.TokenPair, error) {
+	args := m.Called(user)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*service.TokenPair), args.Error(1)
 }
