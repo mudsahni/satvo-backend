@@ -3018,6 +3018,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "domain.AuthProvider": {
+            "type": "string",
+            "enum": [
+                "email",
+                "google"
+            ],
+            "x-enum-varnames": [
+                "AuthProviderEmail",
+                "AuthProviderGoogle"
+            ]
+        },
         "domain.Collection": {
             "type": "object",
             "properties": {
@@ -3408,6 +3419,9 @@ const docTemplate = `{
         "domain.User": {
             "type": "object",
             "properties": {
+                "auth_provider": {
+                    "$ref": "#/definitions/domain.AuthProvider"
+                },
                 "created_at": {
                     "type": "string"
                 },

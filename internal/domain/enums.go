@@ -198,6 +198,14 @@ const (
 	FieldStatusUnsure  FieldValidationStatus = "unsure"
 )
 
+// AuthProvider identifies the authentication provider for a user account.
+type AuthProvider string
+
+const (
+	AuthProviderEmail  AuthProvider = "email"
+	AuthProviderGoogle AuthProvider = "google"
+)
+
 // FileStatus represents the lifecycle of an uploaded file.
 type FileStatus string
 

@@ -72,3 +72,16 @@ func (m *MockUserRepo) ResetPassword(ctx context.Context, tenantID, userID uuid.
 	args := m.Called(ctx, tenantID, userID, passwordHash, expectedTokenID)
 	return args.Error(0)
 }
+
+func (m *MockUserRepo) GetByProviderID(ctx context.Context, tenantID uuid.UUID, provider domain.AuthProvider, providerUserID string) (*domain.User, error) {
+	args := m.Called(ctx, tenantID, provider, providerUserID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.User), args.Error(1)
+}
+
+func (m *MockUserRepo) LinkProvider(ctx context.Context, tenantID, userID uuid.UUID, provider domain.AuthProvider, providerUserID string) error {
+	args := m.Called(ctx, tenantID, userID, provider, providerUserID)
+	return args.Error(0)
+}

@@ -28,6 +28,8 @@ import (
 	"satvos/internal/validator"
 	"satvos/internal/validator/invoice"
 
+	googleauth "satvos/internal/auth/google"
+
 	_ "satvos/docs" // swagger docs
 )
 
@@ -220,6 +222,19 @@ func run() error {
 	registrationSvc := service.NewRegistrationService(tenantRepo, userRepo, collectionRepo, collectionPermRepo, authSvc, emailSender, cfg.JWT, cfg.FreeTier)
 	passwordResetSvc := service.NewPasswordResetService(tenantRepo, userRepo, emailSender, cfg.JWT)
 
+	// Initialize social auth (optional — disabled if no client ID configured)
+	var socialAuthSvc service.SocialAuthService
+	if cfg.GoogleAuth.ClientID != "" {
+		googleVerifier := googleauth.NewVerifier(cfg.GoogleAuth.ClientID)
+		verifiers := map[string]port.SocialTokenVerifier{
+			string(domain.AuthProviderGoogle): googleVerifier,
+		}
+		socialAuthSvc = service.NewSocialAuthService(
+			verifiers, tenantRepo, userRepo, collectionRepo, collectionPermRepo, authSvc, cfg.FreeTier,
+		)
+		log.Println("Social auth enabled: Google")
+	}
+
 	// Start parse queue worker
 	queueCfg := service.ParseQueueConfig{
 		PollInterval: time.Duration(cfg.Queue.PollIntervalSecs) * time.Second,
@@ -232,7 +247,7 @@ func run() error {
 	go queueWorker.Start(queueCtx)
 
 	// Initialize handlers
-	authH := handler.NewAuthHandler(authSvc, registrationSvc, passwordResetSvc)
+	authH := handler.NewAuthHandler(authSvc, registrationSvc, passwordResetSvc, socialAuthSvc)
 	fileH := handler.NewFileHandler(fileSvc, collectionSvc)
 	tenantH := handler.NewTenantHandler(tenantSvc)
 	userH := handler.NewUserHandler(userSvc)

@@ -14,11 +14,12 @@ type AuthHandler struct {
 	authService          service.AuthService
 	registrationService  service.RegistrationService
 	passwordResetService service.PasswordResetService
+	socialAuthService    service.SocialAuthService
 }
 
 // NewAuthHandler creates a new AuthHandler.
-func NewAuthHandler(authService service.AuthService, registrationService service.RegistrationService, passwordResetService service.PasswordResetService) *AuthHandler {
-	return &AuthHandler{authService: authService, registrationService: registrationService, passwordResetService: passwordResetService}
+func NewAuthHandler(authService service.AuthService, registrationService service.RegistrationService, passwordResetService service.PasswordResetService, socialAuthService service.SocialAuthService) *AuthHandler {
+	return &AuthHandler{authService: authService, registrationService: registrationService, passwordResetService: passwordResetService, socialAuthService: socialAuthService}
 }
 
 // Login handles POST /api/v1/auth/login
@@ -138,6 +139,32 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	}
 
 	RespondOK(c, gin.H{"message": "password has been reset successfully"})
+}
+
+// SocialLogin handles POST /api/v1/auth/social-login
+func (h *AuthHandler) SocialLogin(c *gin.Context) {
+	if h.socialAuthService == nil {
+		RespondError(c, http.StatusNotFound, "NOT_FOUND", "social login is not enabled")
+		return
+	}
+
+	var input service.SocialLoginInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		RespondError(c, http.StatusBadRequest, "VALIDATION_ERROR", err.Error())
+		return
+	}
+
+	output, err := h.socialAuthService.SocialLogin(c.Request.Context(), input)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	if output.IsNewUser {
+		RespondCreated(c, output)
+	} else {
+		RespondOK(c, output)
+	}
 }
 
 // ResendVerification handles POST /api/v1/auth/resend-verification

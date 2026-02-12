@@ -31,9 +31,11 @@ type User struct {
 	CurrentPeriodStart      time.Time  `db:"current_period_start" json:"current_period_start"`
 	EmailVerified           bool       `db:"email_verified" json:"email_verified"`
 	EmailVerifiedAt         *time.Time `db:"email_verified_at" json:"email_verified_at,omitempty"`
-	PasswordResetTokenID    *string    `db:"password_reset_token_id" json:"-"`
-	CreatedAt               time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt               time.Time  `db:"updated_at" json:"updated_at"`
+	PasswordResetTokenID    *string      `db:"password_reset_token_id" json:"-"`
+	AuthProvider            AuthProvider `db:"auth_provider" json:"auth_provider"`
+	ProviderUserID          *string      `db:"provider_user_id" json:"-"`
+	CreatedAt               time.Time    `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time    `db:"updated_at" json:"updated_at"`
 }
 
 // Collection represents a grouping of files within a tenant.

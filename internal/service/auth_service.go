@@ -48,6 +48,7 @@ type AuthService interface {
 	Login(ctx context.Context, input LoginInput) (*TokenPair, error)
 	RefreshToken(ctx context.Context, refreshToken string) (*TokenPair, error)
 	ValidateToken(tokenString string) (*Claims, error)
+	GenerateTokenPairForUser(user *domain.User) (*TokenPair, error)
 }
 
 type authService struct {
@@ -92,6 +93,10 @@ func (s *authService) Login(ctx context.Context, input LoginInput) (*TokenPair, 
 		return nil, domain.ErrUserInactive
 	}
 
+	if user.PasswordHash == "" {
+		return nil, domain.ErrPasswordLoginNotAllowed
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)); err != nil {
 		return nil, domain.ErrInvalidCredentials
 	}
@@ -118,6 +123,10 @@ func (s *authService) RefreshToken(ctx context.Context, refreshToken string) (*T
 
 func (s *authService) ValidateToken(tokenString string) (*Claims, error) {
 	return s.validateTokenString(tokenString, "access")
+}
+
+func (s *authService) GenerateTokenPairForUser(user *domain.User) (*TokenPair, error) {
+	return s.generateTokenPair(user)
 }
 
 func (s *authService) generateTokenPair(user *domain.User) (*TokenPair, error) {
