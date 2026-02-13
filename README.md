@@ -1001,3 +1001,4 @@ Multi-stage build: `golang:1.24-alpine` (build) -> `alpine:3.20` (runtime). Prod
 | **[ERROR_CODES.md](ERROR_CODES.md)** | Complete error codes reference organized by domain |
 | **[FRONTEND_GUIDE.md](FRONTEND_GUIDE.md)** | Comprehensive guide for building a frontend application |
 | **[CLAUDE.md](CLAUDE.md)** | Project context for AI assistants (architecture, conventions, gotchas)
+
