@@ -93,6 +93,7 @@ func run() error {
 	// Initialize document repositories
 	docRepo := postgres.NewDocumentRepo(db)
 	documentTagRepo := postgres.NewDocumentTagRepo(db)
+	auditRepo := postgres.NewDocumentAuditRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 	statsRepo := postgres.NewStatsRepo(db)
 	hsnRepo := postgres.NewHSNRepo(db)
@@ -183,9 +184,9 @@ func run() error {
 
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
-		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine)
+		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine, auditRepo)
 	} else {
-		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine)
+		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine, auditRepo)
 	}
 
 	// Auto-create free tier tenant if it doesn't exist
@@ -253,7 +254,7 @@ func run() error {
 	userH := handler.NewUserHandler(userSvc)
 	healthH := handler.NewHealthHandler(db)
 	collectionH := handler.NewCollectionHandler(collectionSvc, documentSvc)
-	documentH := handler.NewDocumentHandler(documentSvc)
+	documentH := handler.NewDocumentHandler(documentSvc, auditRepo)
 	statsH := handler.NewStatsHandler(statsSvc)
 
 	// Setup router

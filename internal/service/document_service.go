@@ -77,6 +77,7 @@ type documentService struct {
 	userRepo    port.UserRepository
 	permRepo    port.CollectionPermissionRepository
 	tagRepo     port.DocumentTagRepository
+	auditRepo   port.DocumentAuditRepository
 	parser      port.DocumentParser
 	mergeParser port.DocumentParser // optional merge parser for dual mode
 	storage     port.ObjectStorage
@@ -93,6 +94,7 @@ func NewDocumentService(
 	docParser port.DocumentParser,
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
+	auditRepo port.DocumentAuditRepository,
 ) DocumentService {
 	return &documentService{
 		docRepo:   docRepo,
@@ -100,6 +102,7 @@ func NewDocumentService(
 		userRepo:  userRepo,
 		permRepo:  permRepo,
 		tagRepo:   tagRepo,
+		auditRepo: auditRepo,
 		parser:    docParser,
 		storage:   storage,
 		validator: validationEngine,
@@ -117,6 +120,7 @@ func NewDocumentServiceWithMerge(
 	mergeDocParser port.DocumentParser,
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
+	auditRepo port.DocumentAuditRepository,
 ) DocumentService {
 	return &documentService{
 		docRepo:     docRepo,
@@ -124,6 +128,7 @@ func NewDocumentServiceWithMerge(
 		userRepo:    userRepo,
 		permRepo:    permRepo,
 		tagRepo:     tagRepo,
+		auditRepo:   auditRepo,
 		parser:      docParser,
 		mergeParser: mergeDocParser,
 		storage:     storage,
@@ -160,6 +165,44 @@ func (s *documentService) requireCollectionPerm(ctx context.Context, collectionI
 		return domain.ErrCollectionPermDenied
 	}
 	return nil
+}
+
+// audit records a document mutation in the audit log. Failures are logged but never block business logic.
+func (s *documentService) audit(ctx context.Context, tenantID, docID uuid.UUID, userID *uuid.UUID, action domain.AuditAction, changes json.RawMessage) {
+	if s.auditRepo == nil {
+		return
+	}
+	if changes == nil {
+		changes = json.RawMessage("{}")
+	}
+	entry := &domain.DocumentAuditEntry{
+		ID:         uuid.New(),
+		TenantID:   tenantID,
+		DocumentID: docID,
+		UserID:     userID,
+		Action:     string(action),
+		Changes:    changes,
+	}
+	if err := s.auditRepo.Create(ctx, entry); err != nil {
+		log.Printf("documentService.audit: failed to write audit entry for %s/%s: %v", action, docID, err)
+	}
+}
+
+func (s *documentService) auditValidationCompleted(ctx context.Context, tenantID, docID uuid.UUID, userID *uuid.UUID, trigger string) {
+	if s.auditRepo == nil {
+		return
+	}
+	doc, err := s.docRepo.GetByID(ctx, tenantID, docID)
+	if err != nil {
+		log.Printf("documentService.auditValidationCompleted: failed to fetch doc %s: %v", docID, err)
+		return
+	}
+	changes, _ := json.Marshal(map[string]string{
+		"validation_status":      string(doc.ValidationStatus),
+		"reconciliation_status":  string(doc.ReconciliationStatus),
+		"trigger":                trigger,
+	})
+	s.audit(ctx, tenantID, docID, userID, domain.AuditDocumentValidationCompleted, changes)
 }
 
 func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error) {
@@ -219,6 +262,12 @@ func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocum
 	if err := s.docRepo.Create(ctx, doc); err != nil {
 		return nil, fmt.Errorf("creating document: %w", err)
 	}
+
+	changesJSON, _ := json.Marshal(map[string]interface{}{
+		"collection_id": input.CollectionID, "file_id": input.FileID,
+		"document_type": input.DocumentType, "parse_mode": string(parseMode),
+	})
+	s.audit(ctx, doc.TenantID, doc.ID, &input.CreatedBy, domain.AuditDocumentCreated, changesJSON)
 
 	// Save user-provided tags
 	if len(input.Tags) > 0 && s.tagRepo != nil {
@@ -333,6 +382,11 @@ func (s *documentService) ParseDocument(ctx context.Context, doc *domain.Documen
 		return
 	}
 
+	parseChanges, _ := json.Marshal(map[string]interface{}{
+		"parser_model": doc.ParserModel, "parse_mode": string(doc.ParseMode), "attempt": doc.ParseAttempts,
+	})
+	s.audit(ctx, doc.TenantID, doc.ID, nil, domain.AuditDocumentParseCompleted, parseChanges)
+
 	log.Printf("documentService.ParseDocument: document %s parsed successfully", doc.ID)
 
 	// Extract auto-tags from parsed data
@@ -344,6 +398,8 @@ func (s *documentService) ParseDocument(ctx context.Context, doc *domain.Documen
 	if s.validator != nil {
 		if err := s.validator.ValidateDocument(ctx, doc.TenantID, doc.ID); err != nil {
 			log.Printf("documentService.ParseDocument: validation failed for %s: %v", doc.ID, err)
+		} else {
+			s.auditValidationCompleted(ctx, doc.TenantID, doc.ID, nil, "parse")
 		}
 	}
 }
@@ -360,6 +416,10 @@ func (s *documentService) handleParseError(ctx context.Context, doc *domain.Docu
 		if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
 			log.Printf("documentService.handleParseError: failed to queue document %s: %v", doc.ID, err)
 		} else {
+			queueChanges, _ := json.Marshal(map[string]interface{}{
+				"retry_after": retryAt.Format(time.RFC3339), "attempt": doc.ParseAttempts,
+			})
+			s.audit(ctx, doc.TenantID, doc.ID, nil, domain.AuditDocumentParseQueued, queueChanges)
 			log.Printf("documentService.handleParseError: document %s queued for retry after %s", doc.ID, retryAt.Format(time.RFC3339))
 		}
 		return
@@ -375,6 +435,8 @@ func (s *documentService) failParsing(ctx context.Context, doc *domain.Document,
 	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
 		log.Printf("documentService.failParsing: failed to update status for %s: %v", doc.ID, err)
 	}
+	failChanges, _ := json.Marshal(map[string]interface{}{"error": errMsg, "attempt": doc.ParseAttempts})
+	s.audit(ctx, doc.TenantID, doc.ID, nil, domain.AuditDocumentParseFailed, failChanges)
 }
 
 func (s *documentService) GetByID(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error) {
@@ -440,6 +502,9 @@ func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewI
 		return nil, fmt.Errorf("updating review status: %w", err)
 	}
 
+	reviewChanges, _ := json.Marshal(map[string]interface{}{"status": string(input.Status), "notes": input.Notes})
+	s.audit(ctx, input.TenantID, input.DocumentID, &input.ReviewerID, domain.AuditDocumentReview, reviewChanges)
+
 	return doc, nil
 }
 
@@ -486,6 +551,8 @@ func (s *documentService) EditStructuredData(ctx context.Context, input *EditStr
 		return nil, fmt.Errorf("updating structured data: %w", err)
 	}
 
+	s.audit(ctx, input.TenantID, input.DocumentID, &input.UserID, domain.AuditDocumentEditStructured, json.RawMessage(`{"provenance":"manual_edit"}`))
+
 	// Reset review status
 	doc.ReviewStatus = domain.ReviewStatusPending
 	doc.ReviewedBy = nil
@@ -512,6 +579,10 @@ func (s *documentService) EditStructuredData(ctx context.Context, input *EditStr
 	updated, err := s.docRepo.GetByID(ctx, input.TenantID, input.DocumentID)
 	if err != nil {
 		return nil, fmt.Errorf("re-fetching document after edit: %w", err)
+	}
+
+	if s.validator != nil {
+		s.auditValidationCompleted(ctx, input.TenantID, input.DocumentID, &input.UserID, "edit")
 	}
 
 	return updated, nil
@@ -623,6 +694,8 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userI
 		return nil, fmt.Errorf("resetting document for retry: %w", err)
 	}
 
+	s.audit(ctx, tenantID, docID, &userID, domain.AuditDocumentRetry, nil)
+
 	log.Printf("documentService.RetryParse: retrying parsing for document %s", docID)
 
 	// Copy before launching goroutine so the caller's value is independent of background work
@@ -647,7 +720,12 @@ func (s *documentService) ValidateDocument(ctx context.Context, tenantID, docID,
 	if s.validator == nil {
 		return fmt.Errorf("validation engine not configured")
 	}
-	return s.validator.ValidateDocument(ctx, tenantID, docID)
+	s.audit(ctx, tenantID, docID, &userID, domain.AuditDocumentValidate, nil)
+	if err := s.validator.ValidateDocument(ctx, tenantID, docID); err != nil {
+		return err
+	}
+	s.auditValidationCompleted(ctx, tenantID, docID, &userID, "manual")
+	return nil
 }
 
 func (s *documentService) GetValidation(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*validator.ValidationResponse, error) {
@@ -665,6 +743,7 @@ func (s *documentService) GetValidation(ctx context.Context, tenantID, docID, us
 }
 
 func (s *documentService) Delete(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) error {
+	s.audit(ctx, tenantID, docID, &userID, domain.AuditDocumentDeleted, nil)
 	return s.docRepo.Delete(ctx, tenantID, docID)
 }
 
@@ -704,6 +783,10 @@ func (s *documentService) AddTags(ctx context.Context, tenantID, docID, userID u
 	if err := s.tagRepo.CreateBatch(ctx, tags); err != nil {
 		return nil, fmt.Errorf("adding tags: %w", err)
 	}
+
+	tagChanges, _ := json.Marshal(tagsMap)
+	s.audit(ctx, tenantID, docID, &userID, domain.AuditDocumentTagsAdded, tagChanges)
+
 	return tags, nil
 }
 
@@ -715,7 +798,12 @@ func (s *documentService) DeleteTag(ctx context.Context, tenantID, docID, userID
 	if err := s.requireCollectionPerm(ctx, doc.CollectionID, userID, role, domain.CollectionPermEditor); err != nil {
 		return err
 	}
-	return s.tagRepo.DeleteByID(ctx, docID, tagID)
+	if err := s.tagRepo.DeleteByID(ctx, docID, tagID); err != nil {
+		return err
+	}
+	deleteTagChanges, _ := json.Marshal(map[string]interface{}{"tag_id": tagID})
+	s.audit(ctx, tenantID, docID, &userID, domain.AuditDocumentTagDeleted, deleteTagChanges)
+	return nil
 }
 
 func (s *documentService) SearchByTag(ctx context.Context, tenantID uuid.UUID, key, value string, offset, limit int) ([]domain.Document, int, error) {

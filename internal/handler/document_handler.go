@@ -9,17 +9,19 @@ import (
 
 	"satvos/internal/domain"
 	"satvos/internal/middleware"
+	"satvos/internal/port"
 	"satvos/internal/service"
 )
 
 // DocumentHandler handles document parsing endpoints.
 type DocumentHandler struct {
 	documentService service.DocumentService
+	auditRepo       port.DocumentAuditRepository
 }
 
 // NewDocumentHandler creates a new DocumentHandler.
-func NewDocumentHandler(documentService service.DocumentService) *DocumentHandler {
-	return &DocumentHandler{documentService: documentService}
+func NewDocumentHandler(documentService service.DocumentService, auditRepo port.DocumentAuditRepository) *DocumentHandler {
+	return &DocumentHandler{documentService: documentService, auditRepo: auditRepo}
 }
 
 // Create handles POST /api/v1/documents
@@ -559,4 +561,29 @@ func (h *DocumentHandler) Delete(c *gin.Context) {
 	}
 
 	RespondOK(c, gin.H{"message": "document deleted"})
+}
+
+// ListAudit handles GET /api/v1/documents/:id/audit
+func (h *DocumentHandler) ListAudit(c *gin.Context) {
+	tenantID, err := middleware.GetTenantID(c)
+	if err != nil {
+		RespondError(c, http.StatusUnauthorized, "UNAUTHORIZED", "missing tenant context")
+		return
+	}
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	offset, limit := parsePagination(c)
+
+	entries, total, err := h.auditRepo.ListByDocument(c.Request.Context(), tenantID, docID, offset, limit)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondPaginated(c, entries, PagMeta{Total: total, Offset: offset, Limit: limit})
 }

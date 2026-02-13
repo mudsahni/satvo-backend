@@ -101,6 +101,7 @@ func Setup(
 	documents.GET("/:id/tags", documentH.ListTags)
 	documents.POST("/:id/tags", documentH.AddTags)
 	documents.DELETE("/:id/tags/:tagId", documentH.DeleteTag)
+	documents.GET("/:id/audit", documentH.ListAudit)
 	documents.DELETE("/:id", middleware.RequireRole(domain.RoleAdmin), documentH.Delete)
 
 	// Stats

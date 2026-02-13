@@ -206,6 +206,24 @@ const (
 	AuthProviderGoogle AuthProvider = "google"
 )
 
+// AuditAction identifies the type of document mutation recorded in the audit log.
+type AuditAction string
+
+const (
+	AuditDocumentCreated          AuditAction = "document.created"
+	AuditDocumentParseCompleted   AuditAction = "document.parse_completed"
+	AuditDocumentParseFailed      AuditAction = "document.parse_failed"
+	AuditDocumentParseQueued      AuditAction = "document.parse_queued"
+	AuditDocumentRetry            AuditAction = "document.retry"
+	AuditDocumentReview           AuditAction = "document.review"
+	AuditDocumentEditStructured   AuditAction = "document.edit_structured_data"
+	AuditDocumentValidate              AuditAction = "document.validate"
+	AuditDocumentValidationCompleted   AuditAction = "document.validation_completed"
+	AuditDocumentTagsAdded        AuditAction = "document.tags_added"
+	AuditDocumentTagDeleted       AuditAction = "document.tag_deleted"
+	AuditDocumentDeleted          AuditAction = "document.deleted"
+)
+
 // FileStatus represents the lifecycle of an uploaded file.
 type FileStatus string
 
