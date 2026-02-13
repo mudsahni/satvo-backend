@@ -28,23 +28,26 @@ func setupDocumentService() ( //nolint:gocritic // test helper benefits from mul
 	*mocks.MockObjectStorage,
 	*mocks.MockDocumentTagRepo,
 	*mocks.MockUserRepo,
+	*mocks.MockDocumentAuditRepo,
 ) {
 	docRepo := new(mocks.MockDocumentRepo)
 	fileRepo := new(mocks.MockFileMetaRepo)
 	userRepo := new(mocks.MockUserRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
 	tagRepo := new(mocks.MockDocumentTagRepo)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
 	p := new(mocks.MockDocumentParser)
 	storage := new(mocks.MockObjectStorage)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
-	return svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, userRepo
+	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(nil).Maybe()
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo)
+	return svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, userRepo, auditRepo
 }
 
 // --- CreateAndParse ---
 
 func TestDocumentService_CreateAndParse_Success(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, p, storage, _, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -113,7 +116,7 @@ func TestDocumentService_CreateAndParse_Success(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_FileNotFound(t *testing.T) {
-	svc, _, fileRepo, permRepo, _, _, _, _ := setupDocumentService()
+	svc, _, fileRepo, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -138,7 +141,7 @@ func TestDocumentService_CreateAndParse_FileNotFound(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -172,7 +175,7 @@ func TestDocumentService_CreateAndParse_DuplicateDocument(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -207,7 +210,7 @@ func TestDocumentService_CreateAndParse_CreateRepoError(t *testing.T) {
 // --- GetByID ---
 
 func TestDocumentService_GetByID_Success(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -231,7 +234,7 @@ func TestDocumentService_GetByID_Success(t *testing.T) {
 }
 
 func TestDocumentService_GetByID_NotFound(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -251,7 +254,7 @@ func TestDocumentService_GetByID_NotFound(t *testing.T) {
 // --- GetByFileID ---
 
 func TestDocumentService_GetByFileID_Success(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -275,7 +278,7 @@ func TestDocumentService_GetByFileID_Success(t *testing.T) {
 }
 
 func TestDocumentService_GetByFileID_NotFound(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -295,7 +298,7 @@ func TestDocumentService_GetByFileID_NotFound(t *testing.T) {
 // --- ListByCollection ---
 
 func TestDocumentService_ListByCollection_Success(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
@@ -320,7 +323,7 @@ func TestDocumentService_ListByCollection_Success(t *testing.T) {
 }
 
 func TestDocumentService_ListByCollection_Empty(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
@@ -342,7 +345,7 @@ func TestDocumentService_ListByCollection_Empty(t *testing.T) {
 // --- ListByTenant ---
 
 func TestDocumentService_ListByTenant_Success(t *testing.T) {
-	svc, docRepo, _, _, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, _, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -364,7 +367,7 @@ func TestDocumentService_ListByTenant_Success(t *testing.T) {
 // --- UpdateReview ---
 
 func TestDocumentService_UpdateReview_Approved(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -400,7 +403,7 @@ func TestDocumentService_UpdateReview_Approved(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -434,7 +437,7 @@ func TestDocumentService_UpdateReview_Rejected(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_NotParsedYet(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -463,7 +466,7 @@ func TestDocumentService_UpdateReview_NotParsedYet(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_PendingStatus(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -492,7 +495,7 @@ func TestDocumentService_UpdateReview_PendingStatus(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_FailedStatus(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -521,7 +524,7 @@ func TestDocumentService_UpdateReview_FailedStatus(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_DocNotFound(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -544,7 +547,7 @@ func TestDocumentService_UpdateReview_DocNotFound(t *testing.T) {
 }
 
 func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -578,7 +581,7 @@ func TestDocumentService_UpdateReview_RepoError(t *testing.T) {
 // --- RetryParse ---
 
 func TestDocumentService_RetryParse_Success(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -635,7 +638,7 @@ func TestDocumentService_RetryParse_Success(t *testing.T) {
 }
 
 func TestDocumentService_RetryParse_DocNotFound(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -653,7 +656,7 @@ func TestDocumentService_RetryParse_DocNotFound(t *testing.T) {
 }
 
 func TestDocumentService_RetryParse_FileNotFound(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, _, _, tagRepo, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -683,7 +686,7 @@ func TestDocumentService_RetryParse_FileNotFound(t *testing.T) {
 // --- Delete ---
 
 func TestDocumentService_Delete_Success(t *testing.T) {
-	svc, docRepo, _, _, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, _, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -698,7 +701,7 @@ func TestDocumentService_Delete_Success(t *testing.T) {
 }
 
 func TestDocumentService_Delete_NotFound(t *testing.T) {
-	svc, docRepo, _, _, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, _, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -724,7 +727,7 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -804,7 +807,7 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -869,7 +872,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -928,7 +931,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 // --- CreateAndParse with name and tags ---
 
 func TestDocumentService_CreateAndParse_WithNameAndTags(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -990,7 +993,7 @@ func TestDocumentService_CreateAndParse_WithNameAndTags(t *testing.T) {
 }
 
 func TestDocumentService_CreateAndParse_DefaultName(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1045,7 +1048,7 @@ func TestDocumentService_CreateAndParse_DefaultName(t *testing.T) {
 // --- ListTags ---
 
 func TestDocumentService_ListTags_Success(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, tagRepo, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1072,7 +1075,7 @@ func TestDocumentService_ListTags_Success(t *testing.T) {
 // --- AddTags ---
 
 func TestDocumentService_AddTags_Success(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, tagRepo, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1097,7 +1100,7 @@ func TestDocumentService_AddTags_Success(t *testing.T) {
 // --- SearchByTag ---
 
 func TestDocumentService_SearchByTag_Success(t *testing.T) {
-	svc, _, _, _, _, _, tagRepo, _ := setupDocumentService()
+	svc, _, _, _, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 
@@ -1115,7 +1118,7 @@ func TestDocumentService_SearchByTag_Success(t *testing.T) {
 // --- RetryParse deletes auto-tags ---
 
 func TestDocumentService_RetryParse_DeletesAutoTags(t *testing.T) {
-	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _ := setupDocumentService()
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1157,7 +1160,7 @@ func TestDocumentService_RetryParse_DeletesAutoTags(t *testing.T) {
 // --- EditStructuredData ---
 
 func TestDocumentService_EditStructuredData_Success(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, tagRepo, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1213,7 +1216,7 @@ func TestDocumentService_EditStructuredData_Success(t *testing.T) {
 }
 
 func TestDocumentService_EditStructuredData_NotFound(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1237,7 +1240,7 @@ func TestDocumentService_EditStructuredData_NotFound(t *testing.T) {
 }
 
 func TestDocumentService_EditStructuredData_NotParsed(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1267,7 +1270,7 @@ func TestDocumentService_EditStructuredData_NotParsed(t *testing.T) {
 }
 
 func TestDocumentService_EditStructuredData_PermissionDenied(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1297,7 +1300,7 @@ func TestDocumentService_EditStructuredData_PermissionDenied(t *testing.T) {
 }
 
 func TestDocumentService_EditStructuredData_InvalidJSON(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, _, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1327,7 +1330,7 @@ func TestDocumentService_EditStructuredData_InvalidJSON(t *testing.T) {
 }
 
 func TestDocumentService_EditStructuredData_ResetsReviewStatus(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, tagRepo, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1384,7 +1387,7 @@ func TestDocumentService_EditStructuredData_ResetsReviewStatus(t *testing.T) {
 }
 
 func TestDocumentService_EditStructuredData_ReextractsAutoTags(t *testing.T) {
-	svc, docRepo, _, permRepo, _, _, tagRepo, _ := setupDocumentService()
+	svc, docRepo, _, permRepo, _, _, tagRepo, _, _ := setupDocumentService()
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -1451,7 +1454,7 @@ func TestDocumentService_BackgroundParsing_RateLimitQueuesDocument(t *testing.T)
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1536,7 +1539,7 @@ func TestDocumentService_BackgroundParsing_RateLimitExceedsMaxAttempts(t *testin
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1614,7 +1617,7 @@ func TestDocumentService_BackgroundParsing_NonRateLimitErrorStillFails(t *testin
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1677,4 +1680,130 @@ func TestDocumentService_BackgroundParsing_NonRateLimitErrorStillFails(t *testin
 	}
 	assert.Equal(t, domain.ParsingStatusFailed, lastStatus)
 	assert.False(t, lastHasRetry)
+}
+
+// --- Audit Trail ---
+
+func TestDocumentService_CreateAndParse_WritesAuditEntry(t *testing.T) {
+	svc, docRepo, fileRepo, permRepo, p, storage, _, _, auditRepo := setupDocumentService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	fileID := uuid.New()
+	collectionID := uuid.New()
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(&domain.FileMeta{
+		ID: fileID, TenantID: tenantID, S3Bucket: "b", S3Key: "k", ContentType: "application/pdf",
+	}, nil)
+	docRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	docRepo.On("GetByID", mock.Anything, mock.Anything, mock.Anything).Return(&domain.Document{
+		ID: uuid.New(), TenantID: tenantID, FileID: fileID, DocumentType: "invoice",
+		ParsingStatus: domain.ParsingStatusPending, StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"),
+	}, nil).Maybe()
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
+	storage.On("Download", mock.Anything, mock.Anything, mock.Anything).Return([]byte("test"), nil).Maybe()
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+		StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"), ModelUsed: "m", PromptUsed: "p",
+	}, nil).Maybe()
+
+	_, err := svc.CreateAndParse(context.Background(), &service.CreateDocumentInput{
+		TenantID: tenantID, CollectionID: collectionID, FileID: fileID,
+		DocumentType: "invoice", CreatedBy: userID, Role: domain.RoleAdmin,
+	})
+	assert.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify audit was called with document.created action
+	auditRepo.AssertCalled(t, "Create", mock.Anything, mock.MatchedBy(func(entry *domain.DocumentAuditEntry) bool {
+		return entry.Action == string(domain.AuditDocumentCreated) && entry.TenantID == tenantID && *entry.UserID == userID
+	}))
+}
+
+func TestDocumentService_UpdateReview_WritesAuditEntry(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _, _, auditRepo := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	reviewerID := uuid.New()
+
+	existing := &domain.Document{
+		ID: docID, TenantID: tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted, ReviewStatus: domain.ReviewStatusPending,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+
+	_, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
+		TenantID: tenantID, DocumentID: docID, ReviewerID: reviewerID,
+		Role: domain.RoleAdmin, Status: domain.ReviewStatusApproved, Notes: "LGTM",
+	})
+	assert.NoError(t, err)
+
+	auditRepo.AssertCalled(t, "Create", mock.Anything, mock.MatchedBy(func(entry *domain.DocumentAuditEntry) bool {
+		return entry.Action == string(domain.AuditDocumentReview) && *entry.UserID == reviewerID
+	}))
+}
+
+func TestDocumentService_EditStructuredData_WritesAuditEntry(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, tagRepo, _, auditRepo := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	userID := uuid.New()
+
+	existing := &domain.Document{
+		ID: docID, TenantID: tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted, StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"),
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil).Once()
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil)
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil).Maybe()
+
+	structuredData := json.RawMessage(`{"invoice":{},"seller":{},"buyer":{},"line_items":[],"totals":{},"payment":{}}`)
+	_, err := svc.EditStructuredData(context.Background(), &service.EditStructuredDataInput{
+		TenantID: tenantID, DocumentID: docID, UserID: userID,
+		Role: domain.RoleAdmin, StructuredData: structuredData,
+	})
+	assert.NoError(t, err)
+
+	auditRepo.AssertCalled(t, "Create", mock.Anything, mock.MatchedBy(func(entry *domain.DocumentAuditEntry) bool {
+		return entry.Action == string(domain.AuditDocumentEditStructured) && *entry.UserID == userID
+	}))
+}
+
+func TestDocumentService_AuditFailureDoesNotBlockOperation(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	userRepo := new(mocks.MockUserRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	// Audit repo always fails
+	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(errors.New("db down")).Maybe()
+
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo)
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+
+	docRepo.On("Delete", mock.Anything, tenantID, docID).Return(nil)
+
+	err := svc.Delete(context.Background(), tenantID, docID, uuid.New(), domain.RoleAdmin)
+	assert.NoError(t, err) // audit failure must not block deletion
 }

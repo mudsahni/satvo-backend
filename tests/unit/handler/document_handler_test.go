@@ -21,7 +21,8 @@ import (
 
 func newDocumentHandler() (*handler.DocumentHandler, *mocks.MockDocumentService) {
 	mockSvc := new(mocks.MockDocumentService)
-	h := handler.NewDocumentHandler(mockSvc)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
+	h := handler.NewDocumentHandler(mockSvc, auditRepo)
 	return h, mockSvc
 }
 
@@ -1531,4 +1532,57 @@ func TestDocumentHandler_GetValidation_PermDenied(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	mockSvc.AssertExpectations(t)
+}
+
+// --- ListAudit ---
+
+func TestDocumentHandler_ListAudit_Success(t *testing.T) {
+	mockSvc := new(mocks.MockDocumentService)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
+	h := handler.NewDocumentHandler(mockSvc, auditRepo)
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	entries := []domain.DocumentAuditEntry{
+		{ID: uuid.New(), TenantID: tenantID, DocumentID: docID, Action: "document.created"},
+	}
+
+	auditRepo.On("ListByDocument", mock.Anything, tenantID, docID, 0, 20).
+		Return(entries, 1, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/"+docID.String()+"/audit?offset=0&limit=20", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.ListAudit(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Meta)
+	auditRepo.AssertExpectations(t)
+}
+
+func TestDocumentHandler_ListAudit_InvalidID(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/bad-id/audit", http.NoBody)
+	c.Params = gin.Params{{Key: "id", Value: "bad-id"}}
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.ListAudit(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

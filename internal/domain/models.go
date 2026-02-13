@@ -156,6 +156,17 @@ type Stats struct {
 	ReviewRejected int `db:"review_rejected" json:"review_rejected"`
 }
 
+// DocumentAuditEntry represents an append-only audit log entry for document mutations.
+type DocumentAuditEntry struct {
+	ID         uuid.UUID        `db:"id" json:"id"`
+	TenantID   uuid.UUID        `db:"tenant_id" json:"tenant_id"`
+	DocumentID uuid.UUID        `db:"document_id" json:"document_id"`
+	UserID     *uuid.UUID       `db:"user_id" json:"user_id,omitempty"`
+	Action     string           `db:"action" json:"action"`
+	Changes    json.RawMessage  `db:"changes" json:"changes"`
+	CreatedAt  time.Time        `db:"created_at" json:"created_at"`
+}
+
 // FileMeta stores metadata about an uploaded file.
 type FileMeta struct {
 	ID           uuid.UUID  `db:"id" json:"id"`

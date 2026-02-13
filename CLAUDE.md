@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-SATVOS is a multi-tenant GST document processing service in Go (hexagonal architecture). JWT auth, 5-tier RBAC (admin/manager/member/viewer/free), AWS S3 storage, LLM-powered invoice parsing (multi-provider with dual-parse merge), 59-rule validation engine with reconciliation tiering, document tagging, free-tier self-registration with quotas and email verification, password reset, and Google social login.
+SATVOS is a multi-tenant GST document processing service in Go (hexagonal architecture). JWT auth, 5-tier RBAC (admin/manager/member/viewer/free), AWS S3 storage, LLM-powered invoice parsing (multi-provider with dual-parse merge), 59-rule validation engine with reconciliation tiering, document tagging, document audit trail, free-tier self-registration with quotas and email verification, password reset, and Google social login.
 
 ## Key Commands
 
@@ -29,15 +29,15 @@ cmd/seedhsn/main.go          One-time Excel→SQL conversion for HSN codes
 internal/
   config/config.go           Loads env vars (SATVOS_ prefix) via viper
   domain/
-    models.go                Tenant, User, FileMeta, Collection, Document, DocumentTag, DocumentValidationRule
+    models.go                Tenant, User, FileMeta, Collection, Document, DocumentTag, DocumentValidationRule, DocumentAuditEntry
     enums.go                 All enums: FileType, UserRole, FileStatus, CollectionPermission, ParsingStatus,
-                             ReviewStatus, ValidationStatus, ReconciliationStatus, ParseMode, AuthProvider, etc.
+                             ReviewStatus, ValidationStatus, ReconciliationStatus, ParseMode, AuthProvider, AuditAction, etc.
     errors.go                Sentinel errors (ErrNotFound, ErrForbidden, ErrQuotaExceeded, etc.)
   handler/
     auth_handler.go          login, refresh, register, verify-email, resend-verification, forgot/reset-password, social-login
     file_handler.go          upload, list, get, delete (free: own files only)
     collection_handler.go    CRUD, batch upload, permissions, CSV export
-    document_handler.go      CRUD, retry, review, validation, tags, search, structured-data edit
+    document_handler.go      CRUD, retry, review, validation, tags, search, structured-data edit, audit trail
     user_handler.go          CRUD /users
     tenant_handler.go        CRUD /admin/tenants
     stats_handler.go         GET /stats (tenant-scoped, role-filtered)
@@ -55,7 +55,7 @@ internal/
     password_reset_service.go ForgotPassword, ResetPassword (JWT "password-reset" audience, 1h, single-use jti)
     file_service.go          Upload (validate + S3 + DB), download URL, delete, ListByUploader
     collection_service.go    CRUD, batch upload, permission checking, EffectivePermission(s)
-    document_service.go      CRUD, background LLM parsing, retry, review, validation, tags, quota enforcement
+    document_service.go      CRUD, background LLM parsing, retry, review, validation, tags, quota enforcement, audit trail
     parse_queue_worker.go    Polls queued docs, bounded concurrency, graceful shutdown
     stats_service.go         Aggregate stats (role-branching)
     user_service.go          User CRUD (tenant-scoped)
@@ -65,6 +65,7 @@ internal/
     social_auth.go           SocialTokenVerifier interface, SocialAuthClaims DTO
     collection_repository.go CollectionRepo, CollectionPermissionRepo, CollectionFileRepo interfaces
     document_repository.go   DocumentRepo (UpdateValidationResults, ClaimQueued), DocTagRepo, DocValidationRuleRepo
+    document_audit_repository.go DocumentAuditRepository interface (Create, ListByDocument)
     stats_repository.go      StatsRepository interface
     email.go                 EmailSender interface (SendVerificationEmail, SendPasswordResetEmail)
     document_parser.go       DocumentParser interface (Parse) with ParseInput/ParseOutput DTOs
@@ -101,9 +102,9 @@ internal/
   mocks/                     Hand-written mocks for testing
 
 tests/unit/                  Unit tests for all packages
-db/migrations/               17 SQL migrations (tenants → users → files → collections → documents
+db/migrations/               18 SQL migrations (tenants → users → files → collections → documents
                              → validation → reconciliation → multi-parser → tags → queue → hsn
-                             → free-tier → email-verification → password-reset → social-auth)
+                             → free-tier → email-verification → password-reset → social-auth → audit-log)
 ```
 
 ## Data Flow
@@ -120,6 +121,7 @@ Request → Gin Router → Middleware (Logger → Auth → TenantGuard) → Hand
 4. **Validate**: Auto-triggered after parse. Engine auto-seeds builtin rules, runs 59 validators, computes `validation_status` and `reconciliation_status` independently, saves JSONB results
 5. **Review**: `PUT /documents/:id/review` → approve/reject with notes
 6. **Manual edit**: `PUT /documents/:id` → validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation
+7. **Audit trail**: Every mutation (create, parse, retry, review, edit, validate, tags, delete) writes an append-only `document_audit_log` entry. `GET /documents/:id/audit` returns paginated history. Audit failures never block business logic
 
 ## Validation Engine
 
@@ -171,6 +173,7 @@ Request → Gin Router → Middleware (Logger → Auth → TenantGuard) → Hand
 - **Document tags**: Key-value pairs with `source` (user/auto). Auto-tags extracted from parsed data, regenerated on retry/edit
 - **Manual edit**: Validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation, sets provenance to `manual_edit`
 - **Passwords**: bcrypt cost 12, min 8 chars. **JWT**: HS256, access 15m, refresh 7d
+- **Audit trail**: Append-only `document_audit_log` table (no FK constraints — survives entity deletion). 12 actions covering every document mutation. `audit()` helper on service is nil-safe and non-blocking (errors logged, never returned). Handler reads audit repo directly (bypasses service) for deleted-document support. JSONB `changes` column stores action-specific metadata summaries (no full structured_data diffs). `document.validation_completed` emitted after every successful validation with `{validation_status, reconciliation_status, trigger}` where trigger is `"parse"`, `"edit"`, or `"manual"`
 - **Testing**: testify + hand-written mocks in `/mocks/`. CI runs with `-race` flag
 
 ## Tech Stack
@@ -190,6 +193,7 @@ Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), AWS SES v2,
 - **Modifying email verification**: Service in `registration_service.go`. Middleware in `middleware/auth.go`. Sender in `port/email.go` → `email/ses/` or `email/noop/`
 - **Modifying password reset**: Service in `service/password_reset_service.go`. Repo in `repository/postgres/user_repo.go`. Handler in `handler/auth_handler.go`
 - **Adding a social login provider**: Implement `port.SocialTokenVerifier` in `auth/<provider>/`, register in `main.go` verifiers map, add `AuthProvider` const in `domain/enums.go`
+- **Modifying audit trail**: Domain in `domain/enums.go` (`AuditAction` consts). Port in `port/document_audit_repository.go`. Repo in `repository/postgres/document_audit_repo.go`. Service helper in `document_service.go` (`audit()` method). Handler in `document_handler.go` (`ListAudit`). Add new actions: add const to `domain/enums.go`, add `s.audit(...)` call in service method
 
 ## Gotchas
 
@@ -206,4 +210,6 @@ Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), AWS SES v2,
 - **Email verification does DB lookup per request** for free users (acceptable for free-tier volume)
 - **Password reset doesn't invalidate sessions** — tokens expire naturally
 - **`NewAuthHandler` takes 4 params**: `(authService, registrationService, passwordResetService, socialAuthService)` — any can be nil
+- **Audit trail non-blocking**: `audit()` helper logs errors but never fails the parent operation. Audit repo is nil-safe (skipped when nil). No FK constraints on audit table — entries survive document/user/tenant deletion
+- **`NewDocumentHandler` takes 2 params**: `(documentService, auditRepo)` — auditRepo used for direct read in `ListAudit`
 - **Stale processing docs**: Server crash mid-parse → doc stuck in `processing` (no staleness detector yet)
