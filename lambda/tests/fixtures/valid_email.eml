@@ -1,0 +1,30 @@
+MIME-Version: 1.0
+From: sender@example.com
+To: invoices@passpl.satvos.com
+Subject: INVOICES: Acme Corp
+Message-ID: <test-message-id-001@example.com>
+Content-Type: multipart/mixed; boundary="----=_Part_001"
+
+------=_Part_001
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Please find the attached invoices.
+
+------=_Part_001
+Content-Type: application/pdf; name="invoice_001.pdf"
+Content-Disposition: attachment; filename="invoice_001.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5k
+b2JqCg==
+
+------=_Part_001
+Content-Type: image/jpeg; name="receipt.jpg"
+Content-Disposition: attachment; filename="receipt.jpg"
+Content-Transfer-Encoding: base64
+
+/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//AP//AP//AP//AP//AP//AP//AP//AP//AP//AP//
+AP//AP//AP//AP8A//8A
+
+------=_Part_001--
