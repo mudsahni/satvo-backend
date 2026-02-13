@@ -1,4 +1,4 @@
-"""Environment variable configuration loader."""
+"""Environment variable configuration loader for shared (non-tenant) settings."""
 
 import logging
 import os
@@ -9,12 +9,10 @@ from .exceptions import ConfigError
 
 @dataclass(frozen=True)
 class Config:
-    api_base_url: str
-    service_email: str
-    service_password: str
-    tenant_slug: str
+    default_api_base_url: str
     ses_email_bucket: str
     ses_email_prefix: str
+    dynamodb_table_name: str
     log_level: str
 
     @classmethod
@@ -24,7 +22,7 @@ class Config:
         Raises ConfigError if required variables are missing.
         """
         missing = []
-        for var in ("SATVOS_API_BASE_URL", "SATVOS_SERVICE_EMAIL", "SATVOS_SERVICE_PASSWORD", "SES_EMAIL_BUCKET"):
+        for var in ("SATVOS_API_BASE_URL", "SES_EMAIL_BUCKET", "DYNAMODB_TABLE_NAME"):
             if not os.environ.get(var):
                 missing.append(var)
 
@@ -32,12 +30,10 @@ class Config:
             raise ConfigError(f"Missing required environment variables: {', '.join(missing)}")
 
         return cls(
-            api_base_url=os.environ["SATVOS_API_BASE_URL"].rstrip("/"),
-            service_email=os.environ["SATVOS_SERVICE_EMAIL"],
-            service_password=os.environ["SATVOS_SERVICE_PASSWORD"],
-            tenant_slug=os.environ.get("SATVOS_TENANT_SLUG", "passpl"),
+            default_api_base_url=os.environ["SATVOS_API_BASE_URL"].rstrip("/"),
             ses_email_bucket=os.environ["SES_EMAIL_BUCKET"],
-            ses_email_prefix=os.environ.get("SES_EMAIL_PREFIX", ""),
+            ses_email_prefix=os.environ.get("SES_EMAIL_PREFIX", "ses-inbound").strip("/"),
+            dynamodb_table_name=os.environ["DYNAMODB_TABLE_NAME"],
             log_level=os.environ.get("LOG_LEVEL", "INFO"),
         )
 

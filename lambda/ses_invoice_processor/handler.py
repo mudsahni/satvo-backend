@@ -1,4 +1,4 @@
-"""AWS Lambda entry point for SES inbound email invoice processing."""
+"""AWS Lambda entry point for SES inbound email invoice processing (multi-tenant)."""
 
 import logging
 
@@ -10,8 +10,10 @@ from .exceptions import (
     ConfigError,
     NoAttachmentsError,
     SubjectMismatchError,
+    TenantDisabledError,
 )
 from .satvos_client import SatvosClient
+from .tenant_config import TenantConfigStore, extract_tenant_slug
 
 logger = logging.getLogger("ses_invoice_processor")
 
@@ -47,6 +49,27 @@ def _process_event(event: dict, config: Config) -> dict:
 
     logger.info("Processing email message_id=%s from=%s", message_id, mail.get("source", "unknown"))
 
+    # Extract tenant from recipients
+    recipients = receipt.get("recipients", [])
+    tenant_slug = extract_tenant_slug(recipients)
+    if tenant_slug is None:
+        logger.warning("No valid tenant found in recipients: %s", recipients)
+        return {"statusCode": 200, "body": "Ignored: no matching tenant recipient"}
+
+    logger.info("Extracted tenant_slug=%s from recipients", tenant_slug)
+
+    # Look up tenant config in DynamoDB
+    store = TenantConfigStore(config.dynamodb_table_name)
+    try:
+        tenant_config = store.get(tenant_slug)
+    except TenantDisabledError:
+        logger.warning("Tenant '%s' is disabled, skipping", tenant_slug)
+        return {"statusCode": 200, "body": f"Ignored: tenant '{tenant_slug}' is disabled"}
+
+    if tenant_config is None:
+        logger.warning("Tenant '%s' not found in config store", tenant_slug)
+        return {"statusCode": 200, "body": f"Ignored: tenant '{tenant_slug}' not configured"}
+
     # Check spam/virus verdicts
     for verdict_key in ("spamVerdict", "virusVerdict"):
         verdict = receipt.get(verdict_key, {})
@@ -54,9 +77,9 @@ def _process_event(event: dict, config: Config) -> dict:
             logger.warning("Email %s rejected: %s=FAIL", message_id, verdict_key)
             return {"statusCode": 200, "body": f"Rejected: {verdict_key} FAIL"}
 
-    # Fetch raw email from S3
+    # Fetch raw email from S3 (key is <prefix>/<tenant>/<messageId>)
     s3 = boto3.client("s3")
-    s3_key = f"{config.ses_email_prefix}{message_id}" if config.ses_email_prefix else message_id
+    s3_key = f"{config.ses_email_prefix}/{tenant_slug}/{message_id}"
     logger.info("Fetching email from s3://%s/%s", config.ses_email_bucket, s3_key)
 
     s3_response = s3.get_object(Bucket=config.ses_email_bucket, Key=s3_key)
@@ -80,13 +103,14 @@ def _process_event(event: dict, config: Config) -> dict:
     )
 
     # Authenticate and process
-    client = SatvosClient(config.api_base_url, config.tenant_slug)
-    client.authenticate(config.service_email, config.service_password)
+    api_base_url = tenant_config.api_base_url or config.default_api_base_url
+    client = SatvosClient(api_base_url, tenant_slug)
+    client.authenticate(tenant_config.service_email, tenant_config.service_password)
 
-    result = client.process_attachments(parsed.company_name, parsed.attachments)
+    result = client.process_attachments(parsed.company_name, parsed.attachments, sender_email=parsed.sender)
 
     summary = (
-        f"Processed: collection={result.collection_name}, "
+        f"Processed: tenant={tenant_slug}, collection={result.collection_name}, "
         f"files_uploaded={result.files_uploaded}, "
         f"files_failed={len(result.files_failed)}, "
         f"documents_created={result.documents_created}, "

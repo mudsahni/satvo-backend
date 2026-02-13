@@ -161,14 +161,19 @@ class SatvosClient:
             )
         return resp.json()["data"]["id"]
 
-    def process_attachments(self, company_name: str, attachments: list) -> ProcessingResult:
+    def process_attachments(
+        self, company_name: str, attachments: list, *, sender_email: str | None = None
+    ) -> ProcessingResult:
         """Orchestrate the full pipeline: create collection, upload files, create documents.
 
         Continues on partial failures and records them in the result.
         """
         now = datetime.now(timezone.utc)
         collection_name = f"{company_name} - {now.strftime('%Y-%m-%d %H:%M')}"
-        description = f"Auto-imported from email for {company_name}"
+        if sender_email:
+            description = f"Auto-imported from email sent by {sender_email}"
+        else:
+            description = f"Auto-imported from email for {company_name}"
 
         collection_id = self.create_collection(collection_name, description)
         logger.info("Created collection %s: %s", collection_id, collection_name)

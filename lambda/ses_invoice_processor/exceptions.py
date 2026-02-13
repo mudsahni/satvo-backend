@@ -28,3 +28,7 @@ class SatvosAPIError(InvoiceProcessorError):
 
 class AuthenticationError(SatvosAPIError):
     """Login or token refresh failure."""
+
+
+class TenantDisabledError(InvoiceProcessorError):
+    """Tenant exists but processing is disabled."""

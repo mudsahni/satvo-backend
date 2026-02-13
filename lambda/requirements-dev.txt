@@ -1,4 +1,4 @@
 -r requirements.txt
 pytest>=8.0,<9
-moto[s3]>=5.0,<6
+moto[s3,dynamodb]>=5.0,<6
 responses>=0.25,<1

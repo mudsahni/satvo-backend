@@ -1,5 +1,6 @@
 """Tests for satvos_client module."""
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -244,7 +245,6 @@ class TestCreateDocument:
         assert doc_id == "doc-xyz"
 
         # Verify request body
-        import json
         body = json.loads(responses.calls[1].request.body)
         assert body["file_id"] == "file-1"
         assert body["collection_id"] == "coll-1"
@@ -292,7 +292,11 @@ class TestProcessAttachments:
 
         client = SatvosClient(BASE_URL)
         client.authenticate("user@test.com", "password123")
-        result = client.process_attachments("Acme Corp", [_make_attachment("inv1.pdf"), _make_attachment("inv2.pdf")])
+        result = client.process_attachments(
+            "Acme Corp",
+            [_make_attachment("inv1.pdf"), _make_attachment("inv2.pdf")],
+            sender_email="billing@acme.com",
+        )
 
         assert result.collection_id == "coll-new"
         assert "Acme Corp" in result.collection_name
@@ -300,6 +304,78 @@ class TestProcessAttachments:
         assert result.files_failed == []
         assert result.documents_created == 2
         assert result.documents_failed == []
+
+    @responses.activate
+    def test_sender_email_in_collection_description(self):
+        _mock_login()
+        responses.add(
+            responses.POST,
+            f"{BASE_URL}/collections",
+            json={"success": True, "data": {"id": "coll-s"}},
+            status=201,
+        )
+        responses.add(
+            responses.POST,
+            f"{BASE_URL}/collections/coll-s/files",
+            json={
+                "success": True,
+                "data": [
+                    {"success": True, "file": {"id": "f1", "original_name": "inv.pdf"}, "error": None},
+                ],
+            },
+            status=201,
+        )
+        responses.add(
+            responses.POST,
+            f"{BASE_URL}/documents",
+            json={"success": True, "data": {"id": "d1"}},
+            status=201,
+        )
+
+        client = SatvosClient(BASE_URL)
+        client.authenticate("user@test.com", "password123")
+        client.process_attachments("Test Co", [_make_attachment()], sender_email="sender@test.com")
+
+        # Verify collection description includes sender
+        create_coll_call = responses.calls[1]  # login=0, create_collection=1
+        body = json.loads(create_coll_call.request.body)
+        assert "sender@test.com" in body["description"]
+
+    @responses.activate
+    def test_no_sender_email_fallback(self):
+        _mock_login()
+        responses.add(
+            responses.POST,
+            f"{BASE_URL}/collections",
+            json={"success": True, "data": {"id": "coll-f"}},
+            status=201,
+        )
+        responses.add(
+            responses.POST,
+            f"{BASE_URL}/collections/coll-f/files",
+            json={
+                "success": True,
+                "data": [
+                    {"success": True, "file": {"id": "f1", "original_name": "inv.pdf"}, "error": None},
+                ],
+            },
+            status=201,
+        )
+        responses.add(
+            responses.POST,
+            f"{BASE_URL}/documents",
+            json={"success": True, "data": {"id": "d1"}},
+            status=201,
+        )
+
+        client = SatvosClient(BASE_URL)
+        client.authenticate("user@test.com", "password123")
+        client.process_attachments("Test Co", [_make_attachment()])
+
+        # Verify fallback description (no sender_email)
+        create_coll_call = responses.calls[1]
+        body = json.loads(create_coll_call.request.body)
+        assert "Auto-imported from email for Test Co" in body["description"]
 
     @responses.activate
     def test_partial_upload_failure(self):
@@ -331,7 +407,11 @@ class TestProcessAttachments:
 
         client = SatvosClient(BASE_URL)
         client.authenticate("user@test.com", "password123")
-        result = client.process_attachments("Test Co", [_make_attachment("ok.pdf"), _make_attachment("bad.pdf")])
+        result = client.process_attachments(
+            "Test Co",
+            [_make_attachment("ok.pdf"), _make_attachment("bad.pdf")],
+            sender_email="s@t.com",
+        )
 
         assert result.files_uploaded == 1
         assert len(result.files_failed) == 1
@@ -375,7 +455,11 @@ class TestProcessAttachments:
 
         client = SatvosClient(BASE_URL)
         client.authenticate("user@test.com", "password123")
-        result = client.process_attachments("Fail Co", [_make_attachment("a.pdf"), _make_attachment("b.pdf")])
+        result = client.process_attachments(
+            "Fail Co",
+            [_make_attachment("a.pdf"), _make_attachment("b.pdf")],
+            sender_email="s@t.com",
+        )
 
         assert result.files_uploaded == 2
         assert result.documents_created == 1
