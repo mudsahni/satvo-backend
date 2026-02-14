@@ -1,4 +1,4 @@
-.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down swagger seed-hsn generate-hsn-seed
+.PHONY: build run test test-unit lint lint-fix migrate-up migrate-down docker-build docker-up docker-down swagger seed-hsn generate-hsn-seed backfill-summaries
 
 include .env
 export $(shell sed 's/=.*//' .env)
@@ -47,3 +47,6 @@ generate-hsn-seed:
 
 seed-hsn:
 	psql "postgres://$(SATVOS_DB_USER):$(SATVOS_DB_PASSWORD)@$(SATVOS_DB_HOST):$(SATVOS_DB_PORT)/$(SATVOS_DB_NAME)?sslmode=$(SATVOS_DB_SSLMODE)" -f db/seeds/hsn_codes.sql
+
+backfill-summaries:
+	go run ./cmd/backfill
