@@ -93,64 +93,83 @@ func (r *documentRepo) GetByFileID(ctx context.Context, tenantID, fileID uuid.UU
 	return &doc, nil
 }
 
-func (r *documentRepo) ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+func (r *documentRepo) ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	countQuery := "SELECT COUNT(*) FROM documents WHERE tenant_id = $1 AND collection_id = $2"
+	selectQuery := "SELECT * FROM documents WHERE tenant_id = $1 AND collection_id = $2"
+	args := []interface{}{tenantID, collectionID}
+
+	if assignedTo != nil {
+		countQuery += fmt.Sprintf(" AND assigned_to = $%d", len(args)+1)
+		selectQuery += fmt.Sprintf(" AND assigned_to = $%d", len(args)+1)
+		args = append(args, *assignedTo)
+	}
+
 	var total int
-	err := r.db.GetContext(ctx, &total,
-		"SELECT COUNT(*) FROM documents WHERE tenant_id = $1 AND collection_id = $2",
-		tenantID, collectionID)
-	if err != nil {
+	if err := r.db.GetContext(ctx, &total, countQuery, args...); err != nil {
 		return nil, 0, fmt.Errorf("documentRepo.ListByCollection count: %w", err)
 	}
 
+	selectQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
 	var docs []domain.Document
-	err = r.db.SelectContext(ctx, &docs,
-		`SELECT * FROM documents WHERE tenant_id = $1 AND collection_id = $2
-		 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
-		tenantID, collectionID, limit, offset)
-	if err != nil {
+	if err := r.db.SelectContext(ctx, &docs, selectQuery, args...); err != nil {
 		return nil, 0, fmt.Errorf("documentRepo.ListByCollection: %w", err)
 	}
 	return docs, total, nil
 }
 
-func (r *documentRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+func (r *documentRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	countQuery := "SELECT COUNT(*) FROM documents WHERE tenant_id = $1"
+	selectQuery := "SELECT * FROM documents WHERE tenant_id = $1"
+	args := []interface{}{tenantID}
+
+	if assignedTo != nil {
+		countQuery += fmt.Sprintf(" AND assigned_to = $%d", len(args)+1)
+		selectQuery += fmt.Sprintf(" AND assigned_to = $%d", len(args)+1)
+		args = append(args, *assignedTo)
+	}
+
 	var total int
-	err := r.db.GetContext(ctx, &total,
-		"SELECT COUNT(*) FROM documents WHERE tenant_id = $1", tenantID)
-	if err != nil {
+	if err := r.db.GetContext(ctx, &total, countQuery, args...); err != nil {
 		return nil, 0, fmt.Errorf("documentRepo.ListByTenant count: %w", err)
 	}
 
+	selectQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
 	var docs []domain.Document
-	err = r.db.SelectContext(ctx, &docs,
-		`SELECT * FROM documents WHERE tenant_id = $1
-		 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-		tenantID, limit, offset)
-	if err != nil {
+	if err := r.db.SelectContext(ctx, &docs, selectQuery, args...); err != nil {
 		return nil, 0, fmt.Errorf("documentRepo.ListByTenant: %w", err)
 	}
 	return docs, total, nil
 }
 
-func (r *documentRepo) ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
-	var total int
-	err := r.db.GetContext(ctx, &total,
-		`SELECT COUNT(*) FROM documents d
+func (r *documentRepo) ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	countQuery := `SELECT COUNT(*) FROM documents d
 		 INNER JOIN collection_permissions cp ON cp.collection_id = d.collection_id
-		 WHERE d.tenant_id = $1 AND cp.user_id = $2`,
-		tenantID, userID)
-	if err != nil {
+		 WHERE d.tenant_id = $1 AND cp.user_id = $2`
+	selectQuery := `SELECT d.* FROM documents d
+		 INNER JOIN collection_permissions cp ON cp.collection_id = d.collection_id
+		 WHERE d.tenant_id = $1 AND cp.user_id = $2`
+	args := []interface{}{tenantID, userID}
+
+	if assignedTo != nil {
+		countQuery += fmt.Sprintf(" AND d.assigned_to = $%d", len(args)+1)
+		selectQuery += fmt.Sprintf(" AND d.assigned_to = $%d", len(args)+1)
+		args = append(args, *assignedTo)
+	}
+
+	var total int
+	if err := r.db.GetContext(ctx, &total, countQuery, args...); err != nil {
 		return nil, 0, fmt.Errorf("documentRepo.ListByUserCollections count: %w", err)
 	}
 
+	selectQuery += fmt.Sprintf(" ORDER BY d.created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
 	var docs []domain.Document
-	err = r.db.SelectContext(ctx, &docs,
-		`SELECT d.* FROM documents d
-		 INNER JOIN collection_permissions cp ON cp.collection_id = d.collection_id
-		 WHERE d.tenant_id = $1 AND cp.user_id = $2
-		 ORDER BY d.created_at DESC LIMIT $3 OFFSET $4`,
-		tenantID, userID, limit, offset)
-	if err != nil {
+	if err := r.db.SelectContext(ctx, &docs, selectQuery, args...); err != nil {
 		return nil, 0, fmt.Errorf("documentRepo.ListByUserCollections: %w", err)
 	}
 	return docs, total, nil
@@ -204,6 +223,44 @@ func (r *documentRepo) UpdateReviewStatus(ctx context.Context, doc *domain.Docum
 		return domain.ErrDocumentNotFound
 	}
 	return nil
+}
+
+func (r *documentRepo) UpdateAssignment(ctx context.Context, doc *domain.Document) error {
+	doc.UpdatedAt = time.Now().UTC()
+	result, err := r.db.ExecContext(ctx,
+		`UPDATE documents SET
+			assigned_to = $1, assigned_at = $2, assigned_by = $3, updated_at = $4
+		 WHERE id = $5 AND tenant_id = $6`,
+		doc.AssignedTo, doc.AssignedAt, doc.AssignedBy, doc.UpdatedAt,
+		doc.ID, doc.TenantID)
+	if err != nil {
+		return fmt.Errorf("documentRepo.UpdateAssignment: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return domain.ErrDocumentNotFound
+	}
+	return nil
+}
+
+func (r *documentRepo) ListReviewQueue(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	baseWhere := "WHERE tenant_id = $1 AND assigned_to = $2 AND parsing_status = 'completed' AND review_status = 'pending'"
+
+	var total int
+	err := r.db.GetContext(ctx, &total,
+		"SELECT COUNT(*) FROM documents "+baseWhere, tenantID, userID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("documentRepo.ListReviewQueue count: %w", err)
+	}
+
+	var docs []domain.Document
+	err = r.db.SelectContext(ctx, &docs,
+		"SELECT * FROM documents "+baseWhere+" ORDER BY assigned_at ASC LIMIT $3 OFFSET $4",
+		tenantID, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("documentRepo.ListReviewQueue: %w", err)
+	}
+	return docs, total, nil
 }
 
 func (r *documentRepo) UpdateValidationResults(ctx context.Context, doc *domain.Document) error {

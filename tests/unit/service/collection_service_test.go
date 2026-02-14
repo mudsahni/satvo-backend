@@ -19,13 +19,16 @@ func setupCollectionService() (
 	*mocks.MockCollectionRepo,
 	*mocks.MockCollectionPermissionRepo,
 	*mocks.MockCollectionFileRepo,
+	*mocks.MockUserRepo,
 ) {
 	collRepo := new(mocks.MockCollectionRepo)
 	permRepo := new(mocks.MockCollectionPermissionRepo)
 	fileRepo := new(mocks.MockCollectionFileRepo)
 	fileSvc := new(mocks.MockFileService)
-	svc := service.NewCollectionService(collRepo, permRepo, fileRepo, fileSvc)
-	return svc, collRepo, permRepo, fileRepo
+	userRepo := new(mocks.MockUserRepo)
+	userRepo.On("GetByID", mock.Anything, mock.Anything, mock.Anything).Return(&domain.User{}, nil).Maybe()
+	svc := service.NewCollectionService(collRepo, permRepo, fileRepo, fileSvc, userRepo)
+	return svc, collRepo, permRepo, fileRepo, userRepo
 }
 
 func ownerPerm(collectionID, userID uuid.UUID) *domain.CollectionPermissionEntry {
@@ -58,7 +61,7 @@ func viewerPerm(collectionID, userID uuid.UUID) *domain.CollectionPermissionEntr
 // --- Create ---
 
 func TestCollectionService_Create_Success(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -85,7 +88,7 @@ func TestCollectionService_Create_Success(t *testing.T) {
 }
 
 func TestCollectionService_Create_RepoError(t *testing.T) {
-	svc, collRepo, _, _ := setupCollectionService()
+	svc, collRepo, _, _, _ := setupCollectionService()
 
 	collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).
 		Return(errors.New("db error"))
@@ -103,7 +106,7 @@ func TestCollectionService_Create_RepoError(t *testing.T) {
 }
 
 func TestCollectionService_Create_PermissionUpsertError(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	collRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Collection")).Return(nil)
 	permRepo.On("Upsert", mock.Anything, mock.AnythingOfType("*domain.CollectionPermissionEntry")).
@@ -122,7 +125,7 @@ func TestCollectionService_Create_PermissionUpsertError(t *testing.T) {
 }
 
 func TestCollectionService_Create_ViewerDenied(t *testing.T) {
-	svc, _, _, _ := setupCollectionService()
+	svc, _, _, _, _ := setupCollectionService()
 
 	result, err := svc.Create(context.Background(), &service.CreateCollectionInput{
 		TenantID:  uuid.New(),
@@ -138,7 +141,7 @@ func TestCollectionService_Create_ViewerDenied(t *testing.T) {
 // --- GetByID ---
 
 func TestCollectionService_GetByID_Success(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -158,7 +161,7 @@ func TestCollectionService_GetByID_Success(t *testing.T) {
 }
 
 func TestCollectionService_GetByID_NoPermission(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -173,7 +176,7 @@ func TestCollectionService_GetByID_NoPermission(t *testing.T) {
 }
 
 func TestCollectionService_GetByID_AdminBypassesPermission(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -195,7 +198,7 @@ func TestCollectionService_GetByID_AdminBypassesPermission(t *testing.T) {
 }
 
 func TestCollectionService_GetByID_ViewerNeedsExplicitPerm(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -213,7 +216,7 @@ func TestCollectionService_GetByID_ViewerNeedsExplicitPerm(t *testing.T) {
 // --- List ---
 
 func TestCollectionService_List_Success(t *testing.T) {
-	svc, collRepo, _, _ := setupCollectionService()
+	svc, collRepo, _, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -235,7 +238,7 @@ func TestCollectionService_List_Success(t *testing.T) {
 }
 
 func TestCollectionService_List_AdminSeesAll(t *testing.T) {
-	svc, collRepo, _, _ := setupCollectionService()
+	svc, collRepo, _, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -257,7 +260,7 @@ func TestCollectionService_List_AdminSeesAll(t *testing.T) {
 }
 
 func TestCollectionService_List_ViewerSeesOnlyPermitted(t *testing.T) {
-	svc, collRepo, _, _ := setupCollectionService()
+	svc, collRepo, _, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -279,7 +282,7 @@ func TestCollectionService_List_ViewerSeesOnlyPermitted(t *testing.T) {
 // --- Update ---
 
 func TestCollectionService_Update_Success(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -308,7 +311,7 @@ func TestCollectionService_Update_Success(t *testing.T) {
 }
 
 func TestCollectionService_Update_NotOwner(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -330,7 +333,7 @@ func TestCollectionService_Update_NotOwner(t *testing.T) {
 }
 
 func TestCollectionService_Update_ManagerCanEdit(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -360,7 +363,7 @@ func TestCollectionService_Update_ManagerCanEdit(t *testing.T) {
 }
 
 func TestCollectionService_Update_MemberWithoutPermDenied(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -384,7 +387,7 @@ func TestCollectionService_Update_MemberWithoutPermDenied(t *testing.T) {
 // --- Delete ---
 
 func TestCollectionService_Delete_Success(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -401,7 +404,7 @@ func TestCollectionService_Delete_Success(t *testing.T) {
 }
 
 func TestCollectionService_Delete_NotOwner(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -415,7 +418,7 @@ func TestCollectionService_Delete_NotOwner(t *testing.T) {
 }
 
 func TestCollectionService_Delete_AdminCanDeleteAny(t *testing.T) {
-	svc, collRepo, permRepo, _ := setupCollectionService()
+	svc, collRepo, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -433,7 +436,7 @@ func TestCollectionService_Delete_AdminCanDeleteAny(t *testing.T) {
 }
 
 func TestCollectionService_Delete_ManagerCannotDelete(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -450,7 +453,7 @@ func TestCollectionService_Delete_ManagerCannotDelete(t *testing.T) {
 // --- ListFiles ---
 
 func TestCollectionService_ListFiles_Success(t *testing.T) {
-	svc, _, permRepo, fileRepo := setupCollectionService()
+	svc, _, permRepo, fileRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	userID := uuid.New()
@@ -473,7 +476,7 @@ func TestCollectionService_ListFiles_Success(t *testing.T) {
 }
 
 func TestCollectionService_ListFiles_NoPermission(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -491,7 +494,7 @@ func TestCollectionService_ListFiles_NoPermission(t *testing.T) {
 // --- RemoveFile ---
 
 func TestCollectionService_RemoveFile_Success(t *testing.T) {
-	svc, _, permRepo, fileRepo := setupCollectionService()
+	svc, _, permRepo, fileRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	fileID := uuid.New()
@@ -507,7 +510,7 @@ func TestCollectionService_RemoveFile_Success(t *testing.T) {
 }
 
 func TestCollectionService_RemoveFile_ViewerDenied(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -523,7 +526,7 @@ func TestCollectionService_RemoveFile_ViewerDenied(t *testing.T) {
 // --- AddFileToCollection ---
 
 func TestCollectionService_AddFileToCollection_Success(t *testing.T) {
-	svc, _, permRepo, fileRepo := setupCollectionService()
+	svc, _, permRepo, fileRepo, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
@@ -540,7 +543,7 @@ func TestCollectionService_AddFileToCollection_Success(t *testing.T) {
 }
 
 func TestCollectionService_AddFileToCollection_Duplicate(t *testing.T) {
-	svc, _, permRepo, fileRepo := setupCollectionService()
+	svc, _, permRepo, fileRepo, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -558,7 +561,7 @@ func TestCollectionService_AddFileToCollection_Duplicate(t *testing.T) {
 // --- SetPermission ---
 
 func TestCollectionService_SetPermission_Success(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	tenantID := uuid.New()
 	collectionID := uuid.New()
@@ -583,7 +586,7 @@ func TestCollectionService_SetPermission_Success(t *testing.T) {
 }
 
 func TestCollectionService_SetPermission_InvalidPermission(t *testing.T) {
-	svc, _, _, _ := setupCollectionService()
+	svc, _, _, _, _ := setupCollectionService()
 
 	err := svc.SetPermission(context.Background(), &service.SetPermissionInput{
 		TenantID:     uuid.New(),
@@ -598,7 +601,7 @@ func TestCollectionService_SetPermission_InvalidPermission(t *testing.T) {
 }
 
 func TestCollectionService_SetPermission_NotOwner(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	editorID := uuid.New()
@@ -621,7 +624,7 @@ func TestCollectionService_SetPermission_NotOwner(t *testing.T) {
 // --- ListPermissions ---
 
 func TestCollectionService_ListPermissions_Success(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	ownerID := uuid.New()
@@ -643,7 +646,7 @@ func TestCollectionService_ListPermissions_Success(t *testing.T) {
 }
 
 func TestCollectionService_ListPermissions_NotOwner(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	viewerID := uuid.New()
@@ -661,7 +664,7 @@ func TestCollectionService_ListPermissions_NotOwner(t *testing.T) {
 // --- RemovePermission ---
 
 func TestCollectionService_RemovePermission_Success(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	ownerID := uuid.New()
@@ -678,7 +681,7 @@ func TestCollectionService_RemovePermission_Success(t *testing.T) {
 }
 
 func TestCollectionService_RemovePermission_SelfRemoval(t *testing.T) {
-	svc, _, _, _ := setupCollectionService()
+	svc, _, _, _, _ := setupCollectionService()
 
 	userID := uuid.New()
 
@@ -688,7 +691,7 @@ func TestCollectionService_RemovePermission_SelfRemoval(t *testing.T) {
 }
 
 func TestCollectionService_RemovePermission_NotOwner(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	editorID := uuid.New()
@@ -705,7 +708,7 @@ func TestCollectionService_RemovePermission_NotOwner(t *testing.T) {
 // --- EffectivePermission ---
 
 func TestCollectionService_EffectivePermission_AdminReturnsOwner(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -719,23 +722,23 @@ func TestCollectionService_EffectivePermission_AdminReturnsOwner(t *testing.T) {
 	assert.Equal(t, domain.CollectionPermOwner, perm)
 }
 
-func TestCollectionService_EffectivePermission_ViewerReturnsViewer(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+func TestCollectionService_EffectivePermission_ViewerWithExplicitOwner(t *testing.T) {
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
 
-	// Viewer with explicit owner perm should still be capped at viewer
+	// Viewer with explicit owner perm gets owner (no cap)
 	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, userID).
 		Return(ownerPerm(collectionID, userID), nil)
 
 	perm := svc.EffectivePermission(context.Background(), collectionID, userID, domain.RoleViewer)
 
-	assert.Equal(t, domain.CollectionPermViewer, perm)
+	assert.Equal(t, domain.CollectionPermOwner, perm)
 }
 
 func TestCollectionService_EffectivePermission_MemberWithExplicitEditor(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -749,7 +752,7 @@ func TestCollectionService_EffectivePermission_MemberWithExplicitEditor(t *testi
 }
 
 func TestCollectionService_EffectivePermission_MemberNoExplicit(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	collectionID := uuid.New()
 	userID := uuid.New()
@@ -765,7 +768,7 @@ func TestCollectionService_EffectivePermission_MemberNoExplicit(t *testing.T) {
 // --- EffectivePermissions (batch) ---
 
 func TestCollectionService_EffectivePermissions_AdminShortCircuits(t *testing.T) {
-	svc, _, _, _ := setupCollectionService()
+	svc, _, _, _, _ := setupCollectionService()
 
 	id1 := uuid.New()
 	id2 := uuid.New()
@@ -779,20 +782,26 @@ func TestCollectionService_EffectivePermissions_AdminShortCircuits(t *testing.T)
 	assert.Equal(t, domain.CollectionPermOwner, result[id2])
 }
 
-func TestCollectionService_EffectivePermissions_ViewerShortCircuits(t *testing.T) {
-	svc, _, _, _ := setupCollectionService()
+func TestCollectionService_EffectivePermissions_ViewerBatchQuery(t *testing.T) {
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	id1 := uuid.New()
 	userID := uuid.New()
 
+	// Viewer has no implicit permission; explicit grants determine access
+	explicitPerms := map[uuid.UUID]domain.CollectionPermission{}
+	permRepo.On("GetByUserForCollections", mock.Anything, userID, []uuid.UUID{id1}).
+		Return(explicitPerms, nil)
+
 	result, err := svc.EffectivePermissions(context.Background(), []uuid.UUID{id1}, userID, domain.RoleViewer)
 
 	assert.NoError(t, err)
-	assert.Equal(t, domain.CollectionPermViewer, result[id1])
+	// No explicit perm, no implicit → empty permission
+	assert.Equal(t, domain.CollectionPermission(""), result[id1])
 }
 
 func TestCollectionService_EffectivePermissions_MemberBatchQuery(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	id1 := uuid.New()
 	id2 := uuid.New()
@@ -821,7 +830,7 @@ func TestCollectionService_EffectivePermissions_MemberBatchQuery(t *testing.T) {
 }
 
 func TestCollectionService_EffectivePermissions_ManagerBatchQuery(t *testing.T) {
-	svc, _, permRepo, _ := setupCollectionService()
+	svc, _, permRepo, _, _ := setupCollectionService()
 
 	id1 := uuid.New()
 	id2 := uuid.New()

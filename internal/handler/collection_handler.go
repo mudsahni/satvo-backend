@@ -562,7 +562,7 @@ func (h *CollectionHandler) ExportCSV(c *gin.Context) {
 	offset := 0
 	for {
 		docs, total, err := h.documentService.ListByCollection(
-			c.Request.Context(), tenantID, collectionID, userID, role, offset, batchSize,
+			c.Request.Context(), tenantID, collectionID, userID, role, nil, offset, batchSize,
 		)
 		if err != nil {
 			log.Printf("ERROR: csv export document fetch failed at offset %d: %v", offset, err)

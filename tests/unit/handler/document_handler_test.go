@@ -357,7 +357,7 @@ func TestDocumentHandler_List_ByTenant(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, ParsingStatus: domain.ParsingStatusCompleted},
 	}
 
-	mockSvc.On("ListByTenant", mock.Anything, tenantID, userID, domain.UserRole("member"), 0, 20).Return(docs, 1, nil)
+	mockSvc.On("ListByTenant", mock.Anything, tenantID, userID, domain.UserRole("member"), (*uuid.UUID)(nil), 0, 20).Return(docs, 1, nil)
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -387,7 +387,7 @@ func TestDocumentHandler_List_ByCollection(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID, CollectionID: collectionID},
 	}
 
-	mockSvc.On("ListByCollection", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member"), 0, 20).
+	mockSvc.On("ListByCollection", mock.Anything, tenantID, collectionID, userID, domain.UserRole("member"), (*uuid.UUID)(nil), 0, 20).
 		Return(docs, 1, nil)
 
 	w := httptest.NewRecorder()
@@ -1585,4 +1585,236 @@ func TestDocumentHandler_ListAudit_InvalidID(t *testing.T) {
 	h.ListAudit(c)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- AssignDocument ---
+
+func TestDocumentHandler_AssignDocument_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+	assigneeID := uuid.New()
+
+	expected := &domain.Document{
+		ID:         docID,
+		TenantID:   tenantID,
+		AssignedTo: &assigneeID,
+	}
+
+	mockSvc.On("AssignDocument", mock.Anything, mock.MatchedBy(func(input *service.AssignDocumentInput) bool {
+		return input.TenantID == tenantID &&
+			input.DocumentID == docID &&
+			input.CallerID == userID &&
+			input.CallerRole == domain.UserRole("admin") &&
+			input.AssigneeID != nil && *input.AssigneeID == assigneeID
+	})).Return(expected, nil)
+
+	body, _ := json.Marshal(map[string]string{
+		"assignee_id": assigneeID.String(),
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String()+"/assign", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "admin")
+
+	h.AssignDocument(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_AssignDocument_Unassign(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	expected := &domain.Document{
+		ID:         docID,
+		TenantID:   tenantID,
+		AssignedTo: nil,
+	}
+
+	mockSvc.On("AssignDocument", mock.Anything, mock.MatchedBy(func(input *service.AssignDocumentInput) bool {
+		return input.AssigneeID == nil
+	})).Return(expected, nil)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"assignee_id": nil,
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String()+"/assign", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "admin")
+
+	h.AssignDocument(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_AssignDocument_InvalidID(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	body, _ := json.Marshal(map[string]string{"assignee_id": uuid.New().String()})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/bad-id/assign", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: "bad-id"}}
+	setAuthContext(c, tenantID, userID, "admin")
+
+	h.AssignDocument(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDocumentHandler_AssignDocument_NoAuth(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	docID := uuid.New()
+	body, _ := json.Marshal(map[string]string{"assignee_id": uuid.New().String()})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String()+"/assign", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+
+	h.AssignDocument(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestDocumentHandler_AssignDocument_NotParsed(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("AssignDocument", mock.Anything, mock.AnythingOfType("*service.AssignDocumentInput")).
+		Return(nil, domain.ErrDocumentNotParsed)
+
+	body, _ := json.Marshal(map[string]string{"assignee_id": uuid.New().String()})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String()+"/assign", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "admin")
+
+	h.AssignDocument(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestDocumentHandler_AssignDocument_AssigneeCannotReview(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+	docID := uuid.New()
+
+	mockSvc.On("AssignDocument", mock.Anything, mock.AnythingOfType("*service.AssignDocumentInput")).
+		Return(nil, domain.ErrAssigneeCannotReview)
+
+	body, _ := json.Marshal(map[string]string{"assignee_id": uuid.New().String()})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodPut, "/api/v1/documents/"+docID.String()+"/assign", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "id", Value: docID.String()}}
+	setAuthContext(c, tenantID, userID, "admin")
+
+	h.AssignDocument(c)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// --- ReviewQueue ---
+
+func TestDocumentHandler_ReviewQueue_Success(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	docs := []domain.Document{
+		{ID: uuid.New(), TenantID: tenantID, ParsingStatus: domain.ParsingStatusCompleted, AssignedTo: &userID},
+	}
+
+	mockSvc.On("ListReviewQueue", mock.Anything, tenantID, userID, 0, 20).Return(docs, 1, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/review-queue?offset=0&limit=20", http.NoBody)
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.ReviewQueue(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	assert.NotNil(t, resp.Meta)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_ReviewQueue_Empty(t *testing.T) {
+	h, mockSvc := newDocumentHandler()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	mockSvc.On("ListReviewQueue", mock.Anything, tenantID, userID, 0, 20).Return([]domain.Document{}, 0, nil)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/review-queue?offset=0&limit=20", http.NoBody)
+	setAuthContext(c, tenantID, userID, "member")
+
+	h.ReviewQueue(c)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp handler.APIResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	assert.NoError(t, err)
+	assert.True(t, resp.Success)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestDocumentHandler_ReviewQueue_NoAuth(t *testing.T) {
+	h, _ := newDocumentHandler()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request, _ = http.NewRequest(http.MethodGet, "/api/v1/documents/review-queue", http.NoBody)
+
+	h.ReviewQueue(c)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }

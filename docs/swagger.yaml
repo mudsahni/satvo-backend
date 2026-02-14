@@ -56,6 +56,12 @@ definitions:
     type: object
   domain.Document:
     properties:
+      assigned_at:
+        type: string
+      assigned_by:
+        type: string
+      assigned_to:
+        type: string
       collection_id:
         type: string
       confidence_scores:
@@ -1560,7 +1566,7 @@ paths:
       - collections
   /documents:
     get:
-      description: List documents with optional collection filter
+      description: List documents with optional collection and assignment filters
       parameters:
       - default: 0
         description: Offset for pagination
@@ -1575,6 +1581,10 @@ paths:
       - description: Filter by collection ID
         in: query
         name: collection_id
+        type: string
+      - description: Filter by assigned user ID
+        in: query
+        name: assigned_to
         type: string
       produces:
       - application/json
@@ -1593,7 +1603,7 @@ paths:
                   $ref: '#/definitions/handler.PagMeta'
               type: object
         "400":
-          description: Invalid collection_id
+          description: Invalid collection_id or assigned_to
           schema:
             $ref: '#/definitions/handler.ErrorResponseBody'
         "401":
@@ -1785,6 +1795,60 @@ paths:
       security:
       - BearerAuth: []
       summary: Edit structured data
+      tags:
+      - documents
+  /documents/{id}/assign:
+    put:
+      consumes:
+      - application/json
+      description: Assign or unassign a document to a user for review. Assignee must
+        have editor+ permission on the collection. Pass null assignee_id to unassign.
+      parameters:
+      - description: Document ID (UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Assignee user ID (null to unassign)
+        in: body
+        name: request
+        required: true
+        schema:
+          properties:
+            assignee_id:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Document assigned
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/domain.Document'
+              type: object
+        "400":
+          description: Invalid request, document not parsed, or assignee cannot review
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "403":
+          description: Insufficient permission
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+        "404":
+          description: Document or assignee not found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Assign a document for review
       tags:
       - documents
   /documents/{id}/retry:
@@ -2148,6 +2212,46 @@ paths:
       security:
       - BearerAuth: []
       summary: Get validation results
+      tags:
+      - documents
+  /documents/review-queue:
+    get:
+      description: List documents assigned to the current user that are parsed and
+        pending review, ordered by assignment date
+      parameters:
+      - default: 0
+        description: Pagination offset
+        in: query
+        name: offset
+        type: integer
+      - default: 20
+        description: Pagination limit
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Review queue
+          schema:
+            allOf:
+            - $ref: '#/definitions/handler.Response'
+            - properties:
+                data:
+                  items:
+                    $ref: '#/definitions/domain.Document'
+                  type: array
+                meta:
+                  $ref: '#/definitions/handler.PagMeta'
+              type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponseBody'
+      security:
+      - BearerAuth: []
+      summary: Get review queue
       tags:
       - documents
   /documents/search/tags:

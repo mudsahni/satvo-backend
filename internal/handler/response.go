@@ -111,6 +111,8 @@ func MapDomainError(err error) (status int, code, msg string) {
 		return http.StatusUnauthorized, "INVALID_SOCIAL_TOKEN", "social authentication token is invalid or expired"
 	case errors.Is(err, domain.ErrPasswordLoginNotAllowed):
 		return http.StatusBadRequest, "PASSWORD_LOGIN_NOT_ALLOWED", "this account uses social login; use your social provider to sign in"
+	case errors.Is(err, domain.ErrAssigneeCannotReview):
+		return http.StatusBadRequest, "ASSIGNEE_CANNOT_REVIEW", "assignee does not have review permission on this collection"
 	default:
 		return http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred"
 	}
