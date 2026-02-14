@@ -89,6 +89,7 @@ type documentService struct {
 	permRepo    port.CollectionPermissionRepository
 	tagRepo     port.DocumentTagRepository
 	auditRepo   port.DocumentAuditRepository
+	summaryRepo port.DocumentSummaryRepository
 	parser      port.DocumentParser
 	mergeParser port.DocumentParser // optional merge parser for dual mode
 	storage     port.ObjectStorage
@@ -106,17 +107,19 @@ func NewDocumentService(
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
 	auditRepo port.DocumentAuditRepository,
+	summaryRepo port.DocumentSummaryRepository,
 ) DocumentService {
 	return &documentService{
-		docRepo:   docRepo,
-		fileRepo:  fileRepo,
-		userRepo:  userRepo,
-		permRepo:  permRepo,
-		tagRepo:   tagRepo,
-		auditRepo: auditRepo,
-		parser:    docParser,
-		storage:   storage,
-		validator: validationEngine,
+		docRepo:     docRepo,
+		fileRepo:    fileRepo,
+		userRepo:    userRepo,
+		permRepo:    permRepo,
+		tagRepo:     tagRepo,
+		auditRepo:   auditRepo,
+		summaryRepo: summaryRepo,
+		parser:      docParser,
+		storage:     storage,
+		validator:   validationEngine,
 	}
 }
 
@@ -132,6 +135,7 @@ func NewDocumentServiceWithMerge(
 	storage port.ObjectStorage,
 	validationEngine *validator.Engine,
 	auditRepo port.DocumentAuditRepository,
+	summaryRepo port.DocumentSummaryRepository,
 ) DocumentService {
 	return &documentService{
 		docRepo:     docRepo,
@@ -140,6 +144,7 @@ func NewDocumentServiceWithMerge(
 		permRepo:    permRepo,
 		tagRepo:     tagRepo,
 		auditRepo:   auditRepo,
+		summaryRepo: summaryRepo,
 		parser:      docParser,
 		mergeParser: mergeDocParser,
 		storage:     storage,
@@ -208,6 +213,103 @@ func (s *documentService) auditValidationCompleted(ctx context.Context, tenantID
 		"trigger":                trigger,
 	})
 	s.audit(ctx, tenantID, docID, userID, domain.AuditDocumentValidationCompleted, changes)
+}
+
+// upsertSummary builds a DocumentSummary from a Document and upserts it.
+// Non-blocking: errors are logged but never returned.
+func (s *documentService) upsertSummary(ctx context.Context, doc *domain.Document) {
+	if s.summaryRepo == nil {
+		return
+	}
+
+	var inv invoice.GSTInvoice
+	if err := json.Unmarshal(doc.StructuredData, &inv); err != nil {
+		log.Printf("documentService.upsertSummary: failed to unmarshal structured_data for %s: %v", doc.ID, err)
+		return
+	}
+
+	summary := &domain.DocumentSummary{
+		DocumentID:           doc.ID,
+		TenantID:             doc.TenantID,
+		CollectionID:         doc.CollectionID,
+		InvoiceNumber:        inv.Invoice.InvoiceNumber,
+		InvoiceType:          inv.Invoice.InvoiceType,
+		Currency:             inv.Invoice.Currency,
+		PlaceOfSupply:        inv.Invoice.PlaceOfSupply,
+		ReverseCharge:        inv.Invoice.ReverseCharge,
+		HasIRN:               inv.Invoice.IRN != "",
+		SellerName:           inv.Seller.Name,
+		SellerGSTIN:          inv.Seller.GSTIN,
+		SellerState:          inv.Seller.State,
+		SellerStateCode:      inv.Seller.StateCode,
+		BuyerName:            inv.Buyer.Name,
+		BuyerGSTIN:           inv.Buyer.GSTIN,
+		BuyerState:           inv.Buyer.State,
+		BuyerStateCode:       inv.Buyer.StateCode,
+		Subtotal:             inv.Totals.Subtotal,
+		TotalDiscount:        inv.Totals.TotalDiscount,
+		TaxableAmount:        inv.Totals.TaxableAmount,
+		CGST:                 inv.Totals.CGST,
+		SGST:                 inv.Totals.SGST,
+		IGST:                 inv.Totals.IGST,
+		Cess:                 inv.Totals.Cess,
+		TotalAmount:          inv.Totals.Total,
+		LineItemCount:        len(inv.LineItems),
+		ParsingStatus:        doc.ParsingStatus,
+		ReviewStatus:         doc.ReviewStatus,
+		ValidationStatus:     doc.ValidationStatus,
+		ReconciliationStatus: doc.ReconciliationStatus,
+	}
+
+	// Parse invoice date
+	summary.InvoiceDate = parseInvoiceDate(inv.Invoice.InvoiceDate)
+	summary.DueDate = parseInvoiceDate(inv.Invoice.DueDate)
+
+	// Collect distinct HSN codes
+	hsnSet := make(map[string]struct{})
+	for i := range inv.LineItems {
+		if inv.LineItems[i].HSNSACCode != "" {
+			hsnSet[inv.LineItems[i].HSNSACCode] = struct{}{}
+		}
+	}
+	hsns := make([]string, 0, len(hsnSet))
+	for code := range hsnSet {
+		hsns = append(hsns, code)
+	}
+	summary.DistinctHSNCodes = hsns
+
+	if err := s.summaryRepo.Upsert(ctx, summary); err != nil {
+		log.Printf("documentService.upsertSummary: failed for %s: %v", doc.ID, err)
+	}
+}
+
+// updateSummaryStatuses updates only the status columns on the summary row.
+func (s *documentService) updateSummaryStatuses(ctx context.Context, doc *domain.Document) {
+	if s.summaryRepo == nil {
+		return
+	}
+	if err := s.summaryRepo.UpdateStatuses(ctx, doc.ID, domain.SummaryStatusUpdate{
+		ParsingStatus:        doc.ParsingStatus,
+		ReviewStatus:         doc.ReviewStatus,
+		ValidationStatus:     doc.ValidationStatus,
+		ReconciliationStatus: doc.ReconciliationStatus,
+	}); err != nil {
+		log.Printf("documentService.updateSummaryStatuses: failed for %s: %v", doc.ID, err)
+	}
+}
+
+// parseInvoiceDate attempts multiple date formats from LLM output.
+func parseInvoiceDate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	formats := []string{"2006-01-02", "02/01/2006", "02-01-2006", "01/02/2006", "January 2, 2006", "Jan 2, 2006", "2 January 2006"}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return &t
+		}
+	}
+	return nil
 }
 
 func (s *documentService) CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error) {
@@ -399,12 +501,19 @@ func (s *documentService) ParseDocument(ctx context.Context, doc *domain.Documen
 		s.extractAndSaveAutoTags(ctx, doc.ID, doc.TenantID, doc.StructuredData)
 	}
 
+	// Upsert document summary for reporting
+	s.upsertSummary(ctx, doc)
+
 	// Run validation after successful parsing
 	if s.validator != nil {
 		if err := s.validator.ValidateDocument(ctx, doc.TenantID, doc.ID); err != nil {
 			log.Printf("documentService.ParseDocument: validation failed for %s: %v", doc.ID, err)
 		} else {
 			s.auditValidationCompleted(ctx, doc.TenantID, doc.ID, nil, "parse")
+			// Update summary statuses after successful validation
+			if validatedDoc, fetchErr := s.docRepo.GetByID(ctx, doc.TenantID, doc.ID); fetchErr == nil {
+				s.updateSummaryStatuses(ctx, validatedDoc)
+			}
 		}
 	}
 }
@@ -509,6 +618,9 @@ func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewI
 
 	reviewChanges, _ := json.Marshal(map[string]interface{}{"status": string(input.Status), "notes": input.Notes})
 	s.audit(ctx, input.TenantID, input.DocumentID, &input.ReviewerID, domain.AuditDocumentReview, reviewChanges)
+
+	// Update summary statuses after review
+	s.updateSummaryStatuses(ctx, doc)
 
 	return doc, nil
 }
@@ -654,8 +766,13 @@ func (s *documentService) EditStructuredData(ctx context.Context, input *EditStr
 		return nil, fmt.Errorf("re-fetching document after edit: %w", err)
 	}
 
+	// Upsert document summary for reporting
+	s.upsertSummary(ctx, updated)
+
 	if s.validator != nil {
 		s.auditValidationCompleted(ctx, input.TenantID, input.DocumentID, &input.UserID, "edit")
+		// Update summary statuses after validation
+		s.updateSummaryStatuses(ctx, updated)
 	}
 
 	return updated, nil

@@ -94,6 +94,7 @@ func run() error {
 	docRepo := postgres.NewDocumentRepo(db)
 	documentTagRepo := postgres.NewDocumentTagRepo(db)
 	auditRepo := postgres.NewDocumentAuditRepo(db)
+	summaryRepo := postgres.NewDocumentSummaryRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 	statsRepo := postgres.NewStatsRepo(db)
 	hsnRepo := postgres.NewHSNRepo(db)
@@ -184,9 +185,9 @@ func run() error {
 
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
-		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine, auditRepo)
+		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine, auditRepo, summaryRepo)
 	} else {
-		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine, auditRepo)
+		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine, auditRepo, summaryRepo)
 	}
 
 	// Auto-create free tier tenant if it doesn't exist
