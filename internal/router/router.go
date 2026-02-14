@@ -23,6 +23,7 @@ func Setup(
 	collectionH *handler.CollectionHandler,
 	documentH *handler.DocumentHandler,
 	statsH *handler.StatsHandler,
+	reportH *handler.ReportHandler,
 	corsOrigins []string,
 	userRepo port.UserRepository,
 ) *gin.Engine {
@@ -108,6 +109,16 @@ func Setup(
 
 	// Stats
 	protected.GET("/stats", statsH.GetStats)
+
+	// Report routes
+	reports := protected.Group("/reports")
+	reports.GET("/sellers", reportH.Sellers)
+	reports.GET("/buyers", reportH.Buyers)
+	reports.GET("/party-ledger", reportH.PartyLedger)
+	reports.GET("/financial-summary", reportH.FinancialSummary)
+	reports.GET("/tax-summary", reportH.TaxSummary)
+	reports.GET("/hsn-summary", reportH.HSNSummary)
+	reports.GET("/collections-overview", reportH.CollectionsOverview)
 
 	// User management (tenant-scoped)
 	users := protected.Group("/users")

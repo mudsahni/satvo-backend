@@ -182,6 +182,8 @@ func run() error {
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc, userRepo)
 	statsSvc := service.NewStatsService(statsRepo)
+	reportRepo := postgres.NewReportRepo(db)
+	reportSvc := service.NewReportService(reportRepo)
 
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
@@ -257,9 +259,10 @@ func run() error {
 	collectionH := handler.NewCollectionHandler(collectionSvc, documentSvc)
 	documentH := handler.NewDocumentHandler(documentSvc, auditRepo)
 	statsH := handler.NewStatsHandler(statsSvc)
+	reportH := handler.NewReportHandler(reportSvc)
 
 	// Setup router
-	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, cfg.CORS.AllowedOrigins, userRepo)
+	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, reportH, cfg.CORS.AllowedOrigins, userRepo)
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {
