@@ -13,37 +13,37 @@ type MockReportService struct {
 	mock.Mock
 }
 
-func (m *MockReportService) SellerSummary(ctx context.Context, tenantID uuid.UUID, filters domain.ReportFilters) ([]domain.SellerSummaryRow, int, error) {
+func (m *MockReportService) SellerSummary(ctx context.Context, tenantID uuid.UUID, filters *domain.ReportFilters) ([]domain.SellerSummaryRow, int, error) {
 	args := m.Called(ctx, tenantID, filters)
 	return args.Get(0).([]domain.SellerSummaryRow), args.Int(1), args.Error(2)
 }
 
-func (m *MockReportService) BuyerSummary(ctx context.Context, tenantID uuid.UUID, filters domain.ReportFilters) ([]domain.BuyerSummaryRow, int, error) {
+func (m *MockReportService) BuyerSummary(ctx context.Context, tenantID uuid.UUID, filters *domain.ReportFilters) ([]domain.BuyerSummaryRow, int, error) {
 	args := m.Called(ctx, tenantID, filters)
 	return args.Get(0).([]domain.BuyerSummaryRow), args.Int(1), args.Error(2)
 }
 
-func (m *MockReportService) PartyLedger(ctx context.Context, tenantID uuid.UUID, gstin string, filters domain.ReportFilters) ([]domain.PartyLedgerRow, int, error) {
+func (m *MockReportService) PartyLedger(ctx context.Context, tenantID uuid.UUID, gstin string, filters *domain.ReportFilters) ([]domain.PartyLedgerRow, int, error) {
 	args := m.Called(ctx, tenantID, gstin, filters)
 	return args.Get(0).([]domain.PartyLedgerRow), args.Int(1), args.Error(2)
 }
 
-func (m *MockReportService) FinancialSummary(ctx context.Context, tenantID uuid.UUID, filters domain.ReportFilters) ([]domain.FinancialSummaryRow, error) {
+func (m *MockReportService) FinancialSummary(ctx context.Context, tenantID uuid.UUID, filters *domain.ReportFilters) ([]domain.FinancialSummaryRow, error) {
 	args := m.Called(ctx, tenantID, filters)
 	return args.Get(0).([]domain.FinancialSummaryRow), args.Error(1)
 }
 
-func (m *MockReportService) TaxSummary(ctx context.Context, tenantID uuid.UUID, filters domain.ReportFilters) ([]domain.TaxSummaryRow, error) {
+func (m *MockReportService) TaxSummary(ctx context.Context, tenantID uuid.UUID, filters *domain.ReportFilters) ([]domain.TaxSummaryRow, error) {
 	args := m.Called(ctx, tenantID, filters)
 	return args.Get(0).([]domain.TaxSummaryRow), args.Error(1)
 }
 
-func (m *MockReportService) HSNSummary(ctx context.Context, tenantID uuid.UUID, filters domain.ReportFilters) ([]domain.HSNSummaryRow, int, error) {
+func (m *MockReportService) HSNSummary(ctx context.Context, tenantID uuid.UUID, filters *domain.ReportFilters) ([]domain.HSNSummaryRow, int, error) {
 	args := m.Called(ctx, tenantID, filters)
 	return args.Get(0).([]domain.HSNSummaryRow), args.Int(1), args.Error(2)
 }
 
-func (m *MockReportService) CollectionsOverview(ctx context.Context, tenantID uuid.UUID, filters domain.ReportFilters) ([]domain.CollectionOverviewRow, error) {
+func (m *MockReportService) CollectionsOverview(ctx context.Context, tenantID uuid.UUID, filters *domain.ReportFilters) ([]domain.CollectionOverviewRow, error) {
 	args := m.Called(ctx, tenantID, filters)
 	return args.Get(0).([]domain.CollectionOverviewRow), args.Error(1)
 }
