@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // Tenant represents an isolated organizational tenant.
@@ -157,6 +158,176 @@ type Stats struct {
 	ReviewPending  int `db:"review_pending" json:"review_pending"`
 	ReviewApproved int `db:"review_approved" json:"review_approved"`
 	ReviewRejected int `db:"review_rejected" json:"review_rejected"`
+}
+
+// DocumentSummary is a denormalized view of a parsed document for reporting.
+type DocumentSummary struct {
+	DocumentID           uuid.UUID            `db:"document_id" json:"document_id"`
+	TenantID             uuid.UUID            `db:"tenant_id" json:"tenant_id"`
+	CollectionID         uuid.UUID            `db:"collection_id" json:"collection_id"`
+	InvoiceNumber        string               `db:"invoice_number" json:"invoice_number"`
+	InvoiceDate          *time.Time           `db:"invoice_date" json:"invoice_date"`
+	DueDate              *time.Time           `db:"due_date" json:"due_date"`
+	InvoiceType          string               `db:"invoice_type" json:"invoice_type"`
+	Currency             string               `db:"currency" json:"currency"`
+	PlaceOfSupply        string               `db:"place_of_supply" json:"place_of_supply"`
+	ReverseCharge        bool                 `db:"reverse_charge" json:"reverse_charge"`
+	HasIRN               bool                 `db:"has_irn" json:"has_irn"`
+	SellerName           string               `db:"seller_name" json:"seller_name"`
+	SellerGSTIN          string               `db:"seller_gstin" json:"seller_gstin"`
+	SellerState          string               `db:"seller_state" json:"seller_state"`
+	SellerStateCode      string               `db:"seller_state_code" json:"seller_state_code"`
+	BuyerName            string               `db:"buyer_name" json:"buyer_name"`
+	BuyerGSTIN           string               `db:"buyer_gstin" json:"buyer_gstin"`
+	BuyerState           string               `db:"buyer_state" json:"buyer_state"`
+	BuyerStateCode       string               `db:"buyer_state_code" json:"buyer_state_code"`
+	Subtotal             float64              `db:"subtotal" json:"subtotal"`
+	TotalDiscount        float64              `db:"total_discount" json:"total_discount"`
+	TaxableAmount        float64              `db:"taxable_amount" json:"taxable_amount"`
+	CGST                 float64              `db:"cgst" json:"cgst"`
+	SGST                 float64              `db:"sgst" json:"sgst"`
+	IGST                 float64              `db:"igst" json:"igst"`
+	Cess                 float64              `db:"cess" json:"cess"`
+	TotalAmount          float64              `db:"total_amount" json:"total_amount"`
+	LineItemCount        int                  `db:"line_item_count" json:"line_item_count"`
+	DistinctHSNCodes     pq.StringArray       `db:"distinct_hsn_codes" json:"distinct_hsn_codes"`
+	ParsingStatus        ParsingStatus        `db:"parsing_status" json:"parsing_status"`
+	ReviewStatus         ReviewStatus         `db:"review_status" json:"review_status"`
+	ValidationStatus     ValidationStatus     `db:"validation_status" json:"validation_status"`
+	ReconciliationStatus ReconciliationStatus `db:"reconciliation_status" json:"reconciliation_status"`
+	CreatedAt            time.Time            `db:"created_at" json:"created_at"`
+	UpdatedAt            time.Time            `db:"updated_at" json:"updated_at"`
+}
+
+// ReportFilters holds common filter parameters for report queries.
+type ReportFilters struct {
+	From         *time.Time
+	To           *time.Time
+	CollectionID *uuid.UUID
+	SellerGSTIN  string
+	BuyerGSTIN   string
+	Granularity  string // daily, weekly, monthly, quarterly, yearly
+	UserID       uuid.UUID
+	UserRole     UserRole
+	Offset       int
+	Limit        int
+}
+
+// SellerSummaryRow is one row in the seller summary report.
+type SellerSummaryRow struct {
+	SellerGSTIN         string     `db:"seller_gstin" json:"seller_gstin"`
+	SellerName          string     `db:"seller_name" json:"seller_name"`
+	SellerState         string     `db:"seller_state" json:"seller_state"`
+	InvoiceCount        int        `db:"invoice_count" json:"invoice_count"`
+	TotalAmount         float64    `db:"total_amount" json:"total_amount"`
+	TotalTax            float64    `db:"total_tax" json:"total_tax"`
+	CGST                float64    `db:"cgst" json:"cgst"`
+	SGST                float64    `db:"sgst" json:"sgst"`
+	IGST                float64    `db:"igst" json:"igst"`
+	AverageInvoiceValue float64    `db:"average_invoice_value" json:"average_invoice_value"`
+	FirstInvoiceDate    *time.Time `db:"first_invoice_date" json:"first_invoice_date"`
+	LastInvoiceDate     *time.Time `db:"last_invoice_date" json:"last_invoice_date"`
+}
+
+// BuyerSummaryRow is one row in the buyer summary report.
+type BuyerSummaryRow struct {
+	BuyerGSTIN          string     `db:"buyer_gstin" json:"buyer_gstin"`
+	BuyerName           string     `db:"buyer_name" json:"buyer_name"`
+	BuyerState          string     `db:"buyer_state" json:"buyer_state"`
+	InvoiceCount        int        `db:"invoice_count" json:"invoice_count"`
+	TotalAmount         float64    `db:"total_amount" json:"total_amount"`
+	TotalTax            float64    `db:"total_tax" json:"total_tax"`
+	CGST                float64    `db:"cgst" json:"cgst"`
+	SGST                float64    `db:"sgst" json:"sgst"`
+	IGST                float64    `db:"igst" json:"igst"`
+	AverageInvoiceValue float64    `db:"average_invoice_value" json:"average_invoice_value"`
+	FirstInvoiceDate    *time.Time `db:"first_invoice_date" json:"first_invoice_date"`
+	LastInvoiceDate     *time.Time `db:"last_invoice_date" json:"last_invoice_date"`
+}
+
+// PartyLedgerRow is one row in the party ledger report.
+type PartyLedgerRow struct {
+	DocumentID        uuid.UUID        `db:"document_id" json:"document_id"`
+	InvoiceNumber     string           `db:"invoice_number" json:"invoice_number"`
+	InvoiceDate       *time.Time       `db:"invoice_date" json:"invoice_date"`
+	InvoiceType       string           `db:"invoice_type" json:"invoice_type"`
+	CounterpartyName  string           `db:"counterparty_name" json:"counterparty_name"`
+	CounterpartyGSTIN string           `db:"counterparty_gstin" json:"counterparty_gstin"`
+	Role              string           `db:"role" json:"role"`
+	Subtotal          float64          `db:"subtotal" json:"subtotal"`
+	TaxableAmount     float64          `db:"taxable_amount" json:"taxable_amount"`
+	CGST              float64          `db:"cgst" json:"cgst"`
+	SGST              float64          `db:"sgst" json:"sgst"`
+	IGST              float64          `db:"igst" json:"igst"`
+	TotalAmount       float64          `db:"total_amount" json:"total_amount"`
+	ValidationStatus  ValidationStatus `db:"validation_status" json:"validation_status"`
+	ReviewStatus      ReviewStatus     `db:"review_status" json:"review_status"`
+}
+
+// FinancialSummaryRow is one row in the financial summary report (one per time period).
+type FinancialSummaryRow struct {
+	Period        string    `json:"period"`
+	PeriodStart   time.Time `json:"period_start"`
+	PeriodEnd     time.Time `json:"period_end"`
+	InvoiceCount  int       `db:"invoice_count" json:"invoice_count"`
+	Subtotal      float64   `db:"subtotal" json:"subtotal"`
+	TaxableAmount float64   `db:"taxable_amount" json:"taxable_amount"`
+	CGST          float64   `db:"cgst" json:"cgst"`
+	SGST          float64   `db:"sgst" json:"sgst"`
+	IGST          float64   `db:"igst" json:"igst"`
+	Cess          float64   `db:"cess" json:"cess"`
+	TotalAmount   float64   `db:"total_amount" json:"total_amount"`
+}
+
+// TaxSummaryRow is one row in the tax summary report (one per time period).
+type TaxSummaryRow struct {
+	Period            string    `json:"period"`
+	PeriodStart       time.Time `json:"period_start"`
+	PeriodEnd         time.Time `json:"period_end"`
+	IntrastateCount   int       `db:"intrastate_count" json:"intrastate_count"`
+	IntrastateTaxable float64   `db:"intrastate_taxable" json:"intrastate_taxable"`
+	CGST              float64   `db:"cgst" json:"cgst"`
+	SGST              float64   `db:"sgst" json:"sgst"`
+	InterstateCount   int       `db:"interstate_count" json:"interstate_count"`
+	InterstateTaxable float64   `db:"interstate_taxable" json:"interstate_taxable"`
+	IGST              float64   `db:"igst" json:"igst"`
+	Cess              float64   `db:"cess" json:"cess"`
+	TotalTax          float64   `db:"total_tax" json:"total_tax"`
+}
+
+// HSNSummaryRow is one row in the HSN summary report.
+type HSNSummaryRow struct {
+	HSNCode       string  `json:"hsn_code"`
+	Description   string  `json:"description"`
+	InvoiceCount  int     `json:"invoice_count"`
+	LineItemCount int     `json:"line_item_count"`
+	TotalQuantity float64 `json:"total_quantity"`
+	TaxableAmount float64 `json:"taxable_amount"`
+	CGST          float64 `json:"cgst"`
+	SGST          float64 `json:"sgst"`
+	IGST          float64 `json:"igst"`
+	TotalTax      float64 `json:"total_tax"`
+}
+
+// CollectionOverviewRow is one row in the collections overview report.
+type CollectionOverviewRow struct {
+	CollectionID         uuid.UUID `db:"collection_id" json:"collection_id"`
+	CollectionName       string    `db:"collection_name" json:"collection_name"`
+	DocumentCount        int       `db:"document_count" json:"document_count"`
+	TotalAmount          float64   `db:"total_amount" json:"total_amount"`
+	ValidationValidPct   float64   `db:"validation_valid_pct" json:"validation_valid_pct"`
+	ValidationWarningPct float64   `db:"validation_warning_pct" json:"validation_warning_pct"`
+	ValidationInvalidPct float64   `db:"validation_invalid_pct" json:"validation_invalid_pct"`
+	ReviewApprovedPct    float64   `db:"review_approved_pct" json:"review_approved_pct"`
+	ReviewPendingPct     float64   `db:"review_pending_pct" json:"review_pending_pct"`
+}
+
+// SummaryStatusUpdate holds status fields to update on document_summaries.
+type SummaryStatusUpdate struct {
+	ParsingStatus        ParsingStatus
+	ReviewStatus         ReviewStatus
+	ValidationStatus     ValidationStatus
+	ReconciliationStatus ReconciliationStatus
 }
 
 // DocumentAuditEntry represents an append-only audit log entry for document mutations.
