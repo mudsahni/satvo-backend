@@ -40,7 +40,7 @@ func setupDocumentService() ( //nolint:gocritic // test helper benefits from mul
 	storage := new(mocks.MockObjectStorage)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo, nil)
 	return svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, userRepo, auditRepo
 }
 
@@ -727,7 +727,7 @@ func TestDocumentService_BackgroundParsing_Success(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -807,7 +807,7 @@ func TestDocumentService_BackgroundParsing_DownloadFailure(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -872,7 +872,7 @@ func TestDocumentService_BackgroundParsing_ParserFailure(t *testing.T) {
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1454,7 +1454,7 @@ func TestDocumentService_BackgroundParsing_RateLimitQueuesDocument(t *testing.T)
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1539,7 +1539,7 @@ func TestDocumentService_BackgroundParsing_RateLimitExceedsMaxAttempts(t *testin
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1617,7 +1617,7 @@ func TestDocumentService_BackgroundParsing_NonRateLimitErrorStillFails(t *testin
 	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
 	userRepo := new(mocks.MockUserRepo)
 	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, nil, nil)
 
 	tenantID := uuid.New()
 	fileID := uuid.New()
@@ -1797,7 +1797,7 @@ func TestDocumentService_AuditFailureDoesNotBlockOperation(t *testing.T) {
 	// Audit repo always fails
 	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(errors.New("db down")).Maybe()
 
-	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo)
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo, nil)
 
 	tenantID := uuid.New()
 	docID := uuid.New()
@@ -2085,4 +2085,277 @@ func TestDocumentService_RetryParse_ClearsAssignment(t *testing.T) {
 	assert.Nil(t, result.AssignedBy)
 
 	time.Sleep(50 * time.Millisecond)
+}
+
+// --- Summary Upsert Integration ---
+
+func TestDocumentService_ParseDocument_UpsertsSummary(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	userRepo := new(mocks.MockUserRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	summaryRepo := new(mocks.MockDocumentSummaryRepo)
+
+	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(nil).Maybe()
+
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo, summaryRepo)
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	fileID := uuid.New()
+	collectionID := uuid.New()
+
+	structuredJSON := json.RawMessage(`{
+		"invoice": {"invoice_number": "INV-001", "invoice_date": "2025-01-15", "invoice_type": "Tax Invoice", "currency": "INR", "place_of_supply": "Karnataka", "reverse_charge": false, "irn": ""},
+		"seller": {"name": "Test Seller", "gstin": "29AABCT1332L1ZP", "state": "Karnataka", "state_code": "29", "address": "Bangalore"},
+		"buyer": {"name": "Test Buyer", "gstin": "27AABCU9603R1ZM", "state": "Maharashtra", "state_code": "27", "address": "Mumbai"},
+		"line_items": [{"description": "Item 1", "hsn_sac_code": "8471", "quantity": 1, "unit_price": 1000, "total_amount": 1000, "taxable_amount": 1000, "cgst_amount": 0, "sgst_amount": 0, "igst_amount": 180, "igst_rate": 18}],
+		"totals": {"subtotal": 1000, "total_discount": 0, "taxable_amount": 1000, "cgst": 0, "sgst": 0, "igst": 180, "cess": 0, "total": 1180},
+		"payment": {},
+		"confidence_scores": {}
+	}`)
+
+	doc := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		CollectionID:     collectionID,
+		FileID:           fileID,
+		DocumentType:     "invoice",
+		ParsingStatus:    domain.ParsingStatusProcessing,
+		ParseAttempts:    1,
+		StructuredData:   json.RawMessage("{}"),
+		ConfidenceScores: json.RawMessage("{}"),
+	}
+
+	fileMeta := &domain.FileMeta{
+		ID:          fileID,
+		TenantID:    tenantID,
+		S3Bucket:    "test-bucket",
+		S3Key:       "test-key",
+		ContentType: "application/pdf",
+	}
+
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
+	storage.On("Download", mock.Anything, "test-bucket", "test-key").Return([]byte("%PDF-1.4 test"), nil)
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+		StructuredData:   structuredJSON,
+		ConfidenceScores: json.RawMessage(`{}`),
+		ModelUsed:        "test-model",
+		PromptUsed:       "test prompt",
+	}, nil)
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil).Maybe()
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	summaryRepo.On("Upsert", mock.Anything, mock.MatchedBy(func(s *domain.DocumentSummary) bool {
+		return s.TenantID == tenantID &&
+			s.DocumentID == docID &&
+			s.CollectionID == collectionID &&
+			s.SellerGSTIN == "29AABCT1332L1ZP" &&
+			s.BuyerGSTIN == "27AABCU9603R1ZM" &&
+			s.TotalAmount == 1180 &&
+			s.InvoiceNumber == "INV-001" &&
+			s.LineItemCount == 1 &&
+			s.SellerName == "Test Seller" &&
+			s.BuyerName == "Test Buyer" &&
+			s.IGST == 180
+	})).Return(nil)
+	summaryRepo.On("UpdateStatuses", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	svc.ParseDocument(context.Background(), doc, 5)
+
+	summaryRepo.AssertExpectations(t)
+	docRepo.AssertExpectations(t)
+}
+
+func TestDocumentService_UpdateReview_UpdatesSummaryStatuses(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	userRepo := new(mocks.MockUserRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	summaryRepo := new(mocks.MockDocumentSummaryRepo)
+
+	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(nil).Maybe()
+
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo, summaryRepo)
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	reviewerID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+		ReviewStatus:  domain.ReviewStatusPending,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+	docRepo.On("UpdateReviewStatus", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+
+	summaryRepo.On("UpdateStatuses", mock.Anything, docID, mock.MatchedBy(func(s domain.SummaryStatusUpdate) bool {
+		return s.ReviewStatus == domain.ReviewStatusApproved
+	})).Return(nil)
+	summaryRepo.On("Upsert", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	result, err := svc.UpdateReview(context.Background(), &service.UpdateReviewInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		ReviewerID: reviewerID,
+		Role:       domain.RoleAdmin,
+		Status:     domain.ReviewStatusApproved,
+		Notes:      "LGTM",
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, domain.ReviewStatusApproved, result.ReviewStatus)
+	summaryRepo.AssertExpectations(t)
+}
+
+func TestDocumentService_SummaryUpsertFailure_DoesNotFailParse(t *testing.T) {
+	docRepo := new(mocks.MockDocumentRepo)
+	fileRepo := new(mocks.MockFileMetaRepo)
+	userRepo := new(mocks.MockUserRepo)
+	permRepo := new(mocks.MockCollectionPermissionRepo)
+	tagRepo := new(mocks.MockDocumentTagRepo)
+	auditRepo := new(mocks.MockDocumentAuditRepo)
+	p := new(mocks.MockDocumentParser)
+	storage := new(mocks.MockObjectStorage)
+	summaryRepo := new(mocks.MockDocumentSummaryRepo)
+
+	userRepo.On("CheckAndIncrementQuota", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	auditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.DocumentAuditEntry")).Return(nil).Maybe()
+
+	svc := service.NewDocumentService(docRepo, fileRepo, userRepo, permRepo, tagRepo, p, storage, nil, auditRepo, summaryRepo)
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	fileID := uuid.New()
+
+	structuredJSON := json.RawMessage(`{
+		"invoice": {"invoice_number": "INV-002"},
+		"seller": {"name": "S", "gstin": "29AABCT1332L1ZP"},
+		"buyer": {"name": "B", "gstin": "27AABCU9603R1ZM"},
+		"line_items": [],
+		"totals": {"total": 500},
+		"payment": {},
+		"confidence_scores": {}
+	}`)
+
+	doc := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		FileID:           fileID,
+		DocumentType:     "invoice",
+		ParsingStatus:    domain.ParsingStatusProcessing,
+		ParseAttempts:    1,
+		StructuredData:   json.RawMessage("{}"),
+		ConfidenceScores: json.RawMessage("{}"),
+	}
+
+	fileMeta := &domain.FileMeta{
+		ID:          fileID,
+		TenantID:    tenantID,
+		S3Bucket:    "test-bucket",
+		S3Key:       "test-key",
+		ContentType: "application/pdf",
+	}
+
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
+	storage.On("Download", mock.Anything, "test-bucket", "test-key").Return([]byte("%PDF-1.4 test"), nil)
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+		StructuredData:   structuredJSON,
+		ConfidenceScores: json.RawMessage(`{}`),
+		ModelUsed:        "test-model",
+		PromptUsed:       "test prompt",
+	}, nil)
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.MatchedBy(func(d *domain.Document) bool {
+		return d.ParsingStatus == domain.ParsingStatusCompleted
+	})).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil).Maybe()
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	// Summary upsert fails — should NOT cause parse to fail
+	summaryRepo.On("Upsert", mock.Anything, mock.Anything).Return(errors.New("db error"))
+	summaryRepo.On("UpdateStatuses", mock.Anything, mock.Anything, mock.Anything).Return(errors.New("db error")).Maybe()
+
+	// Should not panic
+	assert.NotPanics(t, func() {
+		svc.ParseDocument(context.Background(), doc, 5)
+	})
+
+	// Verify parse result was still saved with completed status
+	docRepo.AssertCalled(t, "UpdateStructuredData", mock.Anything, mock.MatchedBy(func(d *domain.Document) bool {
+		return d.ParsingStatus == domain.ParsingStatusCompleted
+	}))
+}
+
+func TestDocumentService_NilSummaryRepo_NoPanic(t *testing.T) {
+	// Uses the default setupDocumentService which passes nil for summaryRepo
+	svc, docRepo, fileRepo, _, p, storage, tagRepo, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	fileID := uuid.New()
+
+	structuredJSON := json.RawMessage(`{
+		"invoice": {"invoice_number": "INV-003"},
+		"seller": {"name": "S"},
+		"buyer": {"name": "B"},
+		"line_items": [],
+		"totals": {"total": 100},
+		"payment": {},
+		"confidence_scores": {}
+	}`)
+
+	doc := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		FileID:           fileID,
+		DocumentType:     "invoice",
+		ParsingStatus:    domain.ParsingStatusProcessing,
+		ParseAttempts:    1,
+		StructuredData:   json.RawMessage("{}"),
+		ConfidenceScores: json.RawMessage("{}"),
+	}
+
+	fileMeta := &domain.FileMeta{
+		ID:          fileID,
+		TenantID:    tenantID,
+		S3Bucket:    "test-bucket",
+		S3Key:       "test-key",
+		ContentType: "application/pdf",
+	}
+
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
+	storage.On("Download", mock.Anything, "test-bucket", "test-key").Return([]byte("%PDF-1.4 test"), nil)
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+		StructuredData:   structuredJSON,
+		ConfidenceScores: json.RawMessage(`{}`),
+		ModelUsed:        "test-model",
+		PromptUsed:       "test prompt",
+	}, nil)
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil).Maybe()
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	// Should not panic even though summaryRepo is nil
+	assert.NotPanics(t, func() {
+		svc.ParseDocument(context.Background(), doc, 5)
+	})
+
+	docRepo.AssertCalled(t, "UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document"))
 }

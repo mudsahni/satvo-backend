@@ -2769,6 +2769,715 @@ const docTemplate = `{
                 }
             }
         },
+        "/reports/buyers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists unique buyers with invoice count, total revenue, tax breakdown",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Buyer summary report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by seller GSTIN",
+                        "name": "seller_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.BuyerSummaryRow"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/definitions/handler.PagMeta"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/collections-overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Per-collection summary with document counts, totals, and validation/review percentages",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Collections overview report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by seller GSTIN",
+                        "name": "seller_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by buyer GSTIN",
+                        "name": "buyer_gstin",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.CollectionOverviewRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/financial-summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Time-series financial summary with totals per period",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Financial summary report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by seller GSTIN",
+                        "name": "seller_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by buyer GSTIN",
+                        "name": "buyer_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly"
+                        ],
+                        "type": "string",
+                        "default": "monthly",
+                        "description": "Time granularity",
+                        "name": "granularity",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.FinancialSummaryRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/hsn-summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Aggregated HSN-code-level breakdown with quantities, taxable amounts, and tax",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "HSN summary report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by seller GSTIN",
+                        "name": "seller_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by buyer GSTIN",
+                        "name": "buyer_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.HSNSummaryRow"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/definitions/handler.PagMeta"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/party-ledger": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists all invoices for a specific GSTIN (as seller or buyer)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Party ledger report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Party GSTIN (required)",
+                        "name": "gstin",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.PartyLedgerRow"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/definitions/handler.PagMeta"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/sellers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Lists unique sellers with invoice count, total spend, tax breakdown",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Seller summary report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by buyer GSTIN",
+                        "name": "buyer_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.SellerSummaryRow"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/definitions/handler.PagMeta"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/reports/tax-summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Time-series tax breakdown (intrastate CGST/SGST vs interstate IGST) per period",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "reports"
+                ],
+                "summary": "Tax summary report",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by seller GSTIN",
+                        "name": "seller_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by buyer GSTIN",
+                        "name": "buyer_gstin",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "daily",
+                            "weekly",
+                            "monthly",
+                            "quarterly",
+                            "yearly"
+                        ],
+                        "type": "string",
+                        "default": "monthly",
+                        "description": "Time granularity",
+                        "name": "granularity",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.APIResponse"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.TaxSummaryRow"
+                                            }
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.APIResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/stats": {
             "get": {
                 "security": [
@@ -3187,6 +3896,47 @@ const docTemplate = `{
                 "AuthProviderGoogle"
             ]
         },
+        "domain.BuyerSummaryRow": {
+            "type": "object",
+            "properties": {
+                "average_invoice_value": {
+                    "type": "number"
+                },
+                "buyer_gstin": {
+                    "type": "string"
+                },
+                "buyer_name": {
+                    "type": "string"
+                },
+                "buyer_state": {
+                    "type": "string"
+                },
+                "cgst": {
+                    "type": "number"
+                },
+                "first_invoice_date": {
+                    "type": "string"
+                },
+                "igst": {
+                    "type": "number"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "last_invoice_date": {
+                    "type": "string"
+                },
+                "sgst": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                },
+                "total_tax": {
+                    "type": "number"
+                }
+            }
+        },
         "domain.Collection": {
             "type": "object",
             "properties": {
@@ -3213,6 +3963,38 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "domain.CollectionOverviewRow": {
+            "type": "object",
+            "properties": {
+                "collection_id": {
+                    "type": "string"
+                },
+                "collection_name": {
+                    "type": "string"
+                },
+                "document_count": {
+                    "type": "integer"
+                },
+                "review_approved_pct": {
+                    "type": "number"
+                },
+                "review_pending_pct": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                },
+                "validation_invalid_pct": {
+                    "type": "number"
+                },
+                "validation_valid_pct": {
+                    "type": "number"
+                },
+                "validation_warning_pct": {
+                    "type": "number"
                 }
             }
         },
@@ -3451,6 +4233,79 @@ const docTemplate = `{
                 "FileTypePNG"
             ]
         },
+        "domain.FinancialSummaryRow": {
+            "type": "object",
+            "properties": {
+                "cess": {
+                    "type": "number"
+                },
+                "cgst": {
+                    "type": "number"
+                },
+                "igst": {
+                    "type": "number"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "period": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "sgst": {
+                    "type": "number"
+                },
+                "subtotal": {
+                    "type": "number"
+                },
+                "taxable_amount": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                }
+            }
+        },
+        "domain.HSNSummaryRow": {
+            "type": "object",
+            "properties": {
+                "cgst": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "hsn_code": {
+                    "type": "string"
+                },
+                "igst": {
+                    "type": "number"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "line_item_count": {
+                    "type": "integer"
+                },
+                "sgst": {
+                    "type": "number"
+                },
+                "taxable_amount": {
+                    "type": "number"
+                },
+                "total_quantity": {
+                    "type": "number"
+                },
+                "total_tax": {
+                    "type": "number"
+                }
+            }
+        },
         "domain.ParseMode": {
             "type": "string",
             "enum": [
@@ -3479,6 +4334,56 @@ const docTemplate = `{
                 "ParsingStatusQueued"
             ]
         },
+        "domain.PartyLedgerRow": {
+            "type": "object",
+            "properties": {
+                "cgst": {
+                    "type": "number"
+                },
+                "counterparty_gstin": {
+                    "type": "string"
+                },
+                "counterparty_name": {
+                    "type": "string"
+                },
+                "document_id": {
+                    "type": "string"
+                },
+                "igst": {
+                    "type": "number"
+                },
+                "invoice_date": {
+                    "type": "string"
+                },
+                "invoice_number": {
+                    "type": "string"
+                },
+                "invoice_type": {
+                    "type": "string"
+                },
+                "review_status": {
+                    "$ref": "#/definitions/domain.ReviewStatus"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "sgst": {
+                    "type": "number"
+                },
+                "subtotal": {
+                    "type": "number"
+                },
+                "taxable_amount": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                },
+                "validation_status": {
+                    "$ref": "#/definitions/domain.ValidationStatus"
+                }
+            }
+        },
         "domain.ReconciliationStatus": {
             "type": "string",
             "enum": [
@@ -3506,6 +4411,47 @@ const docTemplate = `{
                 "ReviewStatusApproved",
                 "ReviewStatusRejected"
             ]
+        },
+        "domain.SellerSummaryRow": {
+            "type": "object",
+            "properties": {
+                "average_invoice_value": {
+                    "type": "number"
+                },
+                "cgst": {
+                    "type": "number"
+                },
+                "first_invoice_date": {
+                    "type": "string"
+                },
+                "igst": {
+                    "type": "number"
+                },
+                "invoice_count": {
+                    "type": "integer"
+                },
+                "last_invoice_date": {
+                    "type": "string"
+                },
+                "seller_gstin": {
+                    "type": "string"
+                },
+                "seller_name": {
+                    "type": "string"
+                },
+                "seller_state": {
+                    "type": "string"
+                },
+                "sgst": {
+                    "type": "number"
+                },
+                "total_amount": {
+                    "type": "number"
+                },
+                "total_tax": {
+                    "type": "number"
+                }
+            }
         },
         "domain.Stats": {
             "type": "object",
@@ -3557,6 +4503,47 @@ const docTemplate = `{
                 },
                 "validation_warning": {
                     "type": "integer"
+                }
+            }
+        },
+        "domain.TaxSummaryRow": {
+            "type": "object",
+            "properties": {
+                "cess": {
+                    "type": "number"
+                },
+                "cgst": {
+                    "type": "number"
+                },
+                "igst": {
+                    "type": "number"
+                },
+                "interstate_count": {
+                    "type": "integer"
+                },
+                "interstate_taxable": {
+                    "type": "number"
+                },
+                "intrastate_count": {
+                    "type": "integer"
+                },
+                "intrastate_taxable": {
+                    "type": "number"
+                },
+                "period": {
+                    "type": "string"
+                },
+                "period_end": {
+                    "type": "string"
+                },
+                "period_start": {
+                    "type": "string"
+                },
+                "sgst": {
+                    "type": "number"
+                },
+                "total_tax": {
+                    "type": "number"
                 }
             }
         },
@@ -3670,6 +4657,21 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "handler.APIResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "error": {
+                    "$ref": "#/definitions/handler.APIError"
+                },
+                "meta": {
+                    "$ref": "#/definitions/handler.PagMeta"
+                },
+                "success": {
+                    "type": "boolean"
                 }
             }
         },

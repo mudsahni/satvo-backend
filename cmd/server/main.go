@@ -94,6 +94,7 @@ func run() error {
 	docRepo := postgres.NewDocumentRepo(db)
 	documentTagRepo := postgres.NewDocumentTagRepo(db)
 	auditRepo := postgres.NewDocumentAuditRepo(db)
+	summaryRepo := postgres.NewDocumentSummaryRepo(db)
 	validationRuleRepo := postgres.NewDocumentValidationRuleRepo(db)
 	statsRepo := postgres.NewStatsRepo(db)
 	hsnRepo := postgres.NewHSNRepo(db)
@@ -181,12 +182,14 @@ func run() error {
 	userSvc := service.NewUserService(userRepo)
 	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc, userRepo)
 	statsSvc := service.NewStatsService(statsRepo)
+	reportRepo := postgres.NewReportRepo(db)
+	reportSvc := service.NewReportService(reportRepo)
 
 	var documentSvc service.DocumentService
 	if mergeDocParser != nil {
-		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine, auditRepo)
+		documentSvc = service.NewDocumentServiceWithMerge(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, mergeDocParser, s3Client, validationEngine, auditRepo, summaryRepo)
 	} else {
-		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine, auditRepo)
+		documentSvc = service.NewDocumentService(docRepo, fileRepo, userRepo, collectionPermRepo, documentTagRepo, documentParser, s3Client, validationEngine, auditRepo, summaryRepo)
 	}
 
 	// Auto-create free tier tenant if it doesn't exist
@@ -256,9 +259,10 @@ func run() error {
 	collectionH := handler.NewCollectionHandler(collectionSvc, documentSvc)
 	documentH := handler.NewDocumentHandler(documentSvc, auditRepo)
 	statsH := handler.NewStatsHandler(statsSvc)
+	reportH := handler.NewReportHandler(reportSvc)
 
 	// Setup router
-	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, cfg.CORS.AllowedOrigins, userRepo)
+	r := router.Setup(authSvc, authH, fileH, tenantH, userH, healthH, collectionH, documentH, statsH, reportH, cfg.CORS.AllowedOrigins, userRepo)
 
 	log.Printf("Server starting on %s", cfg.Server.Port)
 	if err := r.Run(cfg.Server.Port); err != nil {
