@@ -37,7 +37,7 @@ internal/
     auth_handler.go          login, refresh, register, verify-email, resend-verification, forgot/reset-password, social-login
     file_handler.go          upload, list, get, delete (free: own files only)
     collection_handler.go    CRUD, batch upload, permissions, CSV export
-    document_handler.go      CRUD, retry, review, validation, tags, search, structured-data edit, audit trail
+    document_handler.go      CRUD, retry, review, assignment, review-queue, validation, tags, search, structured-data edit, audit trail
     user_handler.go          CRUD /users
     tenant_handler.go        CRUD /admin/tenants
     stats_handler.go         GET /stats (tenant-scoped, role-filtered)
@@ -55,7 +55,7 @@ internal/
     password_reset_service.go ForgotPassword, ResetPassword (JWT "password-reset" audience, 1h, single-use jti)
     file_service.go          Upload (validate + S3 + DB), download URL, delete, ListByUploader
     collection_service.go    CRUD, batch upload, permission checking, EffectivePermission(s)
-    document_service.go      CRUD, background LLM parsing, retry, review, validation, tags, quota enforcement, audit trail
+    document_service.go      CRUD, background LLM parsing, retry, review, assignment, review-queue, validation, tags, quota enforcement, audit trail
     parse_queue_worker.go    Polls queued docs, bounded concurrency, graceful shutdown
     stats_service.go         Aggregate stats (role-branching)
     user_service.go          User CRUD (tenant-scoped)
@@ -64,7 +64,7 @@ internal/
     repository.go            TenantRepo, UserRepo (CheckAndIncrementQuota, GetByProviderID, LinkProvider), FileMetaRepo interfaces
     social_auth.go           SocialTokenVerifier interface, SocialAuthClaims DTO
     collection_repository.go CollectionRepo, CollectionPermissionRepo, CollectionFileRepo interfaces
-    document_repository.go   DocumentRepo (UpdateValidationResults, ClaimQueued), DocTagRepo, DocValidationRuleRepo
+    document_repository.go   DocumentRepo (UpdateValidationResults, UpdateAssignment, ClaimQueued, ListReviewQueue), DocTagRepo, DocValidationRuleRepo
     document_audit_repository.go DocumentAuditRepository interface (Create, ListByDocument)
     stats_repository.go      StatsRepository interface
     email.go                 EmailSender interface (SendVerificationEmail, SendPasswordResetEmail)
@@ -102,9 +102,10 @@ internal/
   mocks/                     Hand-written mocks for testing
 
 tests/unit/                  Unit tests for all packages
-db/migrations/               18 SQL migrations (tenants → users → files → collections → documents
+db/migrations/               19 SQL migrations (tenants → users → files → collections → documents
                              → validation → reconciliation → multi-parser → tags → queue → hsn
-                             → free-tier → email-verification → password-reset → social-auth → audit-log)
+                             → free-tier → email-verification → password-reset → social-auth → audit-log
+                             → review-assignment)
 ```
 
 ## Data Flow
@@ -119,9 +120,10 @@ Request → Gin Router → Middleware (Logger → Auth → TenantGuard) → Hand
 2. **Create & Parse**: `POST /documents` → creates doc (pending) → background goroutine downloads from S3, sends to LLM, saves structured_data + confidence_scores + field_provenance, extracts auto-tags → completed/failed/queued
 3. **Rate-limit retry**: If all parsers return 429, doc is queued with `retry_after`. `ParseQueueWorker` polls every 10s, re-dispatches with bounded concurrency (max 5 attempts)
 4. **Validate**: Auto-triggered after parse. Engine auto-seeds builtin rules, runs 59 validators, computes `validation_status` and `reconciliation_status` independently, saves JSONB results
-5. **Review**: `PUT /documents/:id/review` → approve/reject with notes
-6. **Manual edit**: `PUT /documents/:id` → validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation
-7. **Audit trail**: Every mutation (create, parse, retry, review, edit, validate, tags, delete) writes an append-only `document_audit_log` entry. `GET /documents/:id/audit` returns paginated history. Audit failures never block business logic
+5. **Assign**: `PUT /documents/:id/assign` → soft-assign to a user for review (or unassign). Clears on retry. `GET /documents/review-queue` lists docs assigned to the caller that are parsed and pending review
+6. **Review**: `PUT /documents/:id/review` → approve/reject with notes
+7. **Manual edit**: `PUT /documents/:id` → validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation
+8. **Audit trail**: Every mutation (create, parse, retry, review, edit, validate, assign, tags, delete) writes an append-only `document_audit_log` entry. `GET /documents/:id/audit` returns paginated history. Audit failures never block business logic
 
 ## Validation Engine
 
@@ -161,19 +163,20 @@ Request → Gin Router → Middleware (Logger → Auth → TenantGuard) → Hand
 - **Response envelope**: `{"success": bool, "data": ..., "error": ..., "meta": ...}` from `handler/response.go`
 - **Tenant isolation**: Every DB query includes `tenant_id` from JWT claims
 - **Error mapping**: Domain errors → HTTP codes in `handler/response.go`
-- **Tenant roles**: admin (level 4, implicit owner) > manager (3, editor) > member (2, viewer) > viewer (1, no implicit) > free (0, no implicit). Effective perm = `max(implicit, explicit)`. Helpers: `RoleLevel()`, `ImplicitCollectionPerm()`
+- **Tenant roles**: admin (level 4, implicit owner) > manager (3, editor) > member (2, viewer) > viewer (1, no implicit) > free (0, no implicit). Effective perm = `max(implicit, explicit)`. No cap — explicit owner grant on a viewer is respected. Helpers: `RoleLevel()`, `ImplicitCollectionPerm()`
 - **Free tier**: Self-registration → shared "satvos" tenant, `free` role, personal collection (owner), per-user monthly quota (default 5). File listing filtered by uploader. Quota: `CheckAndIncrementQuota()` atomic SQL, 30-day period, `limit=0` → unlimited
 - **Registration**: `POST /auth/register` → `RegistrationService` creates user + collection + tokens + sends verification email. Email failure doesn't fail registration. Disable by passing nil `RegistrationService` to `NewAuthHandler`
 - **Email verification**: JWT `"email-verification"` audience, 24h expiry. `RequireEmailVerified` middleware checks DB for `free` role only. Gates: `POST /files/upload`, `POST /documents`. Config: `SATVOS_EMAIL_PROVIDER` ("ses"/"noop"), `SATVOS_EMAIL_FROM_ADDRESS`, `SATVOS_EMAIL_FRONTEND_URL`
 - **Password reset**: `POST /auth/forgot-password` (always 200, no enumeration) → `POST /auth/reset-password` (single-use via `password_reset_token_id` jti). Does NOT invalidate existing tokens
 - **Social login**: `POST /auth/social-login` (Google only). Frontend sends ID token → backend validates via `SocialTokenVerifier`. Auto-links if email matches existing user. Auto-verifies email. New users get personal collection. Config: `SATVOS_GOOGLE_AUTH_CLIENT_ID` (empty = disabled). Only for free-tier tenant. OAuth-only users (`password_hash=""`) blocked from password login (`ErrPasswordLoginNotAllowed`)
-- **Collections**: Permission-based (owner/editor/viewer) + role hierarchy. `document_count` computed via SQL subquery. `EffectivePermissions` batch-optimized
+- **Collections**: Permission-based (owner/editor/viewer) + role hierarchy. `document_count` computed via SQL subquery. `EffectivePermissions` batch-optimized. `SetPermission` validates target user belongs to same tenant
 - **CSV export**: `GET /collections/:id/export/csv` — 33 columns, reconciliation fields first, UTF-8 BOM, batched 200 docs
 - **Document parsing**: Background goroutine. `CreateAndParse`/`RetryParse` return **copies** to prevent data races. Status: pending → processing → completed/failed/queued
 - **Document tags**: Key-value pairs with `source` (user/auto). Auto-tags extracted from parsed data, regenerated on retry/edit
 - **Manual edit**: Validates JSON, sets confidence→1.0, resets review, re-extracts auto-tags, re-runs validation, sets provenance to `manual_edit`
 - **Passwords**: bcrypt cost 12, min 8 chars. **JWT**: HS256, access 15m, refresh 7d
-- **Audit trail**: Append-only `document_audit_log` table (no FK constraints — survives entity deletion). 12 actions covering every document mutation. `audit()` helper on service is nil-safe and non-blocking (errors logged, never returned). Handler reads audit repo directly (bypasses service) for deleted-document support. JSONB `changes` column stores action-specific metadata summaries (no full structured_data diffs). `document.validation_completed` emitted after every successful validation with `{validation_status, reconciliation_status, trigger}` where trigger is `"parse"`, `"edit"`, or `"manual"`
+- **Review assignment**: `PUT /documents/:id/assign` soft-assigns a document to a user (`assigned_to`, `assigned_at`, `assigned_by`). Not a lock — anyone with access can still review. Assignee cannot approve/reject their own assignment (`ErrAssigneeCannotReview`). Retry clears assignment. `GET /documents/review-queue` returns docs assigned to the caller that are `parsing_status=completed` and `review_status=pending`. Document list endpoints accept `?assigned_to=<uuid>` filter
+- **Audit trail**: Append-only `document_audit_log` table (no FK constraints — survives entity deletion). 13 actions covering every document mutation. `audit()` helper on service is nil-safe and non-blocking (errors logged, never returned). Handler reads audit repo directly (bypasses service) for deleted-document support. JSONB `changes` column stores action-specific metadata summaries (no full structured_data diffs). `document.validation_completed` emitted after every successful validation with `{validation_status, reconciliation_status, trigger}` where trigger is `"parse"`, `"edit"`, or `"manual"`. `document.assigned` emitted on assign/unassign with `{assigned_to, assigned_by}`
 - **Testing**: testify + hand-written mocks in `/mocks/`. CI runs with `-race` flag
 
 ## Tech Stack
@@ -211,5 +214,6 @@ Go 1.24, Gin, PostgreSQL 16 (sqlx + pgx/v5), AWS S3 (aws-sdk-go-v2), AWS SES v2,
 - **Password reset doesn't invalidate sessions** — tokens expire naturally
 - **`NewAuthHandler` takes 4 params**: `(authService, registrationService, passwordResetService, socialAuthService)` — any can be nil
 - **Audit trail non-blocking**: `audit()` helper logs errors but never fails the parent operation. Audit repo is nil-safe (skipped when nil). No FK constraints on audit table — entries survive document/user/tenant deletion
+- **`NewCollectionService` takes 5 params**: `(collectionRepo, collectionPermissionRepo, collectionFileRepo, documentService, userRepo)` — userRepo for tenant validation in SetPermission
 - **`NewDocumentHandler` takes 2 params**: `(documentService, auditRepo)` — auditRepo used for direct read in `ListAudit`
 - **Stale processing docs**: Server crash mid-parse → doc stuck in `processing` (no staleness detector yet)

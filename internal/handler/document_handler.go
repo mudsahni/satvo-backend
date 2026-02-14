@@ -122,14 +122,15 @@ func (h *DocumentHandler) GetByID(c *gin.Context) {
 
 // List handles GET /api/v1/documents
 // @Summary List documents
-// @Description List documents with optional collection filter
+// @Description List documents with optional collection and assignment filters
 // @Tags documents
 // @Produce json
 // @Param offset query int false "Offset for pagination" default(0)
 // @Param limit query int false "Limit for pagination (max 100)" default(20)
 // @Param collection_id query string false "Filter by collection ID"
+// @Param assigned_to query string false "Filter by assigned user ID"
 // @Success 200 {object} Response{data=[]domain.Document,meta=PagMeta} "List of documents"
-// @Failure 400 {object} ErrorResponseBody "Invalid collection_id"
+// @Failure 400 {object} ErrorResponseBody "Invalid collection_id or assigned_to"
 // @Failure 401 {object} ErrorResponseBody "Unauthorized"
 // @Security BearerAuth
 // @Router /documents [get]
@@ -141,6 +142,16 @@ func (h *DocumentHandler) List(c *gin.Context) {
 
 	offset, limit := parsePagination(c)
 
+	var assignedTo *uuid.UUID
+	if assignedToStr := c.Query("assigned_to"); assignedToStr != "" {
+		parsed, err := uuid.Parse(assignedToStr)
+		if err != nil {
+			RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid assigned_to")
+			return
+		}
+		assignedTo = &parsed
+	}
+
 	collectionIDStr := c.Query("collection_id")
 	if collectionIDStr != "" {
 		collectionID, err := uuid.Parse(collectionIDStr)
@@ -148,7 +159,7 @@ func (h *DocumentHandler) List(c *gin.Context) {
 			RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid collection_id")
 			return
 		}
-		docs, total, err := h.documentService.ListByCollection(c.Request.Context(), tenantID, collectionID, userID, role, offset, limit)
+		docs, total, err := h.documentService.ListByCollection(c.Request.Context(), tenantID, collectionID, userID, role, assignedTo, offset, limit)
 		if err != nil {
 			HandleError(c, err)
 			return
@@ -157,7 +168,7 @@ func (h *DocumentHandler) List(c *gin.Context) {
 		return
 	}
 
-	docs, total, err := h.documentService.ListByTenant(c.Request.Context(), tenantID, userID, role, offset, limit)
+	docs, total, err := h.documentService.ListByTenant(c.Request.Context(), tenantID, userID, role, assignedTo, offset, limit)
 	if err != nil {
 		HandleError(c, err)
 		return
@@ -255,6 +266,94 @@ func (h *DocumentHandler) UpdateReview(c *gin.Context) {
 	}
 
 	RespondOK(c, doc)
+}
+
+// AssignDocument handles PUT /api/v1/documents/:id/assign
+// @Summary Assign a document for review
+// @Description Assign or unassign a document to a user for review. Assignee must have editor+ permission on the collection. Pass null assignee_id to unassign.
+// @Tags documents
+// @Accept json
+// @Produce json
+// @Param id path string true "Document ID (UUID)"
+// @Param request body object{assignee_id=string} true "Assignee user ID (null to unassign)"
+// @Success 200 {object} Response{data=domain.Document} "Document assigned"
+// @Failure 400 {object} ErrorResponseBody "Invalid request, document not parsed, or assignee cannot review"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Failure 403 {object} ErrorResponseBody "Insufficient permission"
+// @Failure 404 {object} ErrorResponseBody "Document or assignee not found"
+// @Security BearerAuth
+// @Router /documents/{id}/assign [put]
+func (h *DocumentHandler) AssignDocument(c *gin.Context) {
+	tenantID, userID, role, ok := extractAuthContext(c)
+	if !ok {
+		return
+	}
+
+	docID, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_ID", "invalid document ID")
+		return
+	}
+
+	var req struct {
+		AssigneeID *string `json:"assignee_id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "request body is required")
+		return
+	}
+
+	var assigneeID *uuid.UUID
+	if req.AssigneeID != nil && *req.AssigneeID != "" {
+		parsed, err := uuid.Parse(*req.AssigneeID)
+		if err != nil {
+			RespondError(c, http.StatusBadRequest, "INVALID_REQUEST", "invalid assignee_id format")
+			return
+		}
+		assigneeID = &parsed
+	}
+
+	doc, err := h.documentService.AssignDocument(c.Request.Context(), &service.AssignDocumentInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		CallerID:   userID,
+		CallerRole: role,
+		AssigneeID: assigneeID,
+	})
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondOK(c, doc)
+}
+
+// ReviewQueue handles GET /api/v1/documents/review-queue
+// @Summary Get review queue
+// @Description List documents assigned to the current user that are parsed and pending review, ordered by assignment date
+// @Tags documents
+// @Produce json
+// @Param offset query int false "Pagination offset" default(0)
+// @Param limit query int false "Pagination limit" default(20)
+// @Success 200 {object} Response{data=[]domain.Document,meta=PagMeta} "Review queue"
+// @Failure 401 {object} ErrorResponseBody "Unauthorized"
+// @Security BearerAuth
+// @Router /documents/review-queue [get]
+func (h *DocumentHandler) ReviewQueue(c *gin.Context) {
+	tenantID, userID, _, ok := extractAuthContext(c)
+	if !ok {
+		return
+	}
+
+	offset, limit := parsePagination(c)
+
+	docs, total, err := h.documentService.ListReviewQueue(c.Request.Context(), tenantID, userID, offset, limit)
+	if err != nil {
+		HandleError(c, err)
+		return
+	}
+
+	RespondPaginated(c, docs, PagMeta{Total: total, Offset: offset, Limit: limit})
 }
 
 // EditStructuredData handles PUT /api/v1/documents/:id and PUT /api/v1/documents/:id/structured-data

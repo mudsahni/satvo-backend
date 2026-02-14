@@ -222,6 +222,7 @@ const (
 	AuditDocumentTagsAdded        AuditAction = "document.tags_added"
 	AuditDocumentTagDeleted       AuditAction = "document.tag_deleted"
 	AuditDocumentDeleted          AuditAction = "document.deleted"
+	AuditDocumentAssigned         AuditAction = "document.assigned"
 )
 
 // FileStatus represents the lifecycle of an uploaded file.

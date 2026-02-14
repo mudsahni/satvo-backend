@@ -179,7 +179,7 @@ func run() error {
 	fileSvc := service.NewFileService(fileRepo, s3Client, &cfg.S3)
 	tenantSvc := service.NewTenantService(tenantRepo)
 	userSvc := service.NewUserService(userRepo)
-	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc)
+	collectionSvc := service.NewCollectionService(collectionRepo, collectionPermRepo, collectionFileRepo, fileSvc, userRepo)
 	statsSvc := service.NewStatsService(statsRepo)
 
 	var documentSvc service.DocumentService

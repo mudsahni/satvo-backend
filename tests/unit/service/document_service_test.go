@@ -312,10 +312,10 @@ func TestDocumentService_ListByCollection_Success(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("not found")).Maybe()
 
-	docRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, 0, 20).
+	docRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, (*uuid.UUID)(nil), 0, 20).
 		Return(expected, 2, nil)
 
-	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin, 0, 20)
+	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin, nil, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, docs, 2)
@@ -332,10 +332,10 @@ func TestDocumentService_ListByCollection_Empty(t *testing.T) {
 	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
 		Return(nil, errors.New("not found")).Maybe()
 
-	docRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, 0, 20).
+	docRepo.On("ListByCollection", mock.Anything, tenantID, collectionID, (*uuid.UUID)(nil), 0, 20).
 		Return([]domain.Document{}, 0, nil)
 
-	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin, 0, 20)
+	docs, total, err := svc.ListByCollection(context.Background(), tenantID, collectionID, userID, domain.RoleAdmin, nil, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Empty(t, docs)
@@ -354,10 +354,10 @@ func TestDocumentService_ListByTenant_Success(t *testing.T) {
 		{ID: uuid.New(), TenantID: tenantID},
 	}
 
-	docRepo.On("ListByTenant", mock.Anything, tenantID, 0, 20).
+	docRepo.On("ListByTenant", mock.Anything, tenantID, (*uuid.UUID)(nil), 0, 20).
 		Return(expected, 1, nil)
 
-	docs, total, err := svc.ListByTenant(context.Background(), tenantID, userID, domain.RoleAdmin, 0, 20)
+	docs, total, err := svc.ListByTenant(context.Background(), tenantID, userID, domain.RoleAdmin, nil, 0, 20)
 
 	assert.NoError(t, err)
 	assert.Len(t, docs, 1)
@@ -1806,4 +1806,283 @@ func TestDocumentService_AuditFailureDoesNotBlockOperation(t *testing.T) {
 
 	err := svc.Delete(context.Background(), tenantID, docID, uuid.New(), domain.RoleAdmin)
 	assert.NoError(t, err) // audit failure must not block deletion
+}
+
+// --- AssignDocument ---
+
+func TestDocumentService_AssignDocument_Success(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _, userRepo, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	callerID := uuid.New()
+	assigneeID := uuid.New()
+	collectionID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		CollectionID:  collectionID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+	}
+
+	// Caller has editor perm (admin implicit)
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, callerID).
+		Return(nil, errors.New("not found"))
+	// Assignee has editor perm
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, assigneeID).
+		Return(editorPerm(collectionID, assigneeID), nil)
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+	userRepo.On("GetByID", mock.Anything, tenantID, assigneeID).Return(&domain.User{
+		ID:       assigneeID,
+		TenantID: tenantID,
+		Role:     domain.RoleMember,
+	}, nil)
+	docRepo.On("UpdateAssignment", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil)
+
+	result, err := svc.AssignDocument(context.Background(), &service.AssignDocumentInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		CallerID:   callerID,
+		CallerRole: domain.RoleAdmin,
+		AssigneeID: &assigneeID,
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Equal(t, &assigneeID, result.AssignedTo)
+	assert.NotNil(t, result.AssignedAt)
+	assert.Equal(t, &callerID, result.AssignedBy)
+	docRepo.AssertExpectations(t)
+}
+
+func TestDocumentService_AssignDocument_Unassign(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	callerID := uuid.New()
+	assigneeID := uuid.New()
+	collectionID := uuid.New()
+	assignedAt := time.Now().UTC()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		CollectionID:  collectionID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+		AssignedTo:    &assigneeID,
+		AssignedAt:    &assignedAt,
+		AssignedBy:    &callerID,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, callerID).
+		Return(nil, errors.New("not found"))
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+	docRepo.On("UpdateAssignment", mock.Anything, mock.MatchedBy(func(doc *domain.Document) bool {
+		return doc.AssignedTo == nil && doc.AssignedAt == nil && doc.AssignedBy == nil
+	})).Return(nil)
+
+	result, err := svc.AssignDocument(context.Background(), &service.AssignDocumentInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		CallerID:   callerID,
+		CallerRole: domain.RoleAdmin,
+		AssigneeID: nil, // unassign
+	})
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	assert.Nil(t, result.AssignedTo)
+	assert.Nil(t, result.AssignedAt)
+	assert.Nil(t, result.AssignedBy)
+}
+
+func TestDocumentService_AssignDocument_NotParsed(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	callerID := uuid.New()
+	assigneeID := uuid.New()
+	collectionID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		CollectionID:  collectionID,
+		ParsingStatus: domain.ParsingStatusProcessing,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, callerID).
+		Return(nil, errors.New("not found"))
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+
+	result, err := svc.AssignDocument(context.Background(), &service.AssignDocumentInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		CallerID:   callerID,
+		CallerRole: domain.RoleAdmin,
+		AssigneeID: &assigneeID,
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrDocumentNotParsed)
+}
+
+func TestDocumentService_AssignDocument_AssigneeCannotReview(t *testing.T) {
+	svc, docRepo, _, permRepo, _, _, _, userRepo, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	callerID := uuid.New()
+	assigneeID := uuid.New()
+	collectionID := uuid.New()
+
+	existing := &domain.Document{
+		ID:            docID,
+		TenantID:      tenantID,
+		CollectionID:  collectionID,
+		ParsingStatus: domain.ParsingStatusCompleted,
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, callerID).
+		Return(nil, errors.New("not found"))
+	// Assignee has no explicit perm and is a viewer → no access
+	permRepo.On("GetByCollectionAndUser", mock.Anything, collectionID, assigneeID).
+		Return(nil, errors.New("not found"))
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+	userRepo.On("GetByID", mock.Anything, tenantID, assigneeID).Return(&domain.User{
+		ID:       assigneeID,
+		TenantID: tenantID,
+		Role:     domain.RoleViewer,
+	}, nil)
+
+	result, err := svc.AssignDocument(context.Background(), &service.AssignDocumentInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		CallerID:   callerID,
+		CallerRole: domain.RoleAdmin,
+		AssigneeID: &assigneeID,
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrAssigneeCannotReview)
+}
+
+func TestDocumentService_AssignDocument_DocNotFound(t *testing.T) {
+	svc, docRepo, _, _, _, _, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	assigneeID := uuid.New()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(nil, domain.ErrDocumentNotFound)
+
+	result, err := svc.AssignDocument(context.Background(), &service.AssignDocumentInput{
+		TenantID:   tenantID,
+		DocumentID: docID,
+		CallerID:   uuid.New(),
+		CallerRole: domain.RoleAdmin,
+		AssigneeID: &assigneeID,
+	})
+
+	assert.Nil(t, result)
+	assert.ErrorIs(t, err, domain.ErrDocumentNotFound)
+}
+
+// --- ListReviewQueue ---
+
+func TestDocumentService_ListReviewQueue_Success(t *testing.T) {
+	svc, docRepo, _, _, _, _, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	expected := []domain.Document{
+		{ID: uuid.New(), TenantID: tenantID, AssignedTo: &userID, ParsingStatus: domain.ParsingStatusCompleted},
+	}
+
+	docRepo.On("ListReviewQueue", mock.Anything, tenantID, userID, 0, 20).Return(expected, 1, nil)
+
+	docs, total, err := svc.ListReviewQueue(context.Background(), tenantID, userID, 0, 20)
+
+	assert.NoError(t, err)
+	assert.Len(t, docs, 1)
+	assert.Equal(t, 1, total)
+}
+
+func TestDocumentService_ListReviewQueue_Empty(t *testing.T) {
+	svc, docRepo, _, _, _, _, _, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	userID := uuid.New()
+
+	docRepo.On("ListReviewQueue", mock.Anything, tenantID, userID, 0, 20).Return([]domain.Document{}, 0, nil)
+
+	docs, total, err := svc.ListReviewQueue(context.Background(), tenantID, userID, 0, 20)
+
+	assert.NoError(t, err)
+	assert.Empty(t, docs)
+	assert.Equal(t, 0, total)
+}
+
+// --- RetryParse clears assignment ---
+
+func TestDocumentService_RetryParse_ClearsAssignment(t *testing.T) {
+	svc, docRepo, fileRepo, permRepo, p, storage, tagRepo, _, _ := setupDocumentService()
+
+	tenantID := uuid.New()
+	docID := uuid.New()
+	fileID := uuid.New()
+	userID := uuid.New()
+	assigneeID := uuid.New()
+	assignedAt := time.Now().UTC()
+
+	existing := &domain.Document{
+		ID:               docID,
+		TenantID:         tenantID,
+		FileID:           fileID,
+		DocumentType:     "invoice",
+		ParsingStatus:    domain.ParsingStatusFailed,
+		AssignedTo:       &assigneeID,
+		AssignedAt:       &assignedAt,
+		AssignedBy:       &userID,
+		StructuredData:   json.RawMessage("{}"),
+		ConfidenceScores: json.RawMessage("{}"),
+	}
+
+	fileMeta := &domain.FileMeta{
+		ID: fileID, TenantID: tenantID,
+		S3Bucket: "b", S3Key: "k", ContentType: "application/pdf",
+	}
+
+	permRepo.On("GetByCollectionAndUser", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("not found")).Maybe()
+
+	docRepo.On("GetByID", mock.Anything, tenantID, docID).Return(existing, nil)
+	fileRepo.On("GetByID", mock.Anything, tenantID, fileID).Return(fileMeta, nil)
+	tagRepo.On("DeleteByDocumentAndSource", mock.Anything, docID, "auto").Return(nil)
+	tagRepo.On("CreateBatch", mock.Anything, mock.Anything).Return(nil).Maybe()
+	docRepo.On("UpdateStructuredData", mock.Anything, mock.AnythingOfType("*domain.Document")).Return(nil).Maybe()
+	storage.On("Download", mock.Anything, "b", "k").Return([]byte("test"), nil).Maybe()
+	p.On("Parse", mock.Anything, mock.Anything).Return(&port.ParseOutput{
+		StructuredData: json.RawMessage("{}"), ConfidenceScores: json.RawMessage("{}"),
+		ModelUsed: "m", PromptUsed: "p",
+	}, nil).Maybe()
+
+	result, err := svc.RetryParse(context.Background(), tenantID, docID, userID, domain.RoleAdmin)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, result)
+	// Assignment fields should be cleared
+	assert.Nil(t, result.AssignedTo)
+	assert.Nil(t, result.AssignedAt)
+	assert.Nil(t, result.AssignedBy)
+
+	time.Sleep(50 * time.Millisecond)
 }

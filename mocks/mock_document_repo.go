@@ -35,24 +35,24 @@ func (m *MockDocumentRepo) GetByFileID(ctx context.Context, tenantID, fileID uui
 	return args.Get(0).(*domain.Document), args.Error(1)
 }
 
-func (m *MockDocumentRepo) ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
-	args := m.Called(ctx, tenantID, collectionID, offset, limit)
+func (m *MockDocumentRepo) ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, collectionID, assignedTo, offset, limit)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
 	}
 	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
-func (m *MockDocumentRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
-	args := m.Called(ctx, tenantID, offset, limit)
+func (m *MockDocumentRepo) ListByTenant(ctx context.Context, tenantID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, assignedTo, offset, limit)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
 	}
 	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
-func (m *MockDocumentRepo) ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
-	args := m.Called(ctx, tenantID, userID, offset, limit)
+func (m *MockDocumentRepo) ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, userID, assignedTo, offset, limit)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
 	}
@@ -69,9 +69,22 @@ func (m *MockDocumentRepo) UpdateReviewStatus(ctx context.Context, doc *domain.D
 	return args.Error(0)
 }
 
+func (m *MockDocumentRepo) UpdateAssignment(ctx context.Context, doc *domain.Document) error {
+	args := m.Called(ctx, doc)
+	return args.Error(0)
+}
+
 func (m *MockDocumentRepo) UpdateValidationResults(ctx context.Context, doc *domain.Document) error {
 	args := m.Called(ctx, doc)
 	return args.Error(0)
+}
+
+func (m *MockDocumentRepo) ListReviewQueue(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, userID, offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
 func (m *MockDocumentRepo) ClaimQueued(ctx context.Context, limit int) ([]domain.Document, error) {

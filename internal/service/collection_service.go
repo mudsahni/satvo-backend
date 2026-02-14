@@ -78,6 +78,7 @@ type collectionService struct {
 	permRepo       port.CollectionPermissionRepository
 	fileRepo       port.CollectionFileRepository
 	fileSvc        FileService
+	userRepo       port.UserRepository
 }
 
 // NewCollectionService creates a new CollectionService implementation.
@@ -86,19 +87,20 @@ func NewCollectionService(
 	permRepo port.CollectionPermissionRepository,
 	fileRepo port.CollectionFileRepository,
 	fileSvc FileService,
+	userRepo port.UserRepository,
 ) CollectionService {
 	return &collectionService{
 		collectionRepo: collectionRepo,
 		permRepo:       permRepo,
 		fileRepo:       fileRepo,
 		fileSvc:        fileSvc,
+		userRepo:       userRepo,
 	}
 }
 
 // effectivePermission computes the effective collection permission for a user
 // based on their tenant role and explicit collection permission.
 // effective = max(implicit_from_role, explicit_collection_perm)
-// For viewer role: capped at viewer regardless of explicit perm.
 func (s *collectionService) effectivePermission(ctx context.Context, collectionID, userID uuid.UUID, role domain.UserRole) domain.CollectionPermission {
 	implicit := domain.ImplicitCollectionPerm(role)
 
@@ -106,13 +108,6 @@ func (s *collectionService) effectivePermission(ctx context.Context, collectionI
 	perm, err := s.permRepo.GetByCollectionAndUser(ctx, collectionID, userID)
 	if err == nil {
 		explicit = perm.Permission
-	}
-
-	// For viewer role: cap at viewer regardless of explicit perm
-	if role == domain.RoleViewer {
-		if domain.CollectionPermLevel(explicit) > domain.CollectionPermLevel(domain.CollectionPermViewer) {
-			explicit = domain.CollectionPermViewer
-		}
 	}
 
 	if domain.CollectionPermLevel(implicit) >= domain.CollectionPermLevel(explicit) {
@@ -297,6 +292,11 @@ func (s *collectionService) SetPermission(ctx context.Context, input *SetPermiss
 		return err
 	}
 
+	// Verify the target user exists in this tenant
+	if _, err := s.userRepo.GetByID(ctx, input.TenantID, input.UserID); err != nil {
+		return fmt.Errorf("target user not found in tenant: %w", domain.ErrNotFound)
+	}
+
 	log.Printf("collectionService.SetPermission: setting %s permission for user %s on collection %s by user %s",
 		input.Permission, input.UserID, input.CollectionID, input.GrantedBy)
 
@@ -348,15 +348,7 @@ func (s *collectionService) EffectivePermissions(ctx context.Context, collection
 		return result, nil
 	}
 
-	// Viewer is capped at viewer regardless of explicit perms
-	if role == domain.RoleViewer {
-		for _, id := range collectionIDs {
-			result[id] = domain.CollectionPermViewer
-		}
-		return result, nil
-	}
-
-	// Manager/member: batch-query explicit permissions
+	// Manager/member/viewer: batch-query explicit permissions
 	implicit := domain.ImplicitCollectionPerm(role)
 	explicitPerms, err := s.permRepo.GetByUserForCollections(ctx, userID, collectionIDs)
 	if err != nil {

@@ -41,6 +41,15 @@ type EditStructuredDataInput struct {
 	StructuredData json.RawMessage
 }
 
+// AssignDocumentInput is the DTO for assigning a document to a reviewer.
+type AssignDocumentInput struct {
+	TenantID   uuid.UUID
+	DocumentID uuid.UUID
+	CallerID   uuid.UUID
+	CallerRole domain.UserRole
+	AssigneeID *uuid.UUID // nil = unassign
+}
+
 // UpdateReviewInput is the DTO for updating a document's review status.
 type UpdateReviewInput struct {
 	TenantID   uuid.UUID
@@ -56,8 +65,10 @@ type DocumentService interface {
 	CreateAndParse(ctx context.Context, input *CreateDocumentInput) (*domain.Document, error)
 	GetByID(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
 	GetByFileID(ctx context.Context, tenantID, fileID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
-	ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error)
-	ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error)
+	ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	AssignDocument(ctx context.Context, input *AssignDocumentInput) (*domain.Document, error)
+	ListReviewQueue(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error)
 	EditStructuredData(ctx context.Context, input *EditStructuredDataInput) (*domain.Document, error)
 	RetryParse(ctx context.Context, tenantID, docID, userID uuid.UUID, role domain.UserRole) (*domain.Document, error)
@@ -144,12 +155,6 @@ func (s *documentService) effectiveCollectionPerm(ctx context.Context, collectio
 	perm, err := s.permRepo.GetByCollectionAndUser(ctx, collectionID, userID)
 	if err == nil {
 		explicit = perm.Permission
-	}
-
-	if role == domain.RoleViewer {
-		if domain.CollectionPermLevel(explicit) > domain.CollectionPermLevel(domain.CollectionPermViewer) {
-			explicit = domain.CollectionPermViewer
-		}
 	}
 
 	if domain.CollectionPermLevel(implicit) >= domain.CollectionPermLevel(explicit) {
@@ -461,20 +466,20 @@ func (s *documentService) GetByFileID(ctx context.Context, tenantID, fileID, use
 	return doc, nil
 }
 
-func (s *documentService) ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error) {
+func (s *documentService) ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
 	if err := s.requireCollectionPerm(ctx, collectionID, userID, role, domain.CollectionPermViewer); err != nil {
 		return nil, 0, err
 	}
-	return s.docRepo.ListByCollection(ctx, tenantID, collectionID, offset, limit)
+	return s.docRepo.ListByCollection(ctx, tenantID, collectionID, assignedTo, offset, limit)
 }
 
-func (s *documentService) ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error) {
+func (s *documentService) ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
 	// Admin, manager, and member see all documents
 	if role == domain.RoleAdmin || role == domain.RoleManager || role == domain.RoleMember {
-		return s.docRepo.ListByTenant(ctx, tenantID, offset, limit)
+		return s.docRepo.ListByTenant(ctx, tenantID, assignedTo, offset, limit)
 	}
 	// Viewer sees only documents in collections they have access to
-	return s.docRepo.ListByUserCollections(ctx, tenantID, userID, offset, limit)
+	return s.docRepo.ListByUserCollections(ctx, tenantID, userID, assignedTo, offset, limit)
 }
 
 func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewInput) (*domain.Document, error) {
@@ -506,6 +511,74 @@ func (s *documentService) UpdateReview(ctx context.Context, input *UpdateReviewI
 	s.audit(ctx, input.TenantID, input.DocumentID, &input.ReviewerID, domain.AuditDocumentReview, reviewChanges)
 
 	return doc, nil
+}
+
+func (s *documentService) AssignDocument(ctx context.Context, input *AssignDocumentInput) (*domain.Document, error) {
+	doc, err := s.docRepo.GetByID(ctx, input.TenantID, input.DocumentID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check editor+ permission on the collection (caller)
+	if err := s.requireCollectionPerm(ctx, doc.CollectionID, input.CallerID, input.CallerRole, domain.CollectionPermEditor); err != nil {
+		return nil, err
+	}
+
+	if doc.ParsingStatus != domain.ParsingStatusCompleted {
+		return nil, domain.ErrDocumentNotParsed
+	}
+
+	previousAssignee := doc.AssignedTo
+
+	if input.AssigneeID != nil {
+		// Verify assignee exists in tenant
+		assignee, err := s.userRepo.GetByID(ctx, input.TenantID, *input.AssigneeID)
+		if err != nil {
+			return nil, fmt.Errorf("assignee not found: %w", err)
+		}
+
+		// Verify assignee has editor+ effective permission on collection
+		if err := s.requireCollectionPerm(ctx, doc.CollectionID, *input.AssigneeID, assignee.Role, domain.CollectionPermEditor); err != nil {
+			return nil, domain.ErrAssigneeCannotReview
+		}
+
+		now := time.Now().UTC()
+		doc.AssignedTo = input.AssigneeID
+		doc.AssignedAt = &now
+		doc.AssignedBy = &input.CallerID
+	} else {
+		// Unassign
+		doc.AssignedTo = nil
+		doc.AssignedAt = nil
+		doc.AssignedBy = nil
+	}
+
+	if err := s.docRepo.UpdateAssignment(ctx, doc); err != nil {
+		return nil, fmt.Errorf("updating assignment: %w", err)
+	}
+
+	// Audit
+	var changes json.RawMessage
+	if input.AssigneeID != nil {
+		changes, _ = json.Marshal(map[string]interface{}{
+			"assigned_to": input.AssigneeID.String(), "assigned_by": input.CallerID.String(),
+		})
+	} else {
+		prev := ""
+		if previousAssignee != nil {
+			prev = previousAssignee.String()
+		}
+		changes, _ = json.Marshal(map[string]interface{}{
+			"assigned_to": nil, "assigned_by": input.CallerID.String(), "previous_assignee": prev,
+		})
+	}
+	s.audit(ctx, input.TenantID, input.DocumentID, &input.CallerID, domain.AuditDocumentAssigned, changes)
+
+	return doc, nil
+}
+
+func (s *documentService) ListReviewQueue(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	return s.docRepo.ListReviewQueue(ctx, tenantID, userID, offset, limit)
 }
 
 func (s *documentService) EditStructuredData(ctx context.Context, input *EditStructuredDataInput) (*domain.Document, error) {
@@ -685,11 +758,14 @@ func (s *documentService) RetryParse(ctx context.Context, tenantID, docID, userI
 		}
 	}
 
-	// Reset to pending
+	// Reset to pending and clear assignment
 	doc.ParsingStatus = domain.ParsingStatusPending
 	doc.ParsingError = ""
 	doc.StructuredData = json.RawMessage("{}")
 	doc.ConfidenceScores = json.RawMessage("{}")
+	doc.AssignedTo = nil
+	doc.AssignedAt = nil
+	doc.AssignedBy = nil
 	if err := s.docRepo.UpdateStructuredData(ctx, doc); err != nil {
 		return nil, fmt.Errorf("resetting document for retry: %w", err)
 	}

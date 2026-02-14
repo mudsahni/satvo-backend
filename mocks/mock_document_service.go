@@ -40,16 +40,16 @@ func (m *MockDocumentService) GetByFileID(ctx context.Context, tenantID, fileID,
 	return args.Get(0).(*domain.Document), args.Error(1)
 }
 
-func (m *MockDocumentService) ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error) {
-	args := m.Called(ctx, tenantID, collectionID, userID, role, offset, limit)
+func (m *MockDocumentService) ListByCollection(ctx context.Context, tenantID, collectionID, userID uuid.UUID, role domain.UserRole, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, collectionID, userID, role, assignedTo, offset, limit)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
 	}
 	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
-func (m *MockDocumentService) ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, offset, limit int) ([]domain.Document, int, error) {
-	args := m.Called(ctx, tenantID, userID, role, offset, limit)
+func (m *MockDocumentService) ListByTenant(ctx context.Context, tenantID, userID uuid.UUID, role domain.UserRole, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, userID, role, assignedTo, offset, limit)
 	if args.Get(0) == nil {
 		return nil, args.Int(1), args.Error(2)
 	}
@@ -62,6 +62,22 @@ func (m *MockDocumentService) UpdateReview(ctx context.Context, input *service.U
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*domain.Document), args.Error(1)
+}
+
+func (m *MockDocumentService) AssignDocument(ctx context.Context, input *service.AssignDocumentInput) (*domain.Document, error) {
+	args := m.Called(ctx, input)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*domain.Document), args.Error(1)
+}
+
+func (m *MockDocumentService) ListReviewQueue(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error) {
+	args := m.Called(ctx, tenantID, userID, offset, limit)
+	if args.Get(0) == nil {
+		return nil, args.Int(1), args.Error(2)
+	}
+	return args.Get(0).([]domain.Document), args.Int(1), args.Error(2)
 }
 
 func (m *MockDocumentService) EditStructuredData(ctx context.Context, input *service.EditStructuredDataInput) (*domain.Document, error) {

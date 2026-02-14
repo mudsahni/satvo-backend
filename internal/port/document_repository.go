@@ -13,12 +13,14 @@ type DocumentRepository interface {
 	Create(ctx context.Context, doc *domain.Document) error
 	GetByID(ctx context.Context, tenantID, docID uuid.UUID) (*domain.Document, error)
 	GetByFileID(ctx context.Context, tenantID, fileID uuid.UUID) (*domain.Document, error)
-	ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
-	ListByTenant(ctx context.Context, tenantID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
-	ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	ListByCollection(ctx context.Context, tenantID, collectionID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	ListByTenant(ctx context.Context, tenantID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error)
+	ListByUserCollections(ctx context.Context, tenantID, userID uuid.UUID, assignedTo *uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	UpdateStructuredData(ctx context.Context, doc *domain.Document) error
 	UpdateReviewStatus(ctx context.Context, doc *domain.Document) error
+	UpdateAssignment(ctx context.Context, doc *domain.Document) error
 	UpdateValidationResults(ctx context.Context, doc *domain.Document) error
+	ListReviewQueue(ctx context.Context, tenantID, userID uuid.UUID, offset, limit int) ([]domain.Document, int, error)
 	ClaimQueued(ctx context.Context, limit int) ([]domain.Document, error)
 	Delete(ctx context.Context, tenantID, docID uuid.UUID) error
 }

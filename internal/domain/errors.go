@@ -30,4 +30,5 @@ var (
 	ErrPasswordResetTokenInvalid   = errors.New("password reset token is invalid or expired")
 	ErrSocialAuthTokenInvalid      = errors.New("social auth token is invalid or expired")
 	ErrPasswordLoginNotAllowed     = errors.New("this account uses social login; password login is not available")
+	ErrAssigneeCannotReview        = errors.New("assignee does not have review permission on this collection")
 )

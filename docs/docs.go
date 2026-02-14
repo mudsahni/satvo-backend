@@ -1242,7 +1242,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "List documents with optional collection filter",
+                "description": "List documents with optional collection and assignment filters",
                 "produces": [
                     "application/json"
                 ],
@@ -1269,6 +1269,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by collection ID",
                         "name": "collection_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by assigned user ID",
+                        "name": "assigned_to",
                         "in": "query"
                     }
                 ],
@@ -1298,7 +1304,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid collection_id",
+                        "description": "Invalid collection_id or assigned_to",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponseBody"
                         }
@@ -1384,6 +1390,71 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Document already exists for this file",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/documents/review-queue": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "List documents assigned to the current user that are parsed and pending review, ordered by assignment date",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "summary": "Get review queue",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "Pagination offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Pagination limit",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Review queue",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/definitions/domain.Document"
+                                            }
+                                        },
+                                        "meta": {
+                                            "$ref": "#/definitions/handler.PagMeta"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponseBody"
                         }
@@ -1687,6 +1758,93 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Document not found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/documents/{id}/assign": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Assign or unassign a document to a user for review. Assignee must have editor+ permission on the collection. Pass null assignee_id to unassign.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "documents"
+                ],
+                "summary": "Assign a document for review",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Document ID (UUID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Assignee user ID (null to unassign)",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "assignee_id": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Document assigned",
+                        "schema": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/definitions/handler.Response"
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/definitions/domain.Document"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request, document not parsed, or assignee cannot review",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "403": {
+                        "description": "Insufficient permission",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponseBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Document or assignee not found",
                         "schema": {
                             "$ref": "#/definitions/handler.ErrorResponseBody"
                         }
@@ -3100,6 +3258,15 @@ const docTemplate = `{
         "domain.Document": {
             "type": "object",
             "properties": {
+                "assigned_at": {
+                    "type": "string"
+                },
+                "assigned_by": {
+                    "type": "string"
+                },
+                "assigned_to": {
+                    "type": "string"
+                },
                 "collection_id": {
                     "type": "string"
                 },
